@@ -44,7 +44,10 @@ class MeetingMode:
         self.recorder.start()
         self._worker = threading.Thread(target=self._loop, daemon=True)
         self._worker.start()
-        self.on_status("Meeting recording — mic active")
+        if self.recorder.has_system_audio:
+            self.on_status("Recording mic + system audio")
+        else:
+            self.on_status("Recording mic only")
 
     def stop(self) -> str:
         """Stop recording and return the path to the saved transcript."""
@@ -78,7 +81,8 @@ class MeetingMode:
             self._lines.append(line)
             self.on_line(line)
             self._append(line)
-        self.on_status("Meeting recording — mic active")
+        status = "Recording mic + system audio" if self.recorder.has_system_audio else "Recording mic only"
+        self.on_status(status)
 
     def _write_header(self):
         if self._session_file:
