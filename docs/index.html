@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>freewispr — Free speech to text for Windows</title>
+<meta name="description" content="freewispr is a free, local, open-source speech-to-text app for Windows. No cloud. No subscription. Powered by Whisper AI.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:      #0c0c0f;
+  --bg2:     #131318;
+  --border:  #1e1e26;
+  --acc:     #7c5cfc;
+  --acc-dim: #5a3fd4;
+  --acc-glow:rgba(124,92,252,0.3);
+  --fg:      rgba(232,232,240,0.92);
+  --fg2:     rgba(232,232,240,0.45);
+  --fg3:     rgba(232,232,240,0.2);
+  --serif:   'Cormorant Garamond', Georgia, serif;
+  --sans:    'DM Sans', system-ui, sans-serif;
+  --mono:    'JetBrains Mono', monospace;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--sans);
+  background: var(--bg);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  min-height: 100vh;
+}
+
+/* ── Floating quote canvas ─────────────────────────────────────── */
+#quote-canvas {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.q {
+  position: absolute;
+  font-family: var(--serif);
+  font-style: italic;
+  font-size: clamp(0.75rem, 1.4vw, 1rem);
+  font-weight: 300;
+  color: var(--fg);
+  opacity: 0;
+  white-space: nowrap;
+  transition: opacity 0.6s ease;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* ── Layout ────────────────────────────────────────────────────── */
+.wrap {
+  position: relative;
+  z-index: 1;
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 0 28px;
+}
+
+/* ── Header nav ────────────────────────────────────────────────── */
+header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100;
+  padding: 20px 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.logo {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--fg);
+  text-decoration: none;
+  letter-spacing: 0.02em;
+}
+
+.logo em { color: var(--acc); font-style: normal; }
+
+.header-links {
+  display: flex;
+  gap: 28px;
+  list-style: none;
+}
+
+.header-links a {
+  font-size: 0.82rem;
+  font-weight: 400;
+  color: var(--fg2);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.header-links a:hover { color: var(--fg); }
+
+/* ── Hero ──────────────────────────────────────────────────────── */
+.hero {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 120px 28px 80px;
+  position: relative;
+  z-index: 1;
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 700px;
+  height: 500px;
+  background: radial-gradient(ellipse at center, rgba(124,92,252,0.08) 0%, transparent 65%);
+  pointer-events: none;
+}
+
+.app-icon {
+  width: 72px;
+  height: 72px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 36px;
+  box-shadow: 0 0 0 1px rgba(124,92,252,0.15), 0 0 40px rgba(124,92,252,0.07);
+}
+
+.hero-title {
+  font-family: var(--serif);
+  font-size: clamp(4.5rem, 14vw, 8rem);
+  font-weight: 300;
+  letter-spacing: -0.02em;
+  line-height: 0.9;
+  color: var(--fg);
+  margin-bottom: 28px;
+}
+
+.hero-title span { color: var(--acc); font-style: italic; }
+
+.hero-sub {
+  font-size: 1.05rem;
+  font-weight: 300;
+  color: var(--fg2);
+  line-height: 1.6;
+  max-width: 420px;
+  margin: 0 auto 44px;
+}
+
+.hero-sub strong {
+  color: var(--fg);
+  font-weight: 400;
+}
+
+.dl-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--acc);
+  color: #fff;
+  font-family: var(--sans);
+  font-size: 0.95rem;
+  font-weight: 500;
+  padding: 13px 32px;
+  border-radius: 8px;
+  text-decoration: none;
+  letter-spacing: 0.01em;
+  transition: background 0.2s, box-shadow 0.25s, transform 0.15s;
+  box-shadow: 0 0 0 0 var(--acc-glow);
+}
+
+.dl-btn:hover {
+  background: var(--acc-dim);
+  box-shadow: 0 0 30px 8px var(--acc-glow);
+  transform: translateY(-1px);
+}
+
+.hero-badges {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 28px;
+  flex-wrap: wrap;
+}
+
+.hero-badges span {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--fg3);
+  letter-spacing: 0.08em;
+}
+
+.hero-badges .dot {
+  width: 2px; height: 2px;
+  border-radius: 50%;
+  background: var(--fg3);
+  flex-shrink: 0;
+}
+
+/* ── Sections ──────────────────────────────────────────────────── */
+section {
+  position: relative;
+  z-index: 1;
+  padding: 90px 0;
+}
+
+.divider {
+  border: none;
+  border-top: 1px solid var(--border);
+  position: relative;
+  z-index: 1;
+}
+
+.section-eyebrow {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--acc);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+.section-title {
+  font-family: var(--serif);
+  font-size: clamp(2rem, 5vw, 2.8rem);
+  font-weight: 300;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+  margin-bottom: 52px;
+  color: var(--fg);
+}
+
+/* ── Features ──────────────────────────────────────────────────── */
+.features {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+@media (max-width: 600px) {
+  .features { grid-template-columns: 1fr; }
+}
+
+.feat {
+  background: var(--bg);
+  padding: 32px 28px;
+  transition: background 0.2s;
+}
+
+.feat:hover { background: var(--bg2); }
+
+.feat-icon {
+  width: 34px; height: 34px;
+  border-radius: 8px;
+  background: rgba(124,92,252,0.1);
+  display: flex; align-items: center; justify-content: center;
+  color: var(--acc);
+  margin-bottom: 18px;
+}
+
+.feat h3 {
+  font-family: var(--serif);
+  font-size: 1.2rem;
+  font-weight: 400;
+  margin-bottom: 10px;
+}
+
+.feat p {
+  font-size: 0.88rem;
+  color: var(--fg2);
+  line-height: 1.6;
+}
+
+/* ── How it works ──────────────────────────────────────────────── */
+.steps { display: flex; flex-direction: column; gap: 0; }
+
+.step {
+  display: flex;
+  gap: 28px;
+  align-items: flex-start;
+  padding: 28px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.step:last-child { border-bottom: none; }
+
+.step-n {
+  font-family: var(--serif);
+  font-size: 2.5rem;
+  font-weight: 300;
+  color: var(--acc);
+  opacity: 0.5;
+  line-height: 1;
+  min-width: 40px;
+  padding-top: 2px;
+}
+
+.step h3 {
+  font-family: var(--serif);
+  font-size: 1.3rem;
+  font-weight: 400;
+  margin-bottom: 6px;
+}
+
+.step p {
+  font-size: 0.88rem;
+  color: var(--fg2);
+  line-height: 1.6;
+}
+
+.step code {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  color: var(--acc);
+}
+
+/* ── Download ──────────────────────────────────────────────────── */
+.dl-card {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 56px 40px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.dl-card::before {
+  content: '';
+  position: absolute;
+  top: -80px; left: 50%;
+  transform: translateX(-50%);
+  width: 500px; height: 300px;
+  background: radial-gradient(ellipse, rgba(124,92,252,0.09) 0%, transparent 65%);
+  pointer-events: none;
+}
+
+.dl-tag {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  color: var(--fg3);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin-bottom: 10px;
+}
+
+.dl-card h2 {
+  font-family: var(--serif);
+  font-size: clamp(2rem, 5vw, 3rem);
+  font-weight: 300;
+  letter-spacing: -0.01em;
+  margin-bottom: 6px;
+}
+
+.dl-card .platform {
+  font-size: 0.85rem;
+  color: var(--fg2);
+  margin-bottom: 40px;
+}
+
+.dl-card .dl-btn {
+  font-size: 1rem;
+  padding: 15px 44px;
+}
+
+.dl-note {
+  margin-top: 22px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--fg3);
+  line-height: 1.7;
+}
+
+/* ── Footer ────────────────────────────────────────────────────── */
+footer {
+  position: relative;
+  z-index: 1;
+  padding: 36px 28px;
+  border-top: 1px solid var(--border);
+  text-align: center;
+}
+
+.footer-links {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.footer-links a {
+  font-size: 0.82rem;
+  color: var(--fg2);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.footer-links a:hover { color: var(--acc); }
+
+.footer-links .dot {
+  color: var(--fg3);
+  font-size: 0.7rem;
+}
+
+.footer-by {
+  font-size: 0.78rem;
+  color: var(--fg3);
+  margin-top: 6px;
+}
+
+.footer-by a {
+  color: var(--fg2);
+  text-decoration: none;
+  transition: color 0.2s;
+}
+
+.footer-by a:hover { color: var(--acc); }
+
+/* ── Scrollbar ─────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- Floating quote particles -->
+<div id="quote-canvas"></div>
+
+<!-- Header -->
+<header>
+  <a href="/" class="logo">free<em>wispr</em></a>
+  <ul class="header-links">
+    <li><a href="#features">Features</a></li>
+    <li><a href="#download">Download</a></li>
+    <li><a href="#" target="_blank" rel="noopener">GitHub ↗</a></li>
+  </ul>
+</header>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="app-icon">
+    <svg width="34" height="34" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="13" y="3" width="8" height="16" rx="4" fill="#7c5cfc"/>
+      <path d="M7 17a10 10 0 0 0 20 0" stroke="#7c5cfc" stroke-width="2.2" stroke-linecap="round" fill="none"/>
+      <line x1="17" y1="27" x2="17" y2="31" stroke="#7c5cfc" stroke-width="2.2" stroke-linecap="round"/>
+      <line x1="12" y1="31" x2="22" y2="31" stroke="#7c5cfc" stroke-width="2.2" stroke-linecap="round"/>
+    </svg>
+  </div>
+
+  <h1 class="hero-title">free<span>wispr</span></h1>
+
+  <p class="hero-sub">
+    Free speech-to-text for Windows.<br>
+    <strong>No cloud. No subscription. No data leaves your PC.</strong>
+  </p>
+
+  <a href="#download" id="download-btn" class="dl-btn">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+      <polyline points="7 10 12 15 17 10"/>
+      <line x1="12" y1="15" x2="12" y2="3"/>
+    </svg>
+    Download for Windows
+  </a>
+
+  <div class="hero-badges">
+    <span>open source</span>
+    <span class="dot"></span>
+    <span>runs locally</span>
+    <span class="dot"></span>
+    <span>Windows 10 / 11</span>
+    <span class="dot"></span>
+    <span>powered by Whisper AI</span>
+  </div>
+</div>
+
+<hr class="divider">
+
+<!-- Features -->
+<section id="features">
+  <div class="wrap">
+    <p class="section-eyebrow">What it does</p>
+    <h2 class="section-title">Everything you need to<br><em>speak instead of type.</em></h2>
+    <div class="features">
+
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+        </div>
+        <h3>Dictation</h3>
+        <p>Hold a hotkey, speak, release. Your words appear at your cursor in any app, any text field.</p>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+          </svg>
+        </div>
+        <h3>Meeting Transcription</h3>
+        <p>Records your mic and transcribes in real time with timestamps. Saved to your PC automatically.</p>
+      </div>
+
+      <div class="feat">
+        <div class="feat-icon">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+          </svg>
+        </div>
+        <h3>Fully Local</h3>
+        <p>Whisper AI runs entirely on your machine. Your voice never touches a server. Ever.</p>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- How it works -->
+<section id="how-it-works">
+  <div class="wrap">
+    <p class="section-eyebrow">Setup</p>
+    <h2 class="section-title">Up and running<br><em>in under a minute.</em></h2>
+    <div class="steps">
+
+      <div class="step">
+        <div class="step-n">1</div>
+        <div>
+          <h3>Download the .exe</h3>
+          <p>One file, no installer. Just download and run — freewispr needs no system-level setup.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-n">2</div>
+        <div>
+          <h3>Run it</h3>
+          <p>Double-click <code>freewispr.exe</code>. On first launch it downloads the ~150 MB Whisper AI model once, then sits quietly in your system tray.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-n">3</div>
+        <div>
+          <h3>Hold <code>Right Ctrl</code> to speak</h3>
+          <p>Hold the hotkey, say what you want to type, release. Done. Change the hotkey any time from tray settings.</p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- Download -->
+<section id="download">
+  <div class="wrap">
+    <div class="dl-card">
+      <p class="dl-tag">Latest Release</p>
+      <h2>freewispr v1.0</h2>
+      <p class="platform">For Windows 10 and Windows 11</p>
+      <a href="#" class="dl-btn">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="7 10 12 15 17 10"/>
+          <line x1="12" y1="15" x2="12" y2="3"/>
+        </svg>
+        Download freewispr.exe
+      </a>
+      <p class="dl-note">
+        Requires Windows 10 / 11<br>
+        First launch downloads the ~150 MB Whisper model automatically
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer>
+  <div class="footer-links">
+    <a href="#" target="_blank" rel="noopener">GitHub ↗</a>
+    <span class="dot">•</span>
+    <a href="#" target="_blank" rel="noopener">MIT License</a>
+    <span class="dot">•</span>
+    <a href="#features">Features</a>
+    <span class="dot">•</span>
+    <a href="#download">Download</a>
+  </div>
+  <p class="footer-by">
+    Made by&nbsp;
+    <a href="https://www.linkedin.com/in/prakharsingh96/" target="_blank" rel="noopener">Prakhar Singh</a>
+    &nbsp;·&nbsp;
+    <a href="https://www.instagram.com/prakhar.vc/" target="_blank" rel="noopener">@prakhar.vc</a>
+  </p>
+</footer>
+
+<script>
+// ── Floating speech quotes ─────────────────────────────────────────
+const QUOTES = [
+  "Your voice, your device.",
+  "No cloud. No compromise.",
+  "Speech is the most natural interface.",
+  "What you say stays with you.",
+  "Free as in freedom.",
+  "Privacy by default.",
+  "Dictate anywhere.",
+  "Whisper AI, on your terms.",
+  "Your words never leave your PC.",
+  "Open source, forever.",
+  "Speak freely.",
+  "Run locally. Work privately.",
+  "No server. No latency.",
+  "Intelligence without the subscription.",
+  "Built for Windows.",
+  "Transcribe everything.",
+  "Just hold and speak.",
+  "Your voice. Your rules.",
+];
+
+const canvas = document.getElementById('quote-canvas');
+const PROXIMITY = 130; // px radius to reveal
+const COUNT = 18;
+
+const particles = QUOTES.slice(0, COUNT).map((text, i) => {
+  const el = document.createElement('span');
+  el.className = 'q';
+  el.textContent = text;
+  canvas.appendChild(el);
+
+  // Random position (5–90% of viewport)
+  const x = 5 + Math.random() * 85;
+  const y = 5 + Math.random() * 90;
+
+  // Slow brownian drift
+  const vx = (Math.random() - 0.5) * 0.018;
+  const vy = (Math.random() - 0.5) * 0.012;
+
+  return { el, x, y, vx, vy };
+});
+
+let mx = -9999, my = -9999;
+
+document.addEventListener('mousemove', e => {
+  mx = e.clientX;
+  my = e.clientY;
+});
+
+function tick() {
+  const W = window.innerWidth;
+  const H = window.innerHeight;
+
+  particles.forEach(p => {
+    // Drift
+    p.x += p.vx;
+    p.y += p.vy;
+
+    // Bounce off edges
+    if (p.x < 3 || p.x > 92) p.vx *= -1;
+    if (p.y < 3 || p.y > 92) p.vy *= -1;
+
+    // Clamp
+    p.x = Math.max(3, Math.min(92, p.x));
+    p.y = Math.max(3, Math.min(92, p.y));
+
+    // Pixel position
+    const px = (p.x / 100) * W;
+    const py = (p.y / 100) * H;
+    p.el.style.left = px + 'px';
+    p.el.style.top  = py + 'px';
+
+    // Proximity opacity
+    const dx = px - mx;
+    const dy = py - my;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const t = Math.max(0, 1 - dist / PROXIMITY);
+    p.el.style.opacity = (t * 0.55).toFixed(3);
+  });
+
+  requestAnimationFrame(tick);
+}
+
+// Only run if user hasn't asked for reduced motion
+if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+  tick();
+}
+</script>
+
+</body>
+</html>
