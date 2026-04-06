@@ -19,8 +19,6 @@ echo Building exe...
   --hidden-import=sounddevice ^
   --hidden-import=keyboard ^
   --hidden-import=pystray._win32 ^
-  --hidden-import=psutil ^
-  --hidden-import=openai ^
   main.py
 
 echo.

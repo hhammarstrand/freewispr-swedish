@@ -1,9 +1,8 @@
 """
 freewispr — Windows speech-to-text
-Entry point: system tray icon + dictation/meeting modes.
+Entry point: system tray icon + dictation mode.
 """
 import sys
-import time
 import threading
 import tkinter as tk
 
@@ -11,11 +10,9 @@ from PIL import Image, ImageDraw
 import pystray
 
 import config as cfg_module
-import db
 from transcriber import Transcriber
 from dictation import DictationMode
-from meeting import MeetingMode
-from ui import MeetingWindow, SettingsWindow, HistoryWindow, FloatingIndicator, _style, BG
+from ui import SettingsWindow, FloatingIndicator, _style
 
 # --------------------------------------------------------------------------- #
 #  Globals                                                                     #
@@ -24,10 +21,8 @@ from ui import MeetingWindow, SettingsWindow, HistoryWindow, FloatingIndicator, 
 _config: dict = {}
 _transcriber: Transcriber | None = None
 _dictation: DictationMode | None = None
-_meeting: MeetingMode | None = None
 _tray_icon: pystray.Icon | None = None
 _tk_root: tk.Tk | None = None
-_meeting_win: MeetingWindow | None = None
 _status_var: tk.StringVar | None = None
 _indicator: FloatingIndicator | None = None
 
@@ -57,7 +52,7 @@ def _make_icon() -> Image.Image:
 # --------------------------------------------------------------------------- #
 
 def _load_app():
-    global _config, _transcriber, _dictation, _meeting, _status_var
+    global _config, _transcriber, _dictation
 
     _config = cfg_module.load()
 
@@ -71,7 +66,6 @@ def _load_app():
     )
     print("Model loaded! App is ready.", flush=True)
 
-    _meeting = MeetingMode(_transcriber)
     _dictation = DictationMode(
         _transcriber,
         hotkey=_config.get("hotkey", "ctrl+space"),
@@ -80,10 +74,6 @@ def _load_app():
     )
     _dictation.start()
     _set_tray_status(f"Ready — hold {_config.get('hotkey','ctrl+space').upper()} to speak")
-
-    # Start meeting app watcher
-    if _config.get("auto_detect_meetings", True):
-        threading.Thread(target=_meeting_watcher, daemon=True).start()
 
 
 # --------------------------------------------------------------------------- #
@@ -98,127 +88,8 @@ def _set_tray_status(msg: str):
 
 
 # --------------------------------------------------------------------------- #
-#  Meeting app auto-detection                                                  #
-# --------------------------------------------------------------------------- #
-
-_MEETING_PROCS = {
-    "zoom": "Zoom",
-    "teams": "Microsoft Teams",
-    "webex": "Webex",
-    "slack": "Slack",
-    "skype": "Skype",
-}
-
-# Browser window title fragments that indicate an active meeting
-_MEETING_TITLES = [
-    ("meet.google.com", "Google Meet"),
-    ("google meet",     "Google Meet"),
-    ("microsoft teams", "Microsoft Teams"),
-    ("zoom meeting",    "Zoom"),
-    ("webex",           "Webex"),
-]
-
-
-def _get_window_titles() -> list[str]:
-    """Return titles of all visible top-level windows via Win32 API."""
-    import ctypes
-    import ctypes.wintypes
-    titles: list[str] = []
-
-    def _cb(hwnd, _):
-        if ctypes.windll.user32.IsWindowVisible(hwnd):
-            length = ctypes.windll.user32.GetWindowTextLengthW(hwnd)
-            if length > 0:
-                buf = ctypes.create_unicode_buffer(length + 1)
-                ctypes.windll.user32.GetWindowTextW(hwnd, buf, length + 1)
-                titles.append(buf.value)
-        return True
-
-    WNDENUMPROC = ctypes.WINFUNCTYPE(
-        ctypes.c_bool, ctypes.wintypes.HWND, ctypes.wintypes.LPARAM
-    )
-    ctypes.windll.user32.EnumWindows(WNDENUMPROC(_cb), 0)
-    return titles
-
-
-def _detect_meeting_app() -> str | None:
-    """Return name of detected meeting app, or None."""
-    # 1. Check running processes (desktop apps: Zoom, Teams, Webex…)
-    try:
-        import psutil
-        for proc in psutil.process_iter(["name"]):
-            name = proc.info["name"].lower()
-            for key, display in _MEETING_PROCS.items():
-                if key in name:
-                    return display
-    except Exception:
-        pass
-
-    # 2. Check browser window titles (Google Meet, Teams web, etc.)
-    try:
-        for title in _get_window_titles():
-            tl = title.lower()
-            for fragment, display in _MEETING_TITLES:
-                if fragment in tl:
-                    return display
-    except Exception:
-        pass
-
-    return None
-
-
-def _meeting_watcher():
-    """
-    Periodically check for meeting apps.
-    When detected, auto-open the Meeting Transcription window (without starting
-    recording — the user clicks Start when ready).
-    """
-    opened_for: str | None = None
-    while True:
-        time.sleep(15)  # check every 15 s (faster than before for browser tabs)
-        # Reset when recording ends
-        if _meeting and _meeting._active:
-            opened_for = None
-            continue
-        # Reset when meeting window is closed
-        if _meeting_win is None:
-            opened_for = None
-        app = _detect_meeting_app()
-        if app and app != opened_for:
-            opened_for = app
-            # Auto-open the Meeting Transcription window
-            if _tk_root:
-                _tk_root.after(0, _show_meeting)
-            _set_tray_status(f"{app} detected — Meeting window opened")
-        elif not app:
-            opened_for = None
-
-
-# --------------------------------------------------------------------------- #
 #  Tray menu callbacks                                                         #
 # --------------------------------------------------------------------------- #
-
-def _open_history(_=None):
-    if _tk_root:
-        _tk_root.after(0, lambda: HistoryWindow())
-
-
-def _open_meeting(_=None):
-    global _meeting_win
-    if _tk_root:
-        _tk_root.after(0, _show_meeting)
-
-
-def _show_meeting():
-    global _meeting_win
-    if _meeting_win is not None:
-        try:
-            _meeting_win.root.lift()
-            return
-        except tk.TclError:
-            _meeting_win = None
-    _meeting_win = MeetingWindow(_meeting, config=_config, on_close=lambda: None)
-
 
 def _open_settings(_=None):
     if _tk_root:
@@ -287,8 +158,6 @@ def _rebuild_menu():
 def _build_menu():
     startup_label = "✓ Start with Windows" if _is_startup_enabled() else "Start with Windows"
     return pystray.Menu(
-        pystray.MenuItem("Meeting Transcription", _open_meeting),
-        pystray.MenuItem("Meeting History", _open_history),
         pystray.MenuItem("Settings", _open_settings),
         pystray.MenuItem(startup_label, _toggle_startup),
         pystray.Menu.SEPARATOR,
@@ -321,9 +190,6 @@ def main():
 
     _status_var = tk.StringVar(value="Starting…")
     _indicator = FloatingIndicator(_tk_root)
-
-    # Initialise database (creates tables if first run)
-    db.init()
 
     # Build tray icon
     menu = _build_menu()

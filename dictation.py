@@ -75,15 +75,21 @@ class DictationMode:
 
     def _transcribe(self, audio: np.ndarray):
         print("Transcribing...", flush=True)
-        text = self.transcriber.transcribe(audio)
-        print(f"Result: '{text}'", flush=True)
-        if text.strip():
-            paste_text(text)
-            self.on_status(f"Pasted — hold {self.hotkey.upper()} to speak again")
-            if self.indicator:
-                self.indicator.show("Pasted ✓", state="done")
-                self.indicator.hide(delay_ms=1200)
-        else:
-            self.on_status(f"Nothing detected — hold {self.hotkey.upper()} to speak")
+        try:
+            text = self.transcriber.transcribe(audio)
+            print(f"Result: '{text}'", flush=True)
+            if text.strip():
+                paste_text(text)
+                self.on_status(f"Pasted — hold {self.hotkey.upper()} to speak again")
+                if self.indicator:
+                    self.indicator.show("Pasted ✓", state="done")
+                    self.indicator.hide(delay_ms=1800)
+            else:
+                self.on_status(f"Nothing detected — hold {self.hotkey.upper()} to speak")
+                if self.indicator:
+                    self.indicator.hide(delay_ms=0)
+        except Exception as e:
+            print(f"Transcribe error: {e}", flush=True)
+            self.on_status(f"Ready — hold {self.hotkey.upper()} to speak")
             if self.indicator:
                 self.indicator.hide(delay_ms=0)

@@ -255,7 +255,7 @@ section {
 /* ── Features ──────────────────────────────────────────────────── */
 .features {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(2, 1fr);
   gap: 1px;
   background: var(--border);
   border: 1px solid var(--border);
@@ -263,7 +263,7 @@ section {
   overflow: hidden;
 }
 
-@media (max-width: 600px) {
+@media (max-width: 500px) {
   .features { grid-template-columns: 1fr; }
 }
 
@@ -531,16 +531,6 @@ footer {
       <div class="feat">
         <div class="feat-icon">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-          </svg>
-        </div>
-        <h3>Meeting Transcription</h3>
-        <p>Records mic + system audio simultaneously. Splits at natural speech pauses. Auto-detects Zoom, Teams, and Meet. One-click AI summary when you're done.</p>
-      </div>
-
-      <div class="feat">
-        <div class="feat-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
             <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
           </svg>
@@ -552,12 +542,12 @@ footer {
       <div class="feat">
         <div class="feat-icon">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="11" cy="11" r="8"/>
-            <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
           </svg>
         </div>
-        <h3>Meeting History</h3>
-        <p>Every transcript is stored in a local database. Full-text search across all past meetings — find any word ever spoken, instantly. Export or delete anytime.</p>
+        <h3>Any App, Any Field</h3>
+        <p>Works in every text field on Windows — browser address bar, Word, Notepad, VS Code, chat apps. If you can type there, you can dictate there.</p>
       </div>
 
     </div>
@@ -608,7 +598,7 @@ footer {
   <div class="wrap">
     <div class="dl-card">
       <p class="dl-tag">Latest Release</p>
-      <h2>freewispr v1.4</h2>
+      <h2>freewispr v1.5</h2>
       <p class="platform">For Windows 10 and Windows 11</p>
       <a href="https://github.com/x26prakhar/freewispr/releases/latest/download/freewispr.exe" class="dl-btn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">

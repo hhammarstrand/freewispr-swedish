@@ -23,12 +23,11 @@ class Transcriber:
         self.model = WhisperModel(
             model_size,
             device="cpu",
-            compute_type="int8",       # fastest on CPU
+            compute_type="int8",
             download_root=str(MODEL_DIR),
         )
 
     def _clean(self, text: str) -> str:
-        """Strip filler words and normalise whitespace if enabled."""
         if not self.filter_fillers:
             return text.strip()
         cleaned = _FILLERS.sub("", text)
@@ -36,7 +35,6 @@ class Transcriber:
         return cleaned.strip(" ,.")
 
     def transcribe(self, audio: np.ndarray) -> str:
-        """Quick transcription — for dictation mode."""
         segments, _ = self.model.transcribe(
             audio,
             language=self.language,
@@ -45,19 +43,3 @@ class Transcriber:
             vad_parameters={"min_silence_duration_ms": 300},
         )
         return self._clean(" ".join(s.text.strip() for s in segments))
-
-    def transcribe_segments(self, audio: np.ndarray, time_offset: float = 0.0):
-        """Returns list of (start, end, text) tuples — for meeting mode."""
-        segments, _ = self.model.transcribe(
-            audio,
-            language=self.language,
-            beam_size=2,
-            vad_filter=True,
-            vad_parameters={"min_silence_duration_ms": 500},
-        )
-        result = []
-        for s in segments:
-            text = self._clean(s.text.strip())
-            if text:
-                result.append((s.start + time_offset, s.end + time_offset, text))
-        return result

@@ -8,11 +8,7 @@ DEFAULTS = {
     "hotkey": "ctrl+space",
     "model_size": "base",
     "language": "en",
-    "api_key": "",
-    "api_provider": "openai",
-    "enable_summaries": False,
     "filter_fillers": False,
-    "auto_detect_meetings": True,
 }
 
 
