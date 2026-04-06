@@ -9,6 +9,7 @@ DEFAULTS = {
     "model_size": "base",
     "language": "en",
     "filter_fillers": False,
+    "auto_punctuate": True,
 }
 
 

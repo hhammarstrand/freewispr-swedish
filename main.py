@@ -12,7 +12,7 @@ import pystray
 import config as cfg_module
 from transcriber import Transcriber
 from dictation import DictationMode
-from ui import SettingsWindow, FloatingIndicator, _style
+from ui import SettingsWindow, SnippetsWindow, DictionaryWindow, FloatingIndicator, _style
 
 # --------------------------------------------------------------------------- #
 #  Globals                                                                     #
@@ -63,6 +63,7 @@ def _load_app():
         model_size=model_size,
         language=_config.get("language", "en"),
         filter_fillers=_config.get("filter_fillers", False),
+        auto_punctuate=_config.get("auto_punctuate", True),
     )
     print("Model loaded! App is ready.", flush=True)
 
@@ -91,6 +92,16 @@ def _set_tray_status(msg: str):
 #  Tray menu callbacks                                                         #
 # --------------------------------------------------------------------------- #
 
+def _open_snippets(_=None):
+    if _tk_root:
+        _tk_root.after(0, lambda: SnippetsWindow())
+
+
+def _open_dictionary(_=None):
+    if _tk_root:
+        _tk_root.after(0, lambda: DictionaryWindow())
+
+
 def _open_settings(_=None):
     if _tk_root:
         _tk_root.after(0, _show_settings)
@@ -105,9 +116,10 @@ def _apply_settings(new_cfg: dict):
     _config.update(new_cfg)
     cfg_module.save(_config)
 
-    # Rebuild transcriber if filler setting changed
+    # Rebuild transcriber if filler/punctuation settings changed
     if _transcriber:
         _transcriber.filter_fillers = _config.get("filter_fillers", False)
+        _transcriber.auto_punctuate = _config.get("auto_punctuate", True)
 
     # Restart dictation with new hotkey
     if _dictation:
@@ -158,6 +170,8 @@ def _rebuild_menu():
 def _build_menu():
     startup_label = "✓ Start with Windows" if _is_startup_enabled() else "Start with Windows"
     return pystray.Menu(
+        pystray.MenuItem("Snippets", _open_snippets),
+        pystray.MenuItem("Personal Dictionary", _open_dictionary),
         pystray.MenuItem("Settings", _open_settings),
         pystray.MenuItem(startup_label, _toggle_startup),
         pystray.Menu.SEPARATOR,

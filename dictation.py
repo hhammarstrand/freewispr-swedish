@@ -5,6 +5,7 @@ import numpy as np
 from audio import MicRecorder
 from transcriber import Transcriber
 from paste import paste_text
+import snippets as snippet_module
 
 MIN_AUDIO_SAMPLES = 3200  # 0.2 s at 16 kHz — ignore accidental taps
 
@@ -16,15 +17,14 @@ class DictationMode:
         self.hotkey = hotkey
         self.recorder = MicRecorder()
         self.on_status = on_status or (lambda msg: None)
-        self.indicator = indicator   # FloatingIndicator instance (optional)
+        self.indicator = indicator
         self._active = False
         self._recording = False
 
-        # Parse combo vs single key
         if "+" in self.hotkey:
             parts = self.hotkey.split("+")
-            self._trigger_key = parts[-1]          # e.g. "space"
-            self._modifier = "+".join(parts[:-1])  # e.g. "ctrl"
+            self._trigger_key = parts[-1]
+            self._modifier = "+".join(parts[:-1])
         else:
             self._trigger_key = self.hotkey
             self._modifier = None
@@ -77,6 +77,8 @@ class DictationMode:
         print("Transcribing...", flush=True)
         try:
             text = self.transcriber.transcribe(audio)
+            # Apply snippet expansion — if full text is a trigger, replace it
+            text = snippet_module.expand(text)
             print(f"Result: '{text}'", flush=True)
             if text.strip():
                 paste_text(text)
