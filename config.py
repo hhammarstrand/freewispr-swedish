@@ -5,8 +5,8 @@ CONFIG_DIR = Path.home() / ".freewispr"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULTS = {
-    "hotkey": "right alt",
-    "model_size": "tiny",
+    "hotkey": "ctrl+space",
+    "model_size": "base",
     "language": "en",
     "api_key": "",
     "api_provider": "openai",
