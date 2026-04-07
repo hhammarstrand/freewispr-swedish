@@ -10,6 +10,8 @@ DEFAULTS = {
     "language": "sv",
     "filter_fillers": False,
     "auto_punctuate": True,
+    "use_cuda": True,        # True = auto-detect, False = force CPU
+    "model_tier": "normal",  # compact/normal/advanced
 }
 
 

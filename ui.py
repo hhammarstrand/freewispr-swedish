@@ -414,7 +414,7 @@ class SettingsWindow:
 
         self.root = tk.Toplevel()
         self.root.title("freewispr-swedish — Inställningar")
-        self.root.geometry("440x440")
+        self.root.geometry("480x560")
         self.root.resizable(False, False)
         self.root.configure(bg=BG)
         _style(self.root)
@@ -433,21 +433,31 @@ class SettingsWindow:
         ttk.Label(self.root, text="t.ex. ctrl+space, right ctrl, F9, alt+shift",
                   style="Sub.TLabel").pack(anchor="w", padx=20, pady=(0, 4))
 
-        # Model size
-        ttk.Label(self.root, text="Whisper-modell").pack(anchor="w", padx=20, pady=(8, 0))
-        self._model_var = tk.StringVar(value=self.cfg.get("model_size", "small"))
-        ttk.Combobox(self.root, textvariable=self._model_var,
-                     values=["tiny", "base", "small", "medium", "large"],
-                     state="readonly", width=20).pack(anchor="w", **pad)
-        ttk.Label(self.root, text="tiny=snabbast (~40MB)  base=balanserad (~150MB)  small=bäst (~500MB)",
-                  style="Sub.TLabel").pack(anchor="w", padx=20, pady=(0, 4))
-
         # Language
-        ttk.Label(self.root, text="Språk").pack(anchor="w", padx=20, pady=(8, 0))
+        ttk.Label(self.root, text="Språk (ISO 639-1)").pack(anchor="w", padx=20, pady=(8, 0))
         self._lang_var = tk.StringVar(value=self.cfg.get("language", "sv"))
         ttk.Entry(self.root, textvariable=self._lang_var, width=10).pack(anchor="w", **pad)
-        ttk.Label(self.root, text="ISO 639-1 kod: sv, en, es, fr, de, hi…",
+        ttk.Label(self.root, text="sv, en, es, fr, de, hi…",
                   style="Sub.TLabel").pack(anchor="w", padx=20, pady=(0, 4))
+
+        # Model tier
+        ttk.Label(self.root, text="Modell-tier").pack(anchor="w", padx=20, pady=(8, 0))
+        self._tier_var = tk.StringVar(value=self.cfg.get("model_tier", "normal"))
+        ttk.Combobox(self.root, textvariable=self._tier_var,
+                     values=["compact", "normal", "advanced"],
+                     state="readonly", width=18).pack(anchor="w", **pad)
+        ttk.Label(self.root, text="compact=tiny/base (snabb), normal=small (balans), advanced=medium/large (bäst)",
+                  style="Sub.TLabel", wraplength=400).pack(anchor="w", padx=20, pady=(0, 4))
+
+        # CUDA
+        self._cuda_var = tk.BooleanVar(value=self.cfg.get("use_cuda", True))
+        ttk.Checkbutton(
+            self.root,
+            text="Använd GPU/CUDA om tillgänglig (rekommenderas)",
+            variable=self._cuda_var,
+        ).pack(anchor="w", padx=20, pady=(8, 2))
+        ttk.Label(self.root, text="Aktiverar snabbare transkribering med NVIDIA GPU. Kräver CUDA-drivers.",
+                  style="Sub.TLabel", wraplength=400).pack(anchor="w", padx=20, pady=(0, 8))
 
         # Checkboxes
         self._filler_var = tk.BooleanVar(value=self.cfg.get("filter_fillers", False))
@@ -468,8 +478,9 @@ class SettingsWindow:
 
     def _save(self):
         self.cfg["hotkey"] = self._hotkey_var.get().strip()
-        self.cfg["model_size"] = self._model_var.get()
         self.cfg["language"] = self._lang_var.get().strip()
+        self.cfg["model_tier"] = self._tier_var.get()
+        self.cfg["use_cuda"] = self._cuda_var.get()
         self.cfg["filter_fillers"] = self._filler_var.get()
         self.cfg["auto_punctuate"] = self._punct_var.get()
         if self.on_save:

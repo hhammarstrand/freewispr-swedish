@@ -16,6 +16,13 @@ KBLAB_MODELS = {
     "large": "KBLab/kb-whisper-large",
 }
 
+# Model tiers - select best model based on hardware
+MODEL_TIERS = {
+    "compact": "tiny",     # CPU: fast, lower quality
+    "normal": "small",     # CPU: balanced
+    "advanced": "medium",  # GPU: best quality
+}
+
 # Common filler words / phrases to strip when filter_fillers=True (English)
 _FILLERS_EN = re.compile(
     r'\b(um+|uh+|er+|ah+|hmm+|mhm|you know|i mean|'
@@ -42,30 +49,73 @@ def _punctuate(text: str) -> str:
     return text
 
 
-def _get_device() -> tuple:
-    """Check if CUDA (GPU) is available, return (device, compute_type)."""
+def _check_cuda() -> bool:
+    """Check if CUDA (GPU) is available."""
     try:
         import torch
-        if torch.cuda.is_available():
-            return ("cuda", "float16")
+        return torch.cuda.is_available()
     except ImportError:
-        pass
-    return ("cpu", "int8")
+        return False
+
+
+def _get_device_and_compute(use_cuda: bool) -> tuple:
+    """
+    Determine device and compute type based on CUDA setting.
+    Returns (device, compute_type, cuda_available).
+    """
+    cuda_available = _check_cuda()
+    
+    if use_cuda and cuda_available:
+        return ("cuda", "float16", True)
+    elif use_cuda and not cuda_available:
+        print("CUDA begärt men ingen GPU hittades. Använder CPU.", flush=True)
+        return ("cpu", "int8", False)
+    else:
+        return ("cpu", "int8", False)
+
+
+def _select_model(model_tier: str, use_cuda: bool) -> str:
+    """
+    Select best model based on tier and CUDA availability.
+    CPU users get smaller models for speed.
+    GPU users get larger models for better quality.
+    """
+    base_model = MODEL_TIERS.get(model_tier, "small")
+    
+    if use_cuda and _check_cuda():
+        # GPU available - use larger models
+        if model_tier == "compact":
+            return "base"  # Upgrade from tiny
+        elif model_tier == "normal":
+            return "small"  # Keep normal
+        elif model_tier == "advanced":
+            return "large"  # GPU can handle large
+    else:
+        # CPU - use smaller models for speed
+        if model_tier == "advanced":
+            return "small"  # Downgrade from large for CPU
+        return base_model
 
 
 class Transcriber:
     def __init__(self, model_size: str = "small", language: str = "sv",
-                 filter_fillers: bool = False, auto_punctuate: bool = True):
+                 filter_fillers: bool = False, auto_punctuate: bool = True,
+                 use_cuda: bool = True, model_tier: str = "normal"):
         MODEL_DIR.mkdir(parents=True, exist_ok=True)
         self.language = language
         self.filter_fillers = filter_fillers
         self.auto_punctuate = auto_punctuate
         
-        # Use KBLab Swedish model if available, otherwise use standard model
-        model_name = KBLAB_MODELS.get(model_size, model_size)
-        device, compute_type = _get_device()
+        # Determine actual model to use based on tier and CUDA
+        actual_model = _select_model(model_tier, use_cuda)
+        device, compute_type, cuda_used = _get_device_and_compute(use_cuda)
         
-        print(f"Laddar Whisper '{model_size}' ({model_name}) på {device}...", flush=True)
+        model_name = KBLAB_MODELS.get(actual_model, actual_model)
+        
+        print(f"Laddar Whisper '{actual_model}' ({model_name}) på {device}...", flush=True)
+        if device == "cuda":
+            print("GPU-detektion: Aktiv", flush=True)
+        
         self.model = WhisperModel(
             model_name,
             device=device,
