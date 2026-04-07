@@ -6,8 +6,8 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULTS = {
     "hotkey": "ctrl+space",
-    "model_size": "base",
-    "language": "en",
+    "model_size": "small",
+    "language": "sv",
     "filter_fillers": False,
     "auto_punctuate": True,
 }

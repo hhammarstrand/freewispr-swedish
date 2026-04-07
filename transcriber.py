@@ -7,12 +7,28 @@ import corrections as corr_module
 
 MODEL_DIR = Path.home() / ".freewispr" / "models"
 
-# Common filler words / phrases to strip when filter_fillers=True
-_FILLERS = re.compile(
+# KBLab model mapping for Swedish Whisper
+KBLAB_MODELS = {
+    "tiny": "KBLab/kb-whisper-tiny",
+    "base": "KBLab/kb-whisper-base",
+    "small": "KBLab/kb-whisper-small",
+    "medium": "KBLab/kb-whisper-medium",
+    "large": "KBLab/kb-whisper-large",
+}
+
+# Common filler words / phrases to strip when filter_fillers=True (English)
+_FILLERS_EN = re.compile(
     r'\b(um+|uh+|er+|ah+|hmm+|mhm|you know|i mean|'
     r'so um|so uh|well uh|basically|literally|right\?|okay so|'
     r'kind of|sort of)\b[,.]?',
     re.IGNORECASE,
+)
+
+# Swedish filler words / phrases
+_FILLERS_SV = re.compile(
+    r'\b(eh|em|öh|öhm|äh|ahm|liksom|typ|ba|bara|alltså|'
+    r'liknande|sådär|kanske|ju|nog|väl|mm|mhm|aa|såhär)\b[,.]?',
+    re.IGNORECASE | re.UNICODE,
 )
 
 
@@ -27,14 +43,17 @@ def _punctuate(text: str) -> str:
 
 
 class Transcriber:
-    def __init__(self, model_size: str = "base", language: str = "en",
+    def __init__(self, model_size: str = "small", language: str = "sv",
                  filter_fillers: bool = False, auto_punctuate: bool = True):
         MODEL_DIR.mkdir(parents=True, exist_ok=True)
         self.language = language
         self.filter_fillers = filter_fillers
         self.auto_punctuate = auto_punctuate
+        
+        # Use KBLab Swedish model if available, otherwise use standard model
+        model_name = KBLAB_MODELS.get(model_size, model_size)
         self.model = WhisperModel(
-            model_size,
+            model_name,
             device="cpu",
             compute_type="int8",
             download_root=str(MODEL_DIR),
@@ -43,7 +62,11 @@ class Transcriber:
     def _clean(self, text: str) -> str:
         if not self.filter_fillers:
             return text.strip()
-        cleaned = _FILLERS.sub("", text)
+        # Use Swedish fillers if language is Swedish, otherwise English
+        if self.language == "sv":
+            cleaned = _FILLERS_SV.sub("", text)
+        else:
+            cleaned = _FILLERS_EN.sub("", text)
         cleaned = re.sub(r"\s{2,}", " ", cleaned)
         return cleaned.strip(" ,.")
 
