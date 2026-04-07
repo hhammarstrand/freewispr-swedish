@@ -6,12 +6,11 @@ CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULTS = {
     "hotkey": "ctrl+space",
-    "model_size": "small",
+    "model_size": "small",     # tiny/base/small/medium/large
     "language": "sv",
     "filter_fillers": False,
     "auto_punctuate": True,
-    "use_cuda": True,        # True = auto-detect, False = force CPU
-    "model_tier": "normal",  # compact/normal/advanced
+    "use_cuda": True,         # True = auto-detect GPU, False = force CPU
 }
 
 

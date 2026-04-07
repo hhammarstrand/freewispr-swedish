@@ -64,7 +64,6 @@ def _load_app():
         filter_fillers=_config.get("filter_fillers", False),
         auto_punctuate=_config.get("auto_punctuate", True),
         use_cuda=_config.get("use_cuda", True),
-        model_tier=_config.get("model_tier", "normal"),
     )
     print("Modell laddad! Appen är redo.", flush=True)
 

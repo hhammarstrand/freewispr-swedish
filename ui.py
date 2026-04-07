@@ -440,13 +440,13 @@ class SettingsWindow:
         ttk.Label(self.root, text="sv, en, es, fr, de, hi…",
                   style="Sub.TLabel").pack(anchor="w", padx=20, pady=(0, 4))
 
-        # Model tier
-        ttk.Label(self.root, text="Modell-tier").pack(anchor="w", padx=20, pady=(8, 0))
-        self._tier_var = tk.StringVar(value=self.cfg.get("model_tier", "normal"))
-        ttk.Combobox(self.root, textvariable=self._tier_var,
-                     values=["compact", "normal", "advanced"],
+        # Model
+        ttk.Label(self.root, text="Modell").pack(anchor="w", padx=20, pady=(8, 0))
+        self._model_var = tk.StringVar(value=self.cfg.get("model_size", "small"))
+        ttk.Combobox(self.root, textvariable=self._model_var,
+                     values=["tiny", "base", "small", "medium", "large"],
                      state="readonly", width=18).pack(anchor="w", **pad)
-        ttk.Label(self.root, text="compact=tiny/base (snabb), normal=small (balans), advanced=medium/large (bäst)",
+        ttk.Label(self.root, text="tiny=~40MB, base=~150MB, small=~500MB, medium=~1.5GB, large=~3GB",
                   style="Sub.TLabel", wraplength=400).pack(anchor="w", padx=20, pady=(0, 4))
 
         # CUDA
@@ -479,7 +479,7 @@ class SettingsWindow:
     def _save(self):
         self.cfg["hotkey"] = self._hotkey_var.get().strip()
         self.cfg["language"] = self._lang_var.get().strip()
-        self.cfg["model_tier"] = self._tier_var.get()
+        self.cfg["model_size"] = self._model_var.get()
         self.cfg["use_cuda"] = self._cuda_var.get()
         self.cfg["filter_fillers"] = self._filler_var.get()
         self.cfg["auto_punctuate"] = self._punct_var.get()
