@@ -1,4 +1,4 @@
-# FreeWispr SV
+# freewispr-swedish
 
 **Svensk speech-to-text för Windows.**  
 Diktera var som helst. 100% lokalt. Ingen molnanslutning. Ingen prenumeration.
@@ -9,9 +9,9 @@ Diktera var som helst. 100% lokalt. Ingen molnanslutning. Ingen prenumeration.
 
 ---
 
-## Vad är FreeWispr SV?
+## Vad är freewispr-swedish?
 
-FreeWispr SV är en modifierad version av freewispr optimerad för **svenska**. Istället för OpenAI:s Whisper-modeller använder vi **KBLab:s svenska Whisper-modeller** som ger upp till **47% lägre WER** (Word Error Rate) på svenska.
+freewispr-swedish är en modifierad version av freewispr optimerad för **svenska**. Istället för OpenAI:s Whisper-modeller använder vi **KBLab:s svenska Whisper-modeller** som ger upp till **47% lägre WER** (Word Error Rate) på svenska.
 
 Standardmodellen är `KBLab/kb-whisper-small` — mindre än OpenAI:s `whisper-small` men med **bättre precision på svenska**.
 
@@ -27,6 +27,7 @@ Standardmodellen är `KBLab/kb-whisper-small` — mindre än OpenAI:s `whisper-s
 - **Starta med Windows** — enkel toggle i menyn
 - **Systemfack** — lever diskret i bakgrunden
 - **Helt offline** — efter första nedladdningen av modellen
+- **GPU-stöd** — automatisk CUDA-detektion om GPU finns
 
 ---
 
@@ -34,12 +35,12 @@ Standardmodellen är `KBLab/kb-whisper-small` — mindre än OpenAI:s `whisper-s
 
 ### Ladda ner (rekommenderas)
 
-Ladda ner senaste `freewispr-sv.exe` från [**Releases**](https://github.com/hhammarstrand/freewispr/releases).
+Ladda ner senaste `freewispr-swedish.exe` från [**Releases**](https://github.com/hhammarstrand/freewispr-swedish/releases).
 
 **Krav:** Windows 10 eller Windows 11
 
 ```
-1. Ladda ner freewispr-sv.exe
+1. Ladda ner freewispr-swedish.exe
 2. Dubbelklicka för att köra — ingen installation behövs
 3. En lila mikrofon-ikon visas i systemfacket
 4. Håll Ctrl+Space och prata. Släpp för att klistra in.
@@ -55,8 +56,8 @@ Ladda ner senaste `freewispr-sv.exe` från [**Releases**](https://github.com/hha
 
 ```bash
 # Klona repot
-git clone https://github.com/hhammarstrand/freewispr.git
-cd freewispr
+git clone https://github.com/hhammarstrand/freewispr-swedish.git
+cd freewispr-swedish
 
 # Installera dependencies
 pip install -r requirements.txt
@@ -72,7 +73,7 @@ build.bat
 
 ## Modeller
 
-FreeWispr SV använder [KBLab:s Whisper-modeller](https://huggingface.co/KBLab) tränade på över 50 000 timmar svenskt tal.
+freewispr-swedish använder [KBLab:s Whisper-modeller](https://huggingface.co/KBLab) tränade på över 50 000 timmar svenskt tal.
 
 | Modell | WER (svenska) | Storlek | Jämförelse OpenAI |
 |--------|---------------|---------|-------------------|
@@ -88,14 +89,14 @@ FreeWispr SV använder [KBLab:s Whisper-modeller](https://huggingface.co/KBLab) 
 ## Teknisk arkitektur
 
 ```
-freewispr/
+freewispr-swedish/
 ├── main.py          # Entry point: systemfack, threading, applifecycle
-├── transcriber.py   # KB-Whisper + filler-filtrering
+├── transcriber.py   # KB-Whisper + CUDA-stöd + filler-filtrering
 ├── dictation.py     # Dikteringslogik: tangent → spela in → transkribera → klistra
 ├── audio.py         # Mikrofoninspelning (sounddevice, 16kHz)
 ├── paste.py         # Urklipp via pyperclip + pyautogui
 ├── ui.py            # Tkinter: flytande indikator, inställningar
-├── config.py        # JSON konfiguration (~/.freewispr/config.json)
+├── config.py        # JSON konfiguration (~/.freewispr-swedish/config.json)
 ├── lang/
 │   └── sv.py       # Svenska filler-ord
 ├── build.bat        # PyInstaller bygge (Windows)
@@ -111,6 +112,22 @@ Vid aktivering i inställningar tas följande svenska utfyllnadsord bort:
 ```
 eh, em, öh, öhm, äh, ahm, liksom, typ, ba, bara, alltså,
 liknande, sådär, kanske, ju, nog, väl, mm, mhm, aa, såhär
+```
+
+---
+
+## Uppdatera från originalet
+
+Lägg till upstream remote för att hämta förbättringar från originalprojektet:
+
+```bash
+git remote add upstream https://github.com/x26prakhar/freewispr.git
+
+# Hämta senaste från upstream
+git fetch upstream
+
+# Slå ihop (merge) till din master
+git merge upstream/master
 ```
 
 ---

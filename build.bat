@@ -2,18 +2,18 @@
 setlocal
 set PYTHON=C:\Users\prakh\AppData\Local\Python\pythoncore-3.14-64\python.exe
 
-echo === freewispr build ===
+echo === freewispr-swedish build ===
 echo.
 
-echo Generating icon...
+echo Genererar ikon...
 "%PYTHON%" make_icon.py
 
 echo.
-echo Building exe...
+echo Bygger exe...
 "%PYTHON%" -m PyInstaller ^
   --onefile ^
   --windowed ^
-  --name freewispr ^
+  --name freewispr-swedish ^
   --icon "assets/icon.ico" ^
   --hidden-import=faster_whisper ^
   --hidden-import=sounddevice ^
@@ -22,9 +22,9 @@ echo Building exe...
   main.py
 
 echo.
-if exist dist\freewispr.exe (
-    echo Build successful! dist\freewispr.exe is ready.
+if exist dist\freewispr-swedish.exe (
+    echo Bygget klart! dist\freewispr-swedish.exe är redo.
 ) else (
-    echo Build FAILED. Check errors above.
+    echo Bygget MISSLYCKADES. Kontrollera felen ovan.
 )
 pause

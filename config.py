@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-CONFIG_DIR = Path.home() / ".freewispr"
+CONFIG_DIR = Path.home() / ".freewispr-swedish"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 
 DEFAULTS = {

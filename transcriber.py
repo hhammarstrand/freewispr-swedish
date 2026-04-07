@@ -5,7 +5,7 @@ from faster_whisper import WhisperModel
 
 import corrections as corr_module
 
-MODEL_DIR = Path.home() / ".freewispr" / "models"
+MODEL_DIR = Path.home() / ".freewispr-swedish" / "models"
 
 # KBLab model mapping for Swedish Whisper
 KBLAB_MODELS = {
@@ -42,6 +42,17 @@ def _punctuate(text: str) -> str:
     return text
 
 
+def _get_device() -> tuple:
+    """Check if CUDA (GPU) is available, return (device, compute_type)."""
+    try:
+        import torch
+        if torch.cuda.is_available():
+            return ("cuda", "float16")
+    except ImportError:
+        pass
+    return ("cpu", "int8")
+
+
 class Transcriber:
     def __init__(self, model_size: str = "small", language: str = "sv",
                  filter_fillers: bool = False, auto_punctuate: bool = True):
@@ -52,10 +63,13 @@ class Transcriber:
         
         # Use KBLab Swedish model if available, otherwise use standard model
         model_name = KBLAB_MODELS.get(model_size, model_size)
+        device, compute_type = _get_device()
+        
+        print(f"Laddar Whisper '{model_size}' ({model_name}) på {device}...", flush=True)
         self.model = WhisperModel(
             model_name,
-            device="cpu",
-            compute_type="int8",
+            device=device,
+            compute_type=compute_type,
             download_root=str(MODEL_DIR),
         )
 

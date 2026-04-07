@@ -1,5 +1,5 @@
 """
-Tkinter-based windows for freewispr.
+Tkinter-based windows for freewispr-swedish.
 - FloatingIndicator : small always-on-top pill (recording / transcribing state)
 - SnippetsWindow    : manage trigger → expansion pairs
 - DictionaryWindow  : manage word corrections (Whisper mistakes)
@@ -162,8 +162,8 @@ class _PairDialog(tk.Toplevel):
 
         btn_row = ttk.Frame(self)
         btn_row.pack(fill="x", padx=20, pady=(8, 16))
-        ttk.Button(btn_row, text="Save", command=self._save).pack(side="left", padx=(0, 8))
-        ttk.Button(btn_row, text="Cancel", command=self.destroy).pack(side="left")
+        ttk.Button(btn_row, text="Spara", command=self._save).pack(side="left", padx=(0, 8))
+        ttk.Button(btn_row, text="Avbryt", command=self.destroy).pack(side="left")
 
         self.wait_window()
 
@@ -171,10 +171,10 @@ class _PairDialog(tk.Toplevel):
         key = self._key_var.get().strip().lower()
         val = self._val.get("1.0", "end-1c").strip()
         if not key:
-            messagebox.showwarning("freewispr", "Trigger / word cannot be empty.", parent=self)
+            messagebox.showwarning("freewispr-swedish", "Trigger/ord kan inte vara tomt.", parent=self)
             return
         if not val:
-            messagebox.showwarning("freewispr", "Expansion / correction cannot be empty.", parent=self)
+            messagebox.showwarning("freewispr-swedish", "Ersättningstext kan inte vara tom.", parent=self)
             return
         if self._on_save:
             self._on_save(key, val)
@@ -187,14 +187,14 @@ class _PairDialog(tk.Toplevel):
 
 class SnippetsWindow:
     """
-    Manage snippet library.
-    Say a trigger word exactly → it gets replaced with the full expansion.
-    E.g. "my address" → "123 Main St, City, State 12345"
+    Hantera snippet-bibliotek.
+    Säg en trigger exakt → den ersätts med fulltext.
+    T.ex. "min adress" → "Exempelvägen 123, 123 45 Staden"
     """
 
     def __init__(self):
         self.root = tk.Toplevel()
-        self.root.title("freewispr — Snippets")
+        self.root.title("freewispr-swedish — Snippets")
         self.root.geometry("640x420")
         self.root.configure(bg=BG)
         _style(self.root)
@@ -209,7 +209,7 @@ class SnippetsWindow:
 
         ttk.Label(
             self.root,
-            text="Say a trigger word exactly while dictating — it expands to the full text.",
+            text="Säg en trigger exakt vid diktering — den expanderar till fulltext.",
             style="Sub.TLabel",
         ).pack(anchor="w", padx=16, pady=(0, 10))
 
@@ -218,7 +218,7 @@ class SnippetsWindow:
         self._tree = ttk.Treeview(self.root, columns=cols, show="headings",
                                   selectmode="browse")
         self._tree.heading("trigger",   text="Trigger")
-        self._tree.heading("expansion", text="Expansion")
+        self._tree.heading("expansion", text="Ersätter med")
         self._tree.column("trigger",   width=160, minwidth=100, stretch=False)
         self._tree.column("expansion", width=420, minwidth=200)
         self._tree.pack(fill="both", expand=True, padx=16, pady=(0, 8))
@@ -229,9 +229,9 @@ class SnippetsWindow:
         # Buttons
         btn_row = ttk.Frame(self.root)
         btn_row.pack(fill="x", padx=16, pady=(0, 16))
-        ttk.Button(btn_row, text="Add",    command=self._add).pack(side="left", padx=(0, 8))
-        ttk.Button(btn_row, text="Edit",   command=self._edit).pack(side="left", padx=(0, 8))
-        ttk.Button(btn_row, text="Delete", command=self._delete,
+        ttk.Button(btn_row, text="Lägg till",    command=self._add).pack(side="left", padx=(0, 8))
+        ttk.Button(btn_row, text="Redigera",   command=self._edit).pack(side="left", padx=(0, 8))
+        ttk.Button(btn_row, text="Ta bort", command=self._delete,
                    style="Danger.TButton").pack(side="left")
 
     def _load(self):
@@ -244,24 +244,24 @@ class SnippetsWindow:
     def _add(self):
         _PairDialog(
             self.root,
-            title="Add Snippet",
-            key_label='Trigger (e.g. "my address", "sig", "thanks"):',
-            val_label="Expands to:",
+            title="Lägg till Snippet",
+            key_label='Trigger (t.ex. "min adress", "mvh", "tack"):',
+            val_label="Ersätts med:",
             on_save=self._save_pair,
         )
 
     def _edit(self):
         sel = self._tree.selection()
         if not sel:
-            messagebox.showinfo("freewispr", "Select a snippet to edit.", parent=self.root)
+            messagebox.showinfo("freewispr-swedish", "Välj en snippet att redigera.", parent=self.root)
             return
         trigger = self._tree.item(sel[0])["values"][0]
         snips = snippet_module.load()
         _PairDialog(
             self.root,
-            title="Edit Snippet",
+            title="Redigera Snippet",
             key_label='Trigger:',
-            val_label="Expands to:",
+            val_label="Ersätts med:",
             key=trigger,
             val=snips.get(trigger, ""),
             on_save=lambda new_key, new_val, old=trigger: self._update_pair(old, new_key, new_val),
@@ -270,10 +270,10 @@ class SnippetsWindow:
     def _delete(self):
         sel = self._tree.selection()
         if not sel:
-            messagebox.showinfo("freewispr", "Select a snippet to delete.", parent=self.root)
+            messagebox.showinfo("freewispr-swedish", "Välj en snippet att ta bort.", parent=self.root)
             return
         trigger = self._tree.item(sel[0])["values"][0]
-        if not messagebox.askyesno("freewispr", f'Delete snippet "{trigger}"?', parent=self.root):
+        if not messagebox.askyesno("freewispr-swedish", f'Ta bort snippet "{trigger}"?', parent=self.root):
             return
         snips = snippet_module.load()
         snips.pop(trigger, None)
@@ -300,14 +300,14 @@ class SnippetsWindow:
 
 class DictionaryWindow:
     """
-    Manage personal word corrections.
-    Whisper output is scanned and matching words are replaced automatically.
-    E.g. "wisp" → "freewispr",  "pra car" → "Prakhar"
+    Hantera personliga ordkorrigeringar.
+    Whispers output skannas och matchande ord ersätts automatiskt.
+    T.ex. "fritspr" → "freewispr-swedish", "prak" → "Prakhar"
     """
 
     def __init__(self):
         self.root = tk.Toplevel()
-        self.root.title("freewispr — Personal Dictionary")
+        self.root.title("freewispr-swedish — Personlig ordlista")
         self.root.geometry("580x400")
         self.root.configure(bg=BG)
         _style(self.root)
@@ -317,19 +317,19 @@ class DictionaryWindow:
     def _build(self):
         hdr = tk.Frame(self.root, bg=BG)
         hdr.pack(fill="x", padx=16, pady=(16, 4))
-        ttk.Label(hdr, text="Personal Dictionary", font=("Segoe UI", 13, "bold")).pack(side="left")
+        ttk.Label(hdr, text="Personlig ordlista", font=("Segoe UI", 13, "bold")).pack(side="left")
 
         ttk.Label(
             self.root,
-            text="Words Whisper gets wrong are automatically replaced after transcription.",
+            text="Ord som Whisper missförstår ersätts automatiskt efter transkribering.",
             style="Sub.TLabel",
         ).pack(anchor="w", padx=16, pady=(0, 10))
 
         cols = ("wrong", "right")
         self._tree = ttk.Treeview(self.root, columns=cols, show="headings",
                                   selectmode="browse")
-        self._tree.heading("wrong", text="Whisper hears")
-        self._tree.heading("right", text="Replace with")
+        self._tree.heading("wrong", text="Whisper hör")
+        self._tree.heading("right", text="Ersätt med")
         self._tree.column("wrong", width=230, minwidth=100, stretch=False)
         self._tree.column("right", width=310, minwidth=150)
         self._tree.pack(fill="both", expand=True, padx=16, pady=(0, 8))
@@ -339,9 +339,9 @@ class DictionaryWindow:
 
         btn_row = ttk.Frame(self.root)
         btn_row.pack(fill="x", padx=16, pady=(0, 16))
-        ttk.Button(btn_row, text="Add",    command=self._add).pack(side="left", padx=(0, 8))
-        ttk.Button(btn_row, text="Edit",   command=self._edit).pack(side="left", padx=(0, 8))
-        ttk.Button(btn_row, text="Delete", command=self._delete,
+        ttk.Button(btn_row, text="Lägg till",    command=self._add).pack(side="left", padx=(0, 8))
+        ttk.Button(btn_row, text="Redigera",   command=self._edit).pack(side="left", padx=(0, 8))
+        ttk.Button(btn_row, text="Ta bort", command=self._delete,
                    style="Danger.TButton").pack(side="left")
 
     def _load(self):
@@ -353,24 +353,24 @@ class DictionaryWindow:
     def _add(self):
         _PairDialog(
             self.root,
-            title="Add Correction",
-            key_label="Whisper hears (what it gets wrong):",
-            val_label="Replace with (correct spelling / name):",
+            title="Lägg till korrigering",
+            key_label="Whisper hör (det som blir fel):",
+            val_label="Ersätt med (korrekt stavning/namn):",
             on_save=self._save_pair,
         )
 
     def _edit(self):
         sel = self._tree.selection()
         if not sel:
-            messagebox.showinfo("freewispr", "Select an entry to edit.", parent=self.root)
+            messagebox.showinfo("freewispr-swedish", "Välj ett ord att redigera.", parent=self.root)
             return
         wrong = self._tree.item(sel[0])["values"][0]
         corrs = corr_module.load()
         _PairDialog(
             self.root,
-            title="Edit Correction",
-            key_label="Whisper hears:",
-            val_label="Replace with:",
+            title="Redigera korrigering",
+            key_label="Whisper hör:",
+            val_label="Ersätt med:",
             key=wrong,
             val=corrs.get(wrong, ""),
             on_save=lambda nk, nv, old=wrong: self._update_pair(old, nk, nv),
@@ -379,10 +379,10 @@ class DictionaryWindow:
     def _delete(self):
         sel = self._tree.selection()
         if not sel:
-            messagebox.showinfo("freewispr", "Select an entry to delete.", parent=self.root)
+            messagebox.showinfo("freewispr-swedish", "Välj ett ord att ta bort.", parent=self.root)
             return
         wrong = self._tree.item(sel[0])["values"][0]
-        if not messagebox.askyesno("freewispr", f'Delete correction for "{wrong}"?', parent=self.root):
+        if not messagebox.askyesno("freewispr-swedish", f'Ta bort korrigering för "{wrong}"?', parent=self.root):
             return
         corrs = corr_module.load()
         corrs.pop(wrong, None)
@@ -413,8 +413,8 @@ class SettingsWindow:
         self.on_save = on_save
 
         self.root = tk.Toplevel()
-        self.root.title("freewispr — Settings")
-        self.root.geometry("440x400")
+        self.root.title("freewispr-swedish — Inställningar")
+        self.root.geometry("440x440")
         self.root.resizable(False, False)
         self.root.configure(bg=BG)
         _style(self.root)
@@ -424,47 +424,47 @@ class SettingsWindow:
     def _build(self):
         pad = {"padx": 20, "pady": 6}
 
-        ttk.Label(self.root, text="Settings", font=("Segoe UI", 13, "bold")).pack(anchor="w", **pad)
+        ttk.Label(self.root, text="Inställningar", font=("Segoe UI", 13, "bold")).pack(anchor="w", **pad)
 
         # Hotkey
-        ttk.Label(self.root, text="Dictation hotkey").pack(anchor="w", padx=20, pady=(12, 0))
+        ttk.Label(self.root, text="Dikteringstangent").pack(anchor="w", padx=20, pady=(12, 0))
         self._hotkey_var = tk.StringVar(value=self.cfg.get("hotkey", "ctrl+space"))
         ttk.Entry(self.root, textvariable=self._hotkey_var, width=30).pack(anchor="w", **pad)
-        ttk.Label(self.root, text="e.g. ctrl+space, right ctrl, F9, alt+shift",
+        ttk.Label(self.root, text="t.ex. ctrl+space, right ctrl, F9, alt+shift",
                   style="Sub.TLabel").pack(anchor="w", padx=20, pady=(0, 4))
 
         # Model size
-        ttk.Label(self.root, text="Whisper model").pack(anchor="w", padx=20, pady=(8, 0))
-        self._model_var = tk.StringVar(value=self.cfg.get("model_size", "base"))
+        ttk.Label(self.root, text="Whisper-modell").pack(anchor="w", padx=20, pady=(8, 0))
+        self._model_var = tk.StringVar(value=self.cfg.get("model_size", "small"))
         ttk.Combobox(self.root, textvariable=self._model_var,
-                     values=["tiny", "base", "small"],
+                     values=["tiny", "base", "small", "medium", "large"],
                      state="readonly", width=20).pack(anchor="w", **pad)
-        ttk.Label(self.root, text="tiny=fastest (~40MB)  base=balanced (~150MB)  small=best (~500MB)",
+        ttk.Label(self.root, text="tiny=snabbast (~40MB)  base=balanserad (~150MB)  small=bäst (~500MB)",
                   style="Sub.TLabel").pack(anchor="w", padx=20, pady=(0, 4))
 
         # Language
-        ttk.Label(self.root, text="Language").pack(anchor="w", padx=20, pady=(8, 0))
-        self._lang_var = tk.StringVar(value=self.cfg.get("language", "en"))
+        ttk.Label(self.root, text="Språk").pack(anchor="w", padx=20, pady=(8, 0))
+        self._lang_var = tk.StringVar(value=self.cfg.get("language", "sv"))
         ttk.Entry(self.root, textvariable=self._lang_var, width=10).pack(anchor="w", **pad)
-        ttk.Label(self.root, text="ISO 639-1 code: en, es, fr, de, hi…",
+        ttk.Label(self.root, text="ISO 639-1 kod: sv, en, es, fr, de, hi…",
                   style="Sub.TLabel").pack(anchor="w", padx=20, pady=(0, 4))
 
         # Checkboxes
         self._filler_var = tk.BooleanVar(value=self.cfg.get("filter_fillers", False))
         ttk.Checkbutton(
             self.root,
-            text='Remove filler words ("um", "uh", "you know"…)',
+            text='Ta bort utfyllnadsord ("eh", "mm", "liksom"…)',
             variable=self._filler_var,
         ).pack(anchor="w", padx=20, pady=(12, 2))
 
         self._punct_var = tk.BooleanVar(value=self.cfg.get("auto_punctuate", True))
         ttk.Checkbutton(
             self.root,
-            text="Auto-punctuate (capitalize + add period if missing)",
+            text="Auto-punktuera (VERSALER + lägg till punkt om saknas)",
             variable=self._punct_var,
         ).pack(anchor="w", padx=20, pady=(2, 12))
 
-        ttk.Button(self.root, text="Save", command=self._save).pack(anchor="e", padx=20, pady=8)
+        ttk.Button(self.root, text="Spara", command=self._save).pack(anchor="e", padx=20, pady=8)
 
     def _save(self):
         self.cfg["hotkey"] = self._hotkey_var.get().strip()

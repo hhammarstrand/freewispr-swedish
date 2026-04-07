@@ -1,5 +1,5 @@
 """
-freewispr — Windows speech-to-text
+freewispr-swedish — Svensk speech-to-text för Windows
 Entry point: system tray icon + dictation mode.
 """
 import sys
@@ -56,16 +56,15 @@ def _load_app():
 
     _config = cfg_module.load()
 
-    model_size = _config.get("model_size", "base")
-    print(f"Loading Whisper '{model_size}' model...", flush=True)
-    _set_tray_status("Loading model…")
+    model_size = _config.get("model_size", "small")
+    _set_tray_status("Laddar modell...")
     _transcriber = Transcriber(
         model_size=model_size,
-        language=_config.get("language", "en"),
+        language=_config.get("language", "sv"),
         filter_fillers=_config.get("filter_fillers", False),
         auto_punctuate=_config.get("auto_punctuate", True),
     )
-    print("Model loaded! App is ready.", flush=True)
+    print("Modell laddad! Appen är redo.", flush=True)
 
     _dictation = DictationMode(
         _transcriber,
@@ -74,7 +73,7 @@ def _load_app():
         indicator=_indicator,
     )
     _dictation.start()
-    _set_tray_status(f"Ready — hold {_config.get('hotkey','ctrl+space').upper()} to speak")
+    _set_tray_status(f"Klar — håll {_config.get('hotkey','ctrl+space').upper()} för att prata")
 
     # Auto-enable startup on first launch (when running as exe)
     import sys
@@ -92,7 +91,7 @@ def _load_app():
 
 def _set_tray_status(msg: str):
     if _tray_icon:
-        _tray_icon.title = f"freewispr — {msg}"
+        _tray_icon.title = f"freewispr-swedish — {msg}"
     if _status_var and _tk_root:
         _tk_root.after(0, lambda: _status_var.set(msg))
 
@@ -140,7 +139,7 @@ def _apply_settings(new_cfg: dict):
         indicator=_indicator,
     )
     _dictation.start()
-    _set_tray_status(f"Settings saved — hold {_config.get('hotkey','ctrl+space').upper()} to speak")
+    _set_tray_status(f"Inställningar sparade — håll {_config.get('hotkey','ctrl+space').upper()} för att prata")
 
 
 def _startup_exe_path() -> str:
@@ -151,7 +150,7 @@ def _startup_exe_path() -> str:
         return f'"{sys.executable}"'
     else:
         # Running as a script — use the VBS launcher
-        vbs = r"C:\Users\prakh\AI Experiments\freewispr\launch.vbs"
+        vbs = r"C:\Users\prakh\AI Experiments\freewispr-swedish\launch.vbs"
         return f'wscript.exe "{vbs}"'
 
 
@@ -160,7 +159,7 @@ def _is_startup_enabled() -> bool:
     try:
         key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
                              r"Software\Microsoft\Windows\CurrentVersion\Run")
-        winreg.QueryValueEx(key, "freewispr")
+        winreg.QueryValueEx(key, "freewispr-swedish")
         winreg.CloseKey(key)
         return True
     except Exception:
@@ -172,7 +171,7 @@ def _enable_startup():
     key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
                          r"Software\Microsoft\Windows\CurrentVersion\Run",
                          0, winreg.KEY_SET_VALUE)
-    winreg.SetValueEx(key, "freewispr", 0, winreg.REG_SZ, _startup_exe_path())
+    winreg.SetValueEx(key, "freewispr-swedish", 0, winreg.REG_SZ, _startup_exe_path())
     winreg.CloseKey(key)
 
 
@@ -182,11 +181,11 @@ def _toggle_startup(_=None):
                          r"Software\Microsoft\Windows\CurrentVersion\Run",
                          0, winreg.KEY_SET_VALUE)
     if _is_startup_enabled():
-        winreg.DeleteValue(key, "freewispr")
-        _set_tray_status("Removed from startup")
+        winreg.DeleteValue(key, "freewispr-swedish")
+        _set_tray_status("Borttagen från uppstart")
     else:
-        winreg.SetValueEx(key, "freewispr", 0, winreg.REG_SZ, _startup_exe_path())
-        _set_tray_status("Will start with Windows ✓")
+        winreg.SetValueEx(key, "freewispr-swedish", 0, winreg.REG_SZ, _startup_exe_path())
+        _set_tray_status("Startar med Windows ✓")
     winreg.CloseKey(key)
     _rebuild_menu()
 
@@ -197,14 +196,14 @@ def _rebuild_menu():
 
 
 def _build_menu():
-    startup_label = "✓ Start with Windows" if _is_startup_enabled() else "Start with Windows"
+    startup_label = "✓ Starta med Windows" if _is_startup_enabled() else "Starta med Windows"
     return pystray.Menu(
         pystray.MenuItem("Snippets", _open_snippets),
-        pystray.MenuItem("Personal Dictionary", _open_dictionary),
-        pystray.MenuItem("Settings", _open_settings),
+        pystray.MenuItem("Personlig ordlista", _open_dictionary),
+        pystray.MenuItem("Inställningar", _open_settings),
         pystray.MenuItem(startup_label, _toggle_startup),
         pystray.Menu.SEPARATOR,
-        pystray.MenuItem("Quit freewispr", _quit),
+        pystray.MenuItem("Avsluta freewispr-swedish", _quit),
     )
 
 
@@ -231,15 +230,15 @@ def main():
     _tk_root.withdraw()
     _style(_tk_root)
 
-    _status_var = tk.StringVar(value="Starting…")
+    _status_var = tk.StringVar(value="Startar...")
     _indicator = FloatingIndicator(_tk_root)
 
     # Build tray icon
     menu = _build_menu()
     _tray_icon = pystray.Icon(
-        "freewispr",
+        "freewispr-swedish",
         _make_icon(),
-        "freewispr — Starting…",
+        "freewispr-swedish — Startar...",
         menu,
     )
 
