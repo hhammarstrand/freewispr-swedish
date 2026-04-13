@@ -3,16 +3,44 @@ freewispr-swedish — Svensk speech-to-text för Windows
 Entry point: system tray icon + dictation mode.
 """
 import sys
-import threading
-import tkinter as tk
+import logging
+from pathlib import Path
 
-from PIL import Image, ImageDraw
-import pystray
+# --------------------------------------------------------------------------- #
+#  Logging — sätts upp FÖRST, innan alla andra imports
+# --------------------------------------------------------------------------- #
 
-import config as cfg_module
-from transcriber import Transcriber
-from dictation import DictationMode
-from ui import SettingsWindow, SnippetsWindow, DictionaryWindow, FloatingIndicator, _style
+_LOG_DIR = Path.home() / ".freewispr-swedish"
+_LOG_DIR.mkdir(parents=True, exist_ok=True)
+_LOG_FILE = _LOG_DIR / "freewispr.log"
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%H:%M:%S",
+    handlers=[
+        logging.FileHandler(_LOG_FILE, encoding="utf-8"),
+        logging.StreamHandler(sys.stdout),
+    ],
+)
+log = logging.getLogger("freewispr")
+log.info("=== freewispr-swedish startar ===")
+
+try:
+    import threading
+    import tkinter as tk
+
+    from PIL import Image, ImageDraw
+    import pystray
+
+    import config as cfg_module
+    from transcriber import Transcriber
+    from dictation import DictationMode
+    from ui import SettingsWindow, SnippetsWindow, DictionaryWindow, FloatingIndicator, _style
+    log.info("Alla imports OK")
+except Exception:
+    log.critical("Import kraschade", exc_info=True)
+    sys.exit(1)
 
 # --------------------------------------------------------------------------- #
 #  Globals                                                                     #
@@ -58,26 +86,41 @@ def _load_app():
 
     model_size = _config.get("model_size", "small")
     _set_tray_status("Laddar modell...")
-    _transcriber = Transcriber(
-        model_size=model_size,
-        language=_config.get("language", "sv"),
-        filter_fillers=_config.get("filter_fillers", False),
-        auto_punctuate=_config.get("auto_punctuate", True),
-        use_cuda=_config.get("use_cuda", True),
-    )
-    print("Modell laddad! Appen är redo.", flush=True)
+    try:
+        _transcriber = Transcriber(
+            model_size=model_size,
+            use_cuda=_config.get("use_cuda", True),
+        )
+    except Exception as e:
+        log.error("Modellfel (%s): %s", model_size, e, exc_info=True)
+        log.info("Försöker fallback till 'small' med CPU...")
+        _set_tray_status(f"Modellfel — fallback till 'small'")
+        try:
+            _transcriber = Transcriber(
+                model_size="small",
+                use_cuda=False,
+            )
+            # Update config so we don't crash again next time
+            _config["model_size"] = "small"
+            _config["use_cuda"] = False
+            cfg_module.save(_config)
+        except Exception as e2:
+            log.error("Även fallback misslyckades: %s", e2, exc_info=True)
+            _set_tray_status("FEL: Kunde inte ladda någon modell")
+            return
+    log.info("Modell laddad! Appen är redo.")
 
     _dictation = DictationMode(
         _transcriber,
         hotkey=_config.get("hotkey", "ctrl+space"),
         on_status=_set_tray_status,
         indicator=_indicator,
+        mic_device=_config.get("mic_device"),
     )
     _dictation.start()
     _set_tray_status(f"Klar — håll {_config.get('hotkey','ctrl+space').upper()} för att prata")
 
     # Auto-enable startup on first launch (when running as exe)
-    import sys
     if getattr(sys, 'frozen', False) and not _is_startup_enabled():
         try:
             _enable_startup()
@@ -122,15 +165,57 @@ def _show_settings():
 
 def _apply_settings(new_cfg: dict):
     global _config, _dictation, _transcriber
+
+    old_model = _config.get("model_size")
+    old_cuda = _config.get("use_cuda")
+
     _config.update(new_cfg)
     cfg_module.save(_config)
 
-    # Rebuild transcriber if filler/punctuation settings changed
-    if _transcriber:
-        _transcriber.filter_fillers = _config.get("filter_fillers", False)
-        _transcriber.auto_punctuate = _config.get("auto_punctuate", True)
+    new_model = _config.get("model_size", "small")
+    new_cuda = _config.get("use_cuda", True)
 
-    # Restart dictation with new hotkey
+    # Reload transcriber if model or CUDA setting changed
+    if old_model != new_model or old_cuda != new_cuda:
+        _set_tray_status(f"Laddar modell '{new_model}'...")
+        if _indicator:
+            _indicator.show(f"Laddar modell '{new_model}'...", state="transcribe")
+
+        def _reload():
+            global _transcriber, _dictation
+            try:
+                _transcriber = Transcriber(
+                    model_size=new_model,
+                    use_cuda=new_cuda,
+                )
+                log.info("Modell '%s' laddad!", new_model)
+            except Exception as e:
+                log.error("Fel vid modellbyte: %s", e, exc_info=True)
+                _set_tray_status(f"Modellfel — använder tidigare modell")
+                if _indicator:
+                    _indicator.show(f"Modellfel: {e}", state="error")
+                    _indicator.hide(delay_ms=4000)
+                return
+            # Restart dictation with the new transcriber
+            if _dictation:
+                _dictation.stop()
+            _dictation = DictationMode(
+                _transcriber,
+                hotkey=_config.get("hotkey", "ctrl+space"),
+                on_status=_set_tray_status,
+                indicator=_indicator,
+                mic_device=_config.get("mic_device"),
+            )
+            _dictation.start()
+            _set_tray_status(f"Modell '{new_model}' klar — håll {_config.get('hotkey','ctrl+space').upper()}")
+            if _indicator:
+                _indicator.show(f"Modell '{new_model}' klar", state="done")
+                _indicator.hide(delay_ms=2000)
+
+        threading.Thread(target=_reload, daemon=True).start()
+        return
+
+    # Restart dictation with new hotkey / mic
     if _dictation:
         _dictation.stop()
     _dictation = DictationMode(
@@ -138,6 +223,7 @@ def _apply_settings(new_cfg: dict):
         hotkey=_config.get("hotkey", "ctrl+space"),
         on_status=_set_tray_status,
         indicator=_indicator,
+        mic_device=_config.get("mic_device"),
     )
     _dictation.start()
     _set_tray_status(f"Inställningar sparade — håll {_config.get('hotkey','ctrl+space').upper()} för att prata")
@@ -145,14 +231,17 @@ def _apply_settings(new_cfg: dict):
 
 def _startup_exe_path() -> str:
     """Return the command to register for startup."""
-    import sys
+    import os
     if getattr(sys, 'frozen', False):
         # Running as PyInstaller exe — register the exe directly
         return f'"{sys.executable}"'
     else:
-        # Running as a script — use the VBS launcher
-        vbs = r"C:\Users\prakh\AI Experiments\freewispr-swedish\launch.vbs"
-        return f'wscript.exe "{vbs}"'
+        # Running as script — use pythonw to avoid console window
+        script = os.path.abspath(os.path.join(os.path.dirname(__file__), "main.py"))
+        pythonw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+        if not os.path.exists(pythonw):
+            pythonw = sys.executable
+        return f'"{pythonw}" "{script}"'
 
 
 def _is_startup_enabled() -> bool:

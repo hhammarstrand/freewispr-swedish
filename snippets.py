@@ -1,11 +1,11 @@
 """
 Snippet library — trigger words that expand to longer phrases.
-Stored at ~/.freewispr/snippets.json as {"trigger": "expansion", ...}
+Stored at ~/.freewispr-swedish/snippets.json as {"trigger": "expansion", ...}
 """
 import json
 from pathlib import Path
 
-_FILE = Path.home() / ".freewispr" / "snippets.json"
+_FILE = Path.home() / ".freewispr-swedish" / "snippets.json"
 
 
 def load() -> dict[str, str]:

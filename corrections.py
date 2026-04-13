@@ -1,12 +1,12 @@
 """
 Personal dictionary — word corrections applied after transcription.
-Stored at ~/.freewispr/corrections.json as {"wrong": "right", ...}
+Stored at ~/.freewispr-swedish/corrections.json as {"wrong": "right", ...}
 """
 import json
 import re
 from pathlib import Path
 
-_FILE = Path.home() / ".freewispr" / "corrections.json"
+_FILE = Path.home() / ".freewispr-swedish" / "corrections.json"
 
 
 def load() -> dict[str, str]:

@@ -1,18 +1,17 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="sv">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>freewispr — Free speech to text for Windows</title>
-<meta name="description" content="freewispr is a free, local, open-source speech-to-text app for Windows. No cloud. No subscription. Powered by Whisper AI.">
+<title>freewispr-swedish &mdash; Svensk speech-to-text for Windows</title>
+<meta name="description" content="freewispr-swedish ar en gratis, lokal, open-source dikteringsapp for Windows. Optimerad for svenska med KBLab:s Whisper-modeller. Inget moln. Ingen prenumeration.">
 <link rel="icon" type="image/x-icon" href="/favicon.ico">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<meta property="og:title" content="freewispr — Free speech to text for Windows">
-<meta property="og:description" content="Free, local, open-source speech-to-text for Windows. No cloud. No subscription. Powered by Whisper AI.">
+<meta property="og:title" content="freewispr-swedish &mdash; Svensk speech-to-text for Windows">
+<meta property="og:description" content="Gratis, lokal, open-source diktering for Windows. Optimerad for svenska med KBLab Whisper. Inget moln. Ingen prenumeration.">
 <meta property="og:image" content="https://freewispr.vercel.app/og-image.png">
-<meta property="og:url" content="https://freewispr.vercel.app">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://freewispr.vercel.app/og-image.png">
@@ -48,7 +47,7 @@ body {
   min-height: 100vh;
 }
 
-/* ── Floating quote canvas ─────────────────────────────────────── */
+/* Floating quote canvas */
 #quote-canvas {
   position: fixed;
   inset: 0;
@@ -71,7 +70,7 @@ body {
   pointer-events: none;
 }
 
-/* ── Layout ────────────────────────────────────────────────────── */
+/* Layout */
 .wrap {
   position: relative;
   z-index: 1;
@@ -80,7 +79,7 @@ body {
   padding: 0 28px;
 }
 
-/* ── Header nav ────────────────────────────────────────────────── */
+/* Header nav */
 header {
   position: fixed;
   top: 0;
@@ -120,7 +119,7 @@ header {
 
 .header-links a:hover { color: var(--fg); }
 
-/* ── Hero ──────────────────────────────────────────────────────── */
+/* Hero */
 .hero {
   min-height: 100vh;
   display: flex;
@@ -160,7 +159,7 @@ header {
 
 .hero-title {
   font-family: var(--serif);
-  font-size: clamp(4.5rem, 14vw, 8rem);
+  font-size: clamp(3.5rem, 12vw, 6.5rem);
   font-weight: 300;
   letter-spacing: -0.02em;
   line-height: 0.9;
@@ -175,7 +174,7 @@ header {
   font-weight: 300;
   color: var(--fg2);
   line-height: 1.6;
-  max-width: 420px;
+  max-width: 460px;
   margin: 0 auto 44px;
 }
 
@@ -230,7 +229,7 @@ header {
   flex-shrink: 0;
 }
 
-/* ── Sections ──────────────────────────────────────────────────── */
+/* Sections */
 section {
   position: relative;
   z-index: 1;
@@ -263,7 +262,7 @@ section {
   color: var(--fg);
 }
 
-/* ── Features ──────────────────────────────────────────────────── */
+/* Features */
 .features {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -311,7 +310,7 @@ section {
   line-height: 1.6;
 }
 
-/* ── How it works ──────────────────────────────────────────────── */
+/* How it works */
 .steps { display: flex; flex-direction: column; gap: 0; }
 
 .step {
@@ -358,7 +357,41 @@ section {
   color: var(--acc);
 }
 
-/* ── Download ──────────────────────────────────────────────────── */
+/* Models table */
+.models-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.models-table th {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  color: var(--acc);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.models-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--fg2);
+}
+
+.models-table tr.default td {
+  color: var(--fg);
+  font-weight: 500;
+}
+
+.models-table .wer-compare {
+  font-size: 0.78rem;
+  color: var(--fg3);
+}
+
+/* Download */
 .dl-card {
   background: var(--bg2);
   border: 1px solid var(--border);
@@ -415,7 +448,7 @@ section {
   line-height: 1.7;
 }
 
-/* ── Footer ────────────────────────────────────────────────────── */
+/* Footer */
 footer {
   position: relative;
   z-index: 1;
@@ -461,7 +494,7 @@ footer {
 
 .footer-by a:hover { color: var(--acc); }
 
-/* ── Scrollbar ─────────────────────────────────────────────────── */
+/* Scrollbar */
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: var(--bg); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
@@ -474,11 +507,12 @@ footer {
 
 <!-- Header -->
 <header>
-  <a href="/" class="logo">free<em>wispr</em></a>
+  <a href="/" class="logo">free<em>wispr</em>-swedish</a>
   <ul class="header-links">
-    <li><a href="#features">Features</a></li>
-    <li><a href="#download">Download</a></li>
-    <li><a href="https://github.com/x26prakhar/freewispr" target="_blank" rel="noopener">GitHub ↗</a></li>
+    <li><a href="#features">Funktioner</a></li>
+    <li><a href="#models">Modeller</a></li>
+    <li><a href="#download">Ladda ner</a></li>
+    <li><a href="https://github.com/hhammarstrand/freewispr-swedish" target="_blank" rel="noopener">GitHub &#8599;</a></li>
   </ul>
 </header>
 
@@ -493,30 +527,32 @@ footer {
     </svg>
   </div>
 
-  <h1 class="hero-title">free<span>wispr</span></h1>
+  <h1 class="hero-title">free<span>wispr</span><br>swedish</h1>
 
   <p class="hero-sub">
-    Free speech-to-text for Windows.<br>
-    <strong>No cloud. No subscription. No data leaves your PC.</strong>
+    Svensk speech-to-text for Windows.<br>
+    <strong>Inget moln. Ingen prenumeration. Allt stannar pa din dator.</strong>
   </p>
 
-  <a href="https://github.com/x26prakhar/freewispr/releases/latest/download/freewispr.exe" id="download-btn" class="dl-btn">
+  <a href="https://github.com/hhammarstrand/freewispr-swedish/releases" id="download-btn" class="dl-btn">
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
       <polyline points="7 10 12 15 17 10"/>
       <line x1="12" y1="15" x2="12" y2="3"/>
     </svg>
-    Download for Windows
+    Ladda ner for Windows
   </a>
 
   <div class="hero-badges">
     <span>open source</span>
     <span class="dot"></span>
-    <span>runs locally</span>
+    <span>helt lokalt</span>
     <span class="dot"></span>
     <span>Windows 10 / 11</span>
     <span class="dot"></span>
-    <span>powered by Whisper AI</span>
+    <span>KBLab Whisper</span>
+    <span class="dot"></span>
+    <span>GPU-stod</span>
   </div>
 </div>
 
@@ -525,10 +561,9 @@ footer {
 <!-- Features -->
 <section id="features">
   <div class="wrap">
-    <p class="section-eyebrow">What it does</p>
-    <h2 class="section-title">Everything you need to<br><em>speak instead of type.</em></h2>
-    <!-- subtitle -->
-    <p style="font-size:0.9rem;color:var(--fg2);margin-top:-36px;margin-bottom:48px;line-height:1.6;">Dictation, snippets, personal dictionary, auto-punctuation — all running locally, no cloud needed.</p>
+    <p class="section-eyebrow">Funktioner</p>
+    <h2 class="section-title">Allt du behover for att<br><em>prata istallet for att skriva.</em></h2>
+    <p style="font-size:0.9rem;color:var(--fg2);margin-top:-36px;margin-bottom:48px;line-height:1.6;">Diktering, snippets, personlig ordlista, automatisk punktuation &mdash; allt kor lokalt med svenska Whisper-modeller.</p>
     <div class="features">
 
       <div class="feat">
@@ -540,8 +575,8 @@ footer {
             <line x1="8" y1="23" x2="16" y2="23"/>
           </svg>
         </div>
-        <h3>Dictation</h3>
-        <p>Hold Ctrl+Space, speak, release. Transcribed text pastes at your cursor — any app, any text field. A floating pill indicator shows you exactly what's happening.</p>
+        <h3>Diktering</h3>
+        <p>Hall Ctrl+Space, prata, slapp. Texten klistras in vid markoren &mdash; i alla appar, alla textfalt. En flytande indikator visar vad som hander.</p>
       </div>
 
       <div class="feat">
@@ -551,8 +586,8 @@ footer {
             <polyline points="13 2 13 9 20 9"/>
           </svg>
         </div>
-        <h3>Snippet Library</h3>
-        <p>Say a trigger word to paste any phrase instantly. "my address" → your full address. "sig" → your email signature. Add as many as you like.</p>
+        <h3>Snippets</h3>
+        <p>Sag ett triggerord for att klistra in en fras direkt. &ldquo;min adress&rdquo; &#8594; din fulla adress. &ldquo;sig&rdquo; &#8594; din e-postsignatur. Lagg till sa manga du vill.</p>
       </div>
 
       <div class="feat">
@@ -562,8 +597,8 @@ footer {
             <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
           </svg>
         </div>
-        <h3>Personal Dictionary</h3>
-        <p>Whisper mishears names, brands, and technical terms. Add corrections once — "pra car" → "Prakhar", "wisp" → "freewispr" — and they're fixed forever.</p>
+        <h3>Personlig ordlista</h3>
+        <p>Whisper horselfel pa namn och facktermer? Lagg till rattningar en gang och de fixas for alltid.</p>
       </div>
 
       <div class="feat">
@@ -574,8 +609,8 @@ footer {
             <line x1="12" y1="4" x2="12" y2="20"/>
           </svg>
         </div>
-        <h3>Auto-punctuation</h3>
-        <p>Whisper output is automatically capitalized and given a period if missing — no more raw run-on sentences. Toggle it off any time from Settings.</p>
+        <h3>Autopunktuation</h3>
+        <p>Texten far automatiskt stor bokstav och punkt. Inget mer oformaterade lopande meningar. Sla av nar som helst i installningar.</p>
       </div>
 
       <div class="feat">
@@ -585,20 +620,19 @@ footer {
             <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
           </svg>
         </div>
-        <h3>Fully Local</h3>
-        <p>Whisper AI runs on your CPU with INT8 quantization. No account, no API key, no data leaving your PC. Optional filler word removal for cleaner output.</p>
+        <h3>Helt lokalt</h3>
+        <p>Whisper AI kor pa din dator med GPU (float16) eller CPU (int8). Inget konto, ingen API-nyckel, ingen data lamnar din dator.</p>
       </div>
 
       <div class="feat">
         <div class="feat-icon">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="2" y="3" width="20" height="14" rx="2"/>
-            <line x1="8" y1="21" x2="16" y2="21"/>
-            <line x1="12" y1="17" x2="12" y2="21"/>
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
           </svg>
         </div>
-        <h3>Any App, Any Field</h3>
-        <p>Works in every text field on Windows — browser, Word, Notepad, VS Code, Slack, anywhere. If you can type there, you can dictate there.</p>
+        <h3>Mikrofonval</h3>
+        <p>Valj specifik mikrofon i installningar. Stodjer WASAPI, DirectSound och MME med automatisk samplerate-hantering.</p>
       </div>
 
     </div>
@@ -607,34 +641,87 @@ footer {
 
 <hr class="divider">
 
+<!-- Models -->
+<section id="models">
+  <div class="wrap">
+    <p class="section-eyebrow">Modeller</p>
+    <h2 class="section-title">KBLab:s svenska<br><em>Whisper-modeller.</em></h2>
+    <p style="font-size:0.9rem;color:var(--fg2);margin-top:-36px;margin-bottom:48px;line-height:1.6;">Tranade pa over 50 000 timmar svenskt tal av Kungliga biblioteket. Upp till 47% lagre felfrekvens jamfort med OpenAI:s modeller.</p>
+    <table class="models-table">
+      <thead>
+        <tr>
+          <th>Modell</th>
+          <th>WER (sv)</th>
+          <th>Storlek</th>
+          <th class="wer-compare">OpenAI WER</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>tiny</td>
+          <td>13.2</td>
+          <td>~40 MB</td>
+          <td class="wer-compare">59.2</td>
+        </tr>
+        <tr>
+          <td>base</td>
+          <td>9.1</td>
+          <td>~150 MB</td>
+          <td class="wer-compare">39.6</td>
+        </tr>
+        <tr class="default">
+          <td>small (standard)</td>
+          <td>7.3</td>
+          <td>~500 MB</td>
+          <td class="wer-compare">20.6</td>
+        </tr>
+        <tr>
+          <td>medium</td>
+          <td>6.6</td>
+          <td>~1.5 GB</td>
+          <td class="wer-compare">15.8</td>
+        </tr>
+        <tr>
+          <td>large</td>
+          <td>&mdash;</td>
+          <td>~3 GB</td>
+          <td class="wer-compare">&mdash;</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr class="divider">
+
 <!-- How it works -->
 <section id="how-it-works">
   <div class="wrap">
-    <p class="section-eyebrow">Setup</p>
-    <h2 class="section-title">Up and running<br><em>in under a minute.</em></h2>
+    <p class="section-eyebrow">Kom igang</p>
+    <h2 class="section-title">Redo pa<br><em>under en minut.</em></h2>
     <div class="steps">
 
       <div class="step">
         <div class="step-n">1</div>
         <div>
-          <h3>Download the .exe</h3>
-          <p>One file, no installer. Just download and run — freewispr needs no system-level setup.</p>
+          <h3>Ladda ner</h3>
+          <p>Ladda ner och packa upp freewispr-swedish-mappen fran GitHub Releases. Ingen installation kravs.</p>
         </div>
       </div>
 
       <div class="step">
         <div class="step-n">2</div>
         <div>
-          <h3>Run it</h3>
-          <p>Double-click <code>freewispr.exe</code>. On first launch it downloads the ~150 MB Whisper AI model once, then sits quietly in your system tray.</p>
+          <h3>Kor</h3>
+          <p>Dubbelklicka <code>freewispr-swedish.exe</code>. Vid forsta starten laddas KB-Whisper-small (~500 MB) ner automatiskt. Darefter lever appen i systemfacket.</p>
         </div>
       </div>
 
       <div class="step">
         <div class="step-n">3</div>
         <div>
-          <h3>Hold <code>Ctrl+Space</code> to speak</h3>
-          <p>Hold the hotkey, say what you want to type, release. Done. Change the hotkey any time from tray settings.</p>
+          <h3>Hall <code>Ctrl+Space</code> och prata</h3>
+          <p>Hall tangenten nedtryckt, sag vad du vill skriva, slapp. Klart. Andra snabbtangent nar som helst i installningarna.</p>
         </div>
       </div>
 
@@ -648,20 +735,21 @@ footer {
 <section id="download">
   <div class="wrap">
     <div class="dl-card">
-      <p class="dl-tag">Latest Release</p>
-      <h2>freewispr v1.5</h2>
-      <p class="platform">For Windows 10 and Windows 11</p>
-      <a href="https://github.com/x26prakhar/freewispr/releases/latest/download/freewispr.exe" class="dl-btn">
+      <p class="dl-tag">Senaste release</p>
+      <h2>freewispr-swedish</h2>
+      <p class="platform">For Windows 10 och Windows 11</p>
+      <a href="https://github.com/hhammarstrand/freewispr-swedish/releases" class="dl-btn">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
           <polyline points="7 10 12 15 17 10"/>
           <line x1="12" y1="15" x2="12" y2="3"/>
         </svg>
-        Download freewispr.exe
+        Ladda ner fran GitHub
       </a>
       <p class="dl-note">
-        Requires Windows 10 / 11<br>
-        First launch downloads the ~150 MB Whisper model automatically
+        Kraver Windows 10 / 11<br>
+        Forsta start laddar ner ~500 MB Whisper-modell automatiskt<br>
+        Valfritt: NVIDIA GPU for snabbare transkribering
       </p>
     </div>
   </div>
@@ -670,47 +758,47 @@ footer {
 <!-- Footer -->
 <footer>
   <div class="footer-links">
-    <a href="https://github.com/x26prakhar/freewispr" target="_blank" rel="noopener">GitHub ↗</a>
-    <span class="dot">•</span>
-    <a href="https://github.com/x26prakhar/freewispr/blob/master/LICENSE" target="_blank" rel="noopener">MIT License</a>
-    <span class="dot">•</span>
-    <a href="#features">Features</a>
-    <span class="dot">•</span>
-    <a href="#download">Download</a>
+    <a href="https://github.com/hhammarstrand/freewispr-swedish" target="_blank" rel="noopener">GitHub &#8599;</a>
+    <span class="dot">&bull;</span>
+    <a href="https://github.com/hhammarstrand/freewispr-swedish/blob/master/LICENSE" target="_blank" rel="noopener">MIT License</a>
+    <span class="dot">&bull;</span>
+    <a href="#features">Funktioner</a>
+    <span class="dot">&bull;</span>
+    <a href="#download">Ladda ner</a>
   </div>
   <p class="footer-by">
-    Made by&nbsp;
-    <a href="https://www.linkedin.com/in/prakharsingh96/" target="_blank" rel="noopener">Prakhar Singh</a>
-    &nbsp;·&nbsp;
-    <a href="https://www.instagram.com/prakhar.vc/" target="_blank" rel="noopener">@prakhar.vc</a>
+    Fork av <a href="https://github.com/x26prakhar/freewispr" target="_blank" rel="noopener">freewispr</a>
+    av <a href="https://www.linkedin.com/in/prakharsingh96/" target="_blank" rel="noopener">Prakhar Singh</a>
+    &nbsp;&middot;&nbsp;
+    Svenska modeller av <a href="https://huggingface.co/KBLab" target="_blank" rel="noopener">KBLab</a>
   </p>
 </footer>
 
 <script>
-// ── Floating speech quotes ─────────────────────────────────────────
+// Floating speech quotes (Swedish)
 const QUOTES = [
-  "Your voice, your device.",
-  "No cloud. No compromise.",
-  "Speech is the most natural interface.",
-  "What you say stays with you.",
-  "Free as in freedom.",
-  "Privacy by default.",
-  "Dictate anywhere.",
-  "Whisper AI, on your terms.",
-  "Your words never leave your PC.",
-  "Open source, forever.",
-  "Speak freely.",
-  "Run locally. Work privately.",
-  "No server. No latency.",
-  "Intelligence without the subscription.",
-  "Built for Windows.",
-  "Transcribe everything.",
-  "Just hold and speak.",
-  "Your voice. Your rules.",
+  "Din rost, din dator.",
+  "Inget moln. Ingen kompromiss.",
+  "Tal ar det mest naturliga granssnittet.",
+  "Dina ord stannar hos dig.",
+  "Fri som i frihet.",
+  "Integritet som standard.",
+  "Diktera var som helst.",
+  "KBLab Whisper, pa dina villkor.",
+  "Dina ord lamnar aldrig din dator.",
+  "Open source, for alltid.",
+  "Prata fritt.",
+  "Kor lokalt. Arbeta privat.",
+  "Ingen server. Ingen latens.",
+  "Intelligens utan prenumeration.",
+  "Byggt for Windows.",
+  "Transkribera allt.",
+  "Hall och prata.",
+  "Din rost. Dina regler.",
 ];
 
 const canvas = document.getElementById('quote-canvas');
-const PROXIMITY = 130; // px radius to reveal
+const PROXIMITY = 130;
 const COUNT = 18;
 
 const particles = QUOTES.slice(0, COUNT).map((text, i) => {
@@ -719,11 +807,8 @@ const particles = QUOTES.slice(0, COUNT).map((text, i) => {
   el.textContent = text;
   canvas.appendChild(el);
 
-  // Random position (5–90% of viewport)
   const x = 5 + Math.random() * 85;
   const y = 5 + Math.random() * 90;
-
-  // Slow brownian drift
   const vx = (Math.random() - 0.5) * 0.018;
   const vy = (Math.random() - 0.5) * 0.012;
 
@@ -742,25 +827,18 @@ function tick() {
   const H = window.innerHeight;
 
   particles.forEach(p => {
-    // Drift
     p.x += p.vx;
     p.y += p.vy;
-
-    // Bounce off edges
     if (p.x < 3 || p.x > 92) p.vx *= -1;
     if (p.y < 3 || p.y > 92) p.vy *= -1;
-
-    // Clamp
     p.x = Math.max(3, Math.min(92, p.x));
     p.y = Math.max(3, Math.min(92, p.y));
 
-    // Pixel position
     const px = (p.x / 100) * W;
     const py = (p.y / 100) * H;
     p.el.style.left = px + 'px';
     p.el.style.top  = py + 'px';
 
-    // Proximity opacity
     const dx = px - mx;
     const dy = py - my;
     const dist = Math.sqrt(dx * dx + dy * dy);
@@ -771,7 +849,6 @@ function tick() {
   requestAnimationFrame(tick);
 }
 
-// Only run if user hasn't asked for reduced motion
 if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
   tick();
 }

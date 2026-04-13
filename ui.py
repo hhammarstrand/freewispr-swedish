@@ -3,13 +3,14 @@ Tkinter-based windows for freewispr-swedish.
 - FloatingIndicator : small always-on-top pill (recording / transcribing state)
 - SnippetsWindow    : manage trigger → expansion pairs
 - DictionaryWindow  : manage word corrections (Whisper mistakes)
-- SettingsWindow    : hotkey, model, language, filler filter, auto-punctuate
+- SettingsWindow    : hotkey, model, mic, GPU toggle
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
 
 import snippets as snippet_module
 import corrections as corr_module
+from audio import list_input_devices
 
 
 BG = "#0f0f0f"
@@ -21,6 +22,9 @@ FG2 = "#888"
 FONT = ("Segoe UI", 10)
 
 
+BG3 = "#232323"
+
+
 def _style(root):
     s = ttk.Style(root)
     s.theme_use("clam")
@@ -30,11 +34,25 @@ def _style(root):
     s.map("Danger.TButton", background=[("active", "#96281b")])
     s.configure("TLabel", background=BG, foreground=FG, font=FONT)
     s.configure("Sub.TLabel", background=BG, foreground=FG2, font=("Segoe UI", 9))
+    s.configure("Card.TLabel", background=BG2, foreground=FG, font=FONT)
+    s.configure("CardSub.TLabel", background=BG2, foreground=FG2, font=("Segoe UI", 9))
+    s.configure("CardHead.TLabel", background=BG2, foreground=ACC, font=("Segoe UI", 10, "bold"))
     s.configure("TFrame", background=BG)
-    s.configure("TEntry", fieldbackground=BG2, foreground=FG, font=FONT)
-    s.configure("TCombobox", fieldbackground=BG2, foreground=FG, font=FONT)
-    s.configure("TCheckbutton", background=BG, foreground=FG, font=FONT)
-    s.map("TCheckbutton", background=[("active", BG)])
+    s.configure("Card.TFrame", background=BG2)
+    s.configure("TEntry", fieldbackground=BG3, foreground=FG, font=FONT,
+                insertcolor=FG, borderwidth=1, relief="flat")
+    s.map("TEntry",
+          fieldbackground=[("focus", BG3), ("!focus", BG3)],
+          foreground=[("focus", FG), ("!focus", FG)],
+          bordercolor=[("focus", ACC), ("!focus", FG2)])
+    s.configure("TCombobox", fieldbackground=BG3, foreground=FG, font=FONT,
+                borderwidth=1, relief="flat")
+    s.map("TCombobox",
+          fieldbackground=[("readonly", BG3)],
+          foreground=[("readonly", FG)],
+          bordercolor=[("focus", ACC), ("!focus", FG2)])
+    s.configure("TCheckbutton", background=BG2, foreground=FG, font=FONT)
+    s.map("TCheckbutton", background=[("active", BG2)])
     s.configure("Treeview",
                 background=BG2, foreground=FG,
                 fieldbackground=BG2, font=FONT,
@@ -46,6 +64,12 @@ def _style(root):
           background=[("selected", ACC)],
           foreground=[("selected", FG)])
 
+    # Fix combobox dropdown colors
+    root.option_add("*TCombobox*Listbox.background", BG3)
+    root.option_add("*TCombobox*Listbox.foreground", FG)
+    root.option_add("*TCombobox*Listbox.selectBackground", ACC)
+    root.option_add("*TCombobox*Listbox.selectForeground", FG)
+
 
 # --------------------------------------------------------------------------- #
 #  Floating indicator pill                                                     #
@@ -56,6 +80,7 @@ class FloatingIndicator:
         "listen":      "#7c5cfc",
         "transcribe":  "#f39c12",
         "done":        "#27ae60",
+        "error":       "#e74c3c",
     }
 
     def __init__(self, root: tk.Tk):
@@ -407,82 +432,281 @@ class DictionaryWindow:
 #  Settings window                                                             #
 # --------------------------------------------------------------------------- #
 
+# Tk keysym → human-readable name mapping for hotkey capture
+_KEY_NAMES = {
+    "Control_L": "ctrl", "Control_R": "right ctrl",
+    "Alt_L": "alt", "Alt_R": "right alt",
+    "Shift_L": "shift", "Shift_R": "right shift",
+    "space": "space", "Return": "enter", "Escape": "esc",
+    "Tab": "tab", "BackSpace": "backspace", "Delete": "delete",
+    "Up": "up", "Down": "down", "Left": "left", "Right": "right",
+}
+
+
+class _HotkeyCapture(tk.Frame):
+    """A clickable widget that captures key combinations."""
+
+    def __init__(self, parent, variable: tk.StringVar, **kw):
+        super().__init__(parent, bg=BG3, highlightthickness=1,
+                         highlightbackground=FG2, highlightcolor=ACC,
+                         padx=12, pady=8, cursor="hand2")
+        self._var = variable
+        self._capturing = False
+        self._held: dict[str, str] = {}  # keysym → display name
+
+        self._display = tk.Label(self, text="", bg=BG3, fg=FG,
+                                 font=("Segoe UI Semibold", 11), anchor="w")
+        self._display.pack(side="left", fill="x", expand=True)
+
+        self._hint = tk.Label(self, text="", bg=BG3, fg=FG2,
+                              font=("Segoe UI", 9), anchor="e")
+        self._hint.pack(side="right")
+
+        self._update_display()
+
+        # Click to start capture
+        for w in (self, self._display, self._hint):
+            w.bind("<Button-1>", self._start_capture)
+
+    def _update_display(self):
+        val = self._var.get()
+        self._display.configure(text=val if val else "...")
+        if not self._capturing:
+            self._hint.configure(text="klicka for att andra")
+
+    def _start_capture(self, _=None):
+        self._capturing = True
+        self._held.clear()
+        self.configure(highlightbackground=ACC, highlightcolor=ACC)
+        self._display.configure(text="...", fg=ACC)
+        self._hint.configure(text="tryck tangentkombination")
+        self.focus_set()
+        self.bind("<KeyPress>", self._on_key_press)
+        self.bind("<KeyRelease>", self._on_key_release)
+        self.bind("<FocusOut>", self._cancel_capture)
+
+    def _on_key_press(self, event):
+        if not self._capturing:
+            return
+        if event.keysym == "Escape":
+            self._cancel_capture()
+            return
+        name = _KEY_NAMES.get(event.keysym, event.keysym.lower())
+        self._held[event.keysym] = name
+        self._display.configure(text="+".join(self._held.values()), fg=FG)
+
+    def _on_key_release(self, event):
+        if not self._capturing or not self._held:
+            return
+        # Commit the combo on first key release
+        combo = "+".join(self._held.values())
+        self._var.set(combo)
+        self._stop_capture()
+
+    def _cancel_capture(self, _=None):
+        self._stop_capture()
+
+    def _stop_capture(self):
+        self._capturing = False
+        self._held.clear()
+        self.configure(highlightbackground=FG2, highlightcolor=ACC)
+        self.unbind("<KeyPress>")
+        self.unbind("<KeyRelease>")
+        self.unbind("<FocusOut>")
+        self._display.configure(fg=FG)
+        self._update_display()
+
+
 class SettingsWindow:
+    # Model descriptions shown when selecting
+    _MODEL_INFO = {
+        "tiny":   "Snabbast, lagst kvalitet (~40 MB)",
+        "base":   "Snabb, grundlaggande kvalitet (~150 MB)",
+        "small":  "Bra balans mellan hastighet och kvalitet (~500 MB)",
+        "medium": "Hog kvalitet, langsammare (~1.5 GB)",
+        "large":  "Basta kvalitet, krav mer minne (~3 GB)",
+    }
+
     def __init__(self, config: dict, on_save=None):
         self.cfg = config.copy()
         self.on_save = on_save
 
         self.root = tk.Toplevel()
-        self.root.title("freewispr-swedish — Inställningar")
-        self.root.geometry("480x560")
+        self.root.title("freewispr-swedish \u2014 Installningar")
+        self.root.geometry("500x520")
         self.root.resizable(False, False)
         self.root.configure(bg=BG)
         _style(self.root)
 
         self._build()
 
+    # -- helpers ------------------------------------------------------------- #
+
+    def _card(self, parent) -> tk.Frame:
+        """Card with a subtle left accent border."""
+        wrapper = tk.Frame(parent, bg=ACC, padx=0, pady=0)
+        wrapper.pack(fill="x", padx=24, pady=(0, 14))
+
+        # 3px accent stripe on the left
+        inner = tk.Frame(wrapper, bg=BG2, padx=18, pady=14)
+        inner.pack(fill="both", expand=True, padx=(3, 0))
+        return inner
+
+    def _section_label(self, parent, text):
+        lbl = tk.Label(parent, text=text, bg=BG2, fg=ACC,
+                       font=("Segoe UI Semibold", 10))
+        lbl.pack(anchor="w")
+
+    def _hint(self, parent, text):
+        lbl = tk.Label(parent, text=text, bg=BG2, fg=FG2,
+                       font=("Segoe UI", 9))
+        lbl.pack(anchor="w", pady=(2, 0))
+
+    def _toggle(self, parent, text, variable):
+        """Custom styled toggle row — cleaner than ttk.Checkbutton."""
+        row = tk.Frame(parent, bg=BG2, cursor="hand2")
+        row.pack(fill="x", pady=(8, 0))
+
+        indicator = tk.Label(row, bg=BG2, fg=FG2,
+                             font=("Segoe UI", 11), width=2, anchor="center")
+        indicator.pack(side="left")
+
+        label = tk.Label(row, text=text, bg=BG2, fg=FG,
+                         font=("Segoe UI", 10), anchor="w")
+        label.pack(side="left", fill="x", expand=True)
+
+        def _update_look(*_):
+            if variable.get():
+                indicator.configure(text="\u25c9", fg=ACC)  # ◉
+            else:
+                indicator.configure(text="\u25cb", fg=FG2)  # ○
+
+        def _click(_=None):
+            variable.set(not variable.get())
+
+        _update_look()
+        variable.trace_add("write", _update_look)
+        for w in (row, indicator, label):
+            w.bind("<Button-1>", _click)
+
+        return row
+
+    # -- build --------------------------------------------------------------- #
+
     def _build(self):
-        pad = {"padx": 20, "pady": 6}
+        outer = tk.Frame(self.root, bg=BG)
+        outer.pack(fill="both", expand=True)
 
-        ttk.Label(self.root, text="Inställningar", font=("Segoe UI", 13, "bold")).pack(anchor="w", **pad)
+        # Title bar
+        hdr = tk.Frame(outer, bg=BG)
+        hdr.pack(fill="x", padx=24, pady=(22, 18))
+        tk.Label(hdr, text="Installningar", bg=BG, fg=FG,
+                 font=("Segoe UI", 15, "bold")).pack(side="left")
+        tk.Label(hdr, text="freewispr-swedish", bg=BG, fg=FG2,
+                 font=("Segoe UI", 9)).pack(side="right", pady=(5, 0))
 
-        # Hotkey
-        ttk.Label(self.root, text="Dikteringstangent").pack(anchor="w", padx=20, pady=(12, 0))
+        # -- Card: Dikteringstangent ---------------------------------------- #
+        card = self._card(outer)
+        self._section_label(card, "Dikteringstangent")
+        self._hint(card, "Klicka och tryck onskad tangentkombination")
+
         self._hotkey_var = tk.StringVar(value=self.cfg.get("hotkey", "ctrl+space"))
-        ttk.Entry(self.root, textvariable=self._hotkey_var, width=30).pack(anchor="w", **pad)
-        ttk.Label(self.root, text="t.ex. ctrl+space, right ctrl, F9, alt+shift",
-                  style="Sub.TLabel").pack(anchor="w", padx=20, pady=(0, 4))
+        hk = _HotkeyCapture(card, self._hotkey_var)
+        hk.pack(fill="x", pady=(8, 0))
 
-        # Language
-        ttk.Label(self.root, text="Språk (ISO 639-1)").pack(anchor="w", padx=20, pady=(8, 0))
-        self._lang_var = tk.StringVar(value=self.cfg.get("language", "sv"))
-        ttk.Entry(self.root, textvariable=self._lang_var, width=10).pack(anchor="w", **pad)
-        ttk.Label(self.root, text="sv, en, es, fr, de, hi…",
-                  style="Sub.TLabel").pack(anchor="w", padx=20, pady=(0, 4))
+        # -- Card: Mikrofon ------------------------------------------------- #
+        card = self._card(outer)
+        self._section_label(card, "Mikrofon")
 
-        # Model
-        ttk.Label(self.root, text="Modell").pack(anchor="w", padx=20, pady=(8, 0))
+        self._mic_devices = list_input_devices()
+        mic_names = ["Auto"] + [d["name"] for d in self._mic_devices]
+        saved_mic = self.cfg.get("mic_device") or ""
+
+        self._mic_var = tk.StringVar(value=saved_mic if saved_mic else "Auto")
+        mic_combo = ttk.Combobox(card, textvariable=self._mic_var,
+                                 values=mic_names, state="readonly", width=48)
+        mic_combo.pack(fill="x", pady=(8, 0))
+
+        self._mic_info = tk.Label(card, text="", bg=BG2, fg=FG2,
+                                  font=("Segoe UI", 8))
+        self._mic_info.pack(anchor="w", pady=(3, 0))
+        mic_combo.bind("<<ComboboxSelected>>", self._on_mic_change)
+        self._on_mic_change()
+
+        # -- Card: Modell & GPU --------------------------------------------- #
+        card = self._card(outer)
+        self._section_label(card, "Whisper-modell")
+
+        # Model selector
+        model_row = tk.Frame(card, bg=BG2)
+        model_row.pack(fill="x", pady=(8, 0))
+
         self._model_var = tk.StringVar(value=self.cfg.get("model_size", "small"))
-        ttk.Combobox(self.root, textvariable=self._model_var,
-                     values=["tiny", "base", "small", "medium", "large"],
-                     state="readonly", width=18).pack(anchor="w", **pad)
-        ttk.Label(self.root, text="tiny=~40MB, base=~150MB, small=~500MB, medium=~1.5GB, large=~3GB",
-                  style="Sub.TLabel", wraplength=400).pack(anchor="w", padx=20, pady=(0, 4))
+        combo = ttk.Combobox(model_row, textvariable=self._model_var,
+                             values=["tiny", "base", "small", "medium", "large"],
+                             state="readonly", width=14)
+        combo.pack(side="left")
 
-        # CUDA
+        self._model_desc = tk.Label(model_row, text="", bg=BG2, fg=FG2,
+                                    font=("Segoe UI", 9))
+        self._model_desc.pack(side="left", padx=(12, 0))
+        combo.bind("<<ComboboxSelected>>", self._on_model_change)
+        self._on_model_change()
+
+        # GPU toggle
         self._cuda_var = tk.BooleanVar(value=self.cfg.get("use_cuda", True))
-        ttk.Checkbutton(
-            self.root,
-            text="Använd GPU/CUDA om tillgänglig (rekommenderas)",
-            variable=self._cuda_var,
-        ).pack(anchor="w", padx=20, pady=(8, 2))
-        ttk.Label(self.root, text="Aktiverar snabbare transkribering med NVIDIA GPU. Kräver CUDA-drivers.",
-                  style="Sub.TLabel", wraplength=400).pack(anchor="w", padx=20, pady=(0, 8))
+        self._toggle(card, "Anvand GPU/CUDA (snabbare med NVIDIA)", self._cuda_var)
 
-        # Checkboxes
-        self._filler_var = tk.BooleanVar(value=self.cfg.get("filter_fillers", False))
-        ttk.Checkbutton(
-            self.root,
-            text='Ta bort utfyllnadsord ("eh", "mm", "liksom"…)',
-            variable=self._filler_var,
-        ).pack(anchor="w", padx=20, pady=(12, 2))
+        # -- Buttons -------------------------------------------------------- #
+        btn_frame = tk.Frame(outer, bg=BG)
+        btn_frame.pack(fill="x", padx=24, pady=(8, 22))
 
-        self._punct_var = tk.BooleanVar(value=self.cfg.get("auto_punctuate", True))
-        ttk.Checkbutton(
-            self.root,
-            text="Auto-punktuera (VERSALER + lägg till punkt om saknas)",
-            variable=self._punct_var,
-        ).pack(anchor="w", padx=20, pady=(2, 12))
+        save_btn = tk.Button(
+            btn_frame, text="Spara", bg=ACC, fg=FG,
+            font=("Segoe UI Semibold", 10), relief="flat",
+            activebackground=ACC2, activeforeground=FG,
+            padx=24, pady=6, cursor="hand2",
+            command=self._save,
+        )
+        save_btn.pack(side="right")
 
-        ttk.Button(self.root, text="Spara", command=self._save).pack(anchor="e", padx=20, pady=8)
+        cancel_btn = tk.Button(
+            btn_frame, text="Avbryt", bg=BG3, fg=FG2,
+            font=("Segoe UI", 10), relief="flat",
+            activebackground="#333", activeforeground=FG,
+            padx=18, pady=6, cursor="hand2",
+            command=self.root.destroy,
+        )
+        cancel_btn.pack(side="right", padx=(0, 10))
+
+    def _on_model_change(self, _=None):
+        model = self._model_var.get()
+        desc = self._MODEL_INFO.get(model, "")
+        self._model_desc.configure(text=desc)
+
+    def _on_mic_change(self, _=None):
+        name = self._mic_var.get()
+        if name == "Auto":
+            self._mic_info.configure(text="Valjer basta tillgangliga mikrofon automatiskt")
+            return
+        for d in self._mic_devices:
+            if d["name"] == name:
+                self._mic_info.configure(
+                    text=f"{d['api']}  \u2502  {d['rate']} Hz  \u2502  {d['channels']} ch"
+                )
+                return
+        self._mic_info.configure(text="")
 
     def _save(self):
         self.cfg["hotkey"] = self._hotkey_var.get().strip()
-        self.cfg["language"] = self._lang_var.get().strip()
         self.cfg["model_size"] = self._model_var.get()
         self.cfg["use_cuda"] = self._cuda_var.get()
-        self.cfg["filter_fillers"] = self._filler_var.get()
-        self.cfg["auto_punctuate"] = self._punct_var.get()
+        mic = self._mic_var.get()
+        self.cfg["mic_device"] = None if mic == "Auto" else mic
+        # Clean out removed keys from old configs
+        self.cfg.pop("filter_fillers", None)
+        self.cfg.pop("auto_punctuate", None)
+        self.cfg.pop("language", None)
         if self.on_save:
             self.on_save(self.cfg)
         self.root.destroy()

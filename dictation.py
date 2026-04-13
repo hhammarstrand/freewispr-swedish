@@ -1,3 +1,4 @@
+import logging
 import threading
 import keyboard
 import numpy as np
@@ -6,16 +7,20 @@ from audio import MicRecorder
 from transcriber import Transcriber
 from paste import paste_text
 import snippets as snippet_module
+import sounds
 
-MIN_AUDIO_SAMPLES = 3200  # 0.2 s at 16 kHz — ignore accidental taps
+log = logging.getLogger("freewispr")
+
+MIN_AUDIO_SAMPLES = 3200   # 0.2 s at 16 kHz — ignore accidental taps
+MIN_RMS_THRESHOLD = 0.003  # Minimum RMS energy — reject near-silent recordings
 
 
 class DictationMode:
     def __init__(self, transcriber: Transcriber, hotkey: str = "ctrl+space",
-                 on_status=None, indicator=None):
+                 on_status=None, indicator=None, mic_device: str | None = None):
         self.transcriber = transcriber
         self.hotkey = hotkey
-        self.recorder = MicRecorder()
+        self.recorder = MicRecorder(device_name=mic_device)
         self.on_status = on_status or (lambda msg: None)
         self.indicator = indicator
         self._active = False
@@ -33,6 +38,7 @@ class DictationMode:
 
     def start(self):
         self._active = True
+        log.info("Hotkey: trigger='%s', modifier='%s'", self._trigger_key, self._modifier)
         keyboard.on_press_key(self._trigger_key, self._on_press, suppress=False)
         keyboard.on_release_key(self._trigger_key, self._on_release, suppress=False)
         self.on_status(f"Ready — hold {self.hotkey.upper()} to speak")
@@ -53,45 +59,78 @@ class DictationMode:
 
     def _on_press(self, _):
         if self._active and not self._recording and self._modifier_held():
-            self._recording = True
-            self.recorder.start()
-            self.on_status("Listening…")
-            if self.indicator:
-                self.indicator.show("Listening…", state="listen")
+            try:
+                self._recording = True
+                self.recorder.start()
+                sounds.play_start()
+                self.on_status("Lyssnar…")
+                if self.indicator:
+                    self.indicator.show("Lyssnar…", state="listen")
+            except Exception as e:
+                self._recording = False
+                log.error("Mic start error: %s", e, exc_info=True)
+                sounds.play_error()
+                if self.indicator:
+                    self.indicator.show(f"Mikrofonfel: {e}", state="error")
+                    self.indicator.hide(delay_ms=3000)
 
     def _on_release(self, _):
         if self._active and self._recording:
             self._recording = False
-            audio = self.recorder.stop()
+            sounds.play_stop()
+            try:
+                audio = self.recorder.stop()
+            except Exception as e:
+                log.error("Audio stop error: %s", e, exc_info=True)
+                sounds.play_error()
+                if self.indicator:
+                    self.indicator.show("Mikrofonfel", state="error")
+                    self.indicator.hide(delay_ms=2500)
+                self.on_status(f"Klar — håll {self.hotkey.upper()}")
+                return
+            log.info("Audio samples: %d, peak: %.4f", len(audio), np.abs(audio).max())
             if len(audio) < MIN_AUDIO_SAMPLES:
-                self.on_status(f"Ready — hold {self.hotkey.upper()} to speak")
+                log.info("Inspelning för kort (%d samples), ignorerar", len(audio))
+                self.on_status(f"Klar — håll {self.hotkey.upper()}")
                 if self.indicator:
                     self.indicator.hide(delay_ms=0)
                 return
-            self.on_status("Transcribing…")
+
+            # Reject near-silent recordings (accidental taps, muted mic)
+            rms = float(np.sqrt(np.mean(audio ** 2)))
+            if rms < MIN_RMS_THRESHOLD:
+                log.info("Inspelning för tyst (RMS=%.5f < %.5f), ignorerar", rms, MIN_RMS_THRESHOLD)
+                self.on_status(f"Inget hördes — håll {self.hotkey.upper()}")
+                if self.indicator:
+                    self.indicator.show("Inget hördes", state="error")
+                    self.indicator.hide(delay_ms=1500)
+                return
+            self.on_status("Transkriberar…")
             if self.indicator:
-                self.indicator.show("Transcribing…", state="transcribe")
+                self.indicator.show("Transkriberar…", state="transcribe")
             threading.Thread(target=self._transcribe, args=(audio,), daemon=True).start()
 
     def _transcribe(self, audio: np.ndarray):
-        print("Transcribing...", flush=True)
+        log.info("Transkriberar %d samples...", len(audio))
         try:
             text = self.transcriber.transcribe(audio)
             # Apply snippet expansion — if full text is a trigger, replace it
             text = snippet_module.expand(text)
-            print(f"Result: '{text}'", flush=True)
+            log.info("Resultat: '%s'", text)
             if text.strip():
                 paste_text(text)
-                self.on_status(f"Pasted — hold {self.hotkey.upper()} to speak again")
+                self.on_status(f"Klistrad — håll {self.hotkey.upper()} igen")
                 if self.indicator:
-                    self.indicator.show("Pasted ✓", state="done")
+                    self.indicator.show("Klistrad", state="done")
                     self.indicator.hide(delay_ms=1800)
             else:
-                self.on_status(f"Nothing detected — hold {self.hotkey.upper()} to speak")
+                self.on_status(f"Inget hördes — håll {self.hotkey.upper()}")
                 if self.indicator:
-                    self.indicator.hide(delay_ms=0)
+                    self.indicator.show("Inget hördes", state="error")
+                    self.indicator.hide(delay_ms=1500)
         except Exception as e:
-            print(f"Transcribe error: {e}", flush=True)
-            self.on_status(f"Ready — hold {self.hotkey.upper()} to speak")
+            log.error("Transkribering misslyckades: %s", e, exc_info=True)
+            self.on_status(f"Fel — håll {self.hotkey.upper()}")
             if self.indicator:
-                self.indicator.hide(delay_ms=0)
+                self.indicator.show(f"Fel: {e}", state="error")
+                self.indicator.hide(delay_ms=5000)

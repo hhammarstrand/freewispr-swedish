@@ -1,5 +1,9 @@
 # FreeWispr-SV — Svensk speech-to-text för Windows
 
+> **OBS: Detta dokument är den ursprungliga designspecifikationen från innan implementation.**
+> **Den aktuella arkitekturen och funktionaliteten beskrivs i [README.md](README.md).**
+> **Många detaljer nedan (t.ex. filler-ord, språkväljare, filstruktur) stämmer inte längre.**
+
 > **Fork av:** [x26prakhar/freewispr](https://github.com/x26prakhar/freewispr)
 > **Licens:** MIT
 > **Mål:** Svensk speech-to-text med KB-Whisper, fortfarande Windows-only
