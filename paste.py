@@ -52,13 +52,13 @@ def paste_text(text: str):
     pyperclip.copy(text + " ")
 
     # 4. Brief pause for key state + clipboard to settle
-    time.sleep(0.05)
+    time.sleep(0.02)
 
     # 5. Paste
     pyautogui.hotkey("ctrl", "v")
 
     # 6. Restore clipboard after paste completes
-    time.sleep(0.3)
+    time.sleep(0.1)
     try:
         pyperclip.copy(old)
     except Exception:

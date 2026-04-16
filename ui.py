@@ -7,10 +7,12 @@ Tkinter-based windows for freewispr-swedish.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
+import threading
 
 import snippets as snippet_module
 import corrections as corr_module
 from audio import list_input_devices
+from llm_polish import AVAILABLE_MODELS as LLM_MODELS, DEFAULT_MODEL as LLM_DEFAULT, test_connection as llm_test
 
 
 BG = "#0f0f0f"
@@ -533,8 +535,8 @@ class SettingsWindow:
 
         self.root = tk.Toplevel()
         self.root.title("freewispr-swedish \u2014 Installningar")
-        self.root.geometry("500x520")
-        self.root.resizable(False, False)
+        self.root.geometry("500x700")
+        self.root.resizable(False, True)
         self.root.configure(bg=BG)
         _style(self.root)
 
@@ -628,7 +630,7 @@ class SettingsWindow:
         mic_combo.pack(fill="x", pady=(8, 0))
 
         self._mic_info = tk.Label(card, text="", bg=BG2, fg=FG2,
-                                  font=("Segoe UI", 8))
+                                   font=("Segoe UI", 8))
         self._mic_info.pack(anchor="w", pady=(3, 0))
         mic_combo.bind("<<ComboboxSelected>>", self._on_mic_change)
         self._on_mic_change()
@@ -648,7 +650,7 @@ class SettingsWindow:
         combo.pack(side="left")
 
         self._model_desc = tk.Label(model_row, text="", bg=BG2, fg=FG2,
-                                    font=("Segoe UI", 9))
+                                     font=("Segoe UI", 9))
         self._model_desc.pack(side="left", padx=(12, 0))
         combo.bind("<<ComboboxSelected>>", self._on_model_change)
         self._on_model_change()
@@ -656,6 +658,71 @@ class SettingsWindow:
         # GPU toggle
         self._cuda_var = tk.BooleanVar(value=self.cfg.get("use_cuda", True))
         self._toggle(card, "Anvand GPU/CUDA (snabbare med NVIDIA)", self._cuda_var)
+
+        # -- Card: LLM-granskning ------------------------------------------ #
+        card = self._card(outer)
+        self._section_label(card, "LLM-granskning")
+        self._hint(card, "Granska och forbattra transkriberad text via AI")
+
+        self._llm_var = tk.BooleanVar(value=self.cfg.get("llm_enabled", False))
+        self._toggle(card, "Aktivera LLM-granskning", self._llm_var)
+
+        # LLM model selector
+        llm_model_row = tk.Frame(card, bg=BG2)
+        llm_model_row.pack(fill="x", pady=(8, 0))
+        tk.Label(llm_model_row, text="Modell:", bg=BG2, fg=FG2,
+                 font=("Segoe UI", 9)).pack(side="left")
+        saved_llm = self.cfg.get("llm_model", LLM_DEFAULT)
+        self._llm_model_var = tk.StringVar(value=saved_llm)
+        llm_combo = ttk.Combobox(llm_model_row, textvariable=self._llm_model_var,
+                                 values=list(LLM_MODELS.keys()),
+                                 state="readonly", width=20)
+        llm_combo.pack(side="left", padx=(8, 0))
+        self._llm_model_desc = tk.Label(llm_model_row, text="", bg=BG2, fg=FG2,
+                                         font=("Segoe UI", 8))
+        self._llm_model_desc.pack(side="left", padx=(8, 0))
+        llm_combo.bind("<<ComboboxSelected>>", self._on_llm_model_change)
+        self._on_llm_model_change()
+
+        # API key input
+        key_label_row = tk.Frame(card, bg=BG2)
+        key_label_row.pack(fill="x", pady=(8, 0))
+        tk.Label(key_label_row, text="GitHub API-nyckel:", bg=BG2, fg=FG2,
+                 font=("Segoe UI", 9)).pack(side="left")
+
+        self._key_var = tk.StringVar(value=self.cfg.get("llm_api_key", ""))
+        self._key_entry = tk.Entry(card, textvariable=self._key_var,
+                                   bg=BG3, fg=FG, font=("Consolas", 10),
+                                   insertbackground=FG, relief="flat",
+                                   highlightthickness=1, highlightbackground=FG2,
+                                   highlightcolor=ACC, show="\u2022")
+        self._key_entry.pack(fill="x", pady=(4, 0))
+
+        # Show/hide key + test button row
+        key_btn_row = tk.Frame(card, bg=BG2)
+        key_btn_row.pack(fill="x", pady=(6, 0))
+
+        self._show_key = False
+        self._show_key_btn = tk.Button(
+            key_btn_row, text="Visa nyckel", bg=BG3, fg=FG2,
+            font=("Segoe UI", 8), relief="flat", cursor="hand2",
+            activebackground="#333", activeforeground=FG,
+            padx=8, pady=2, command=self._toggle_key_visibility,
+        )
+        self._show_key_btn.pack(side="left")
+
+        self._test_btn = tk.Button(
+            key_btn_row, text="Testa anslutning", bg=ACC, fg=FG,
+            font=("Segoe UI Semibold", 8), relief="flat", cursor="hand2",
+            activebackground=ACC2, activeforeground=FG,
+            padx=10, pady=2, command=self._test_llm,
+        )
+        self._test_btn.pack(side="left", padx=(8, 0))
+
+        self._test_result = tk.Label(card, text="", bg=BG2, fg=FG2,
+                                      font=("Segoe UI", 8), wraplength=400,
+                                      justify="left")
+        self._test_result.pack(anchor="w", pady=(4, 0))
 
         # -- Buttons -------------------------------------------------------- #
         btn_frame = tk.Frame(outer, bg=BG)
@@ -697,12 +764,51 @@ class SettingsWindow:
                 return
         self._mic_info.configure(text="")
 
+    def _on_llm_model_change(self, _=None):
+        model = self._llm_model_var.get()
+        desc = LLM_MODELS.get(model, "")
+        self._llm_model_desc.configure(text=desc)
+
+    def _toggle_key_visibility(self):
+        self._show_key = not self._show_key
+        if self._show_key:
+            self._key_entry.configure(show="")
+            self._show_key_btn.configure(text="Dolj nyckel")
+        else:
+            self._key_entry.configure(show="\u2022")
+            self._show_key_btn.configure(text="Visa nyckel")
+
+    def _test_llm(self):
+        """Test LLM connection in background thread, show result in UI."""
+        key = self._key_var.get().strip()
+        model = self._llm_model_var.get()
+        if not key:
+            self._test_result.configure(text="Ange en API-nyckel forst", fg="#e74c3c")
+            return
+
+        self._test_btn.configure(state="disabled", text="Testar...")
+        self._test_result.configure(text="Ansluter...", fg=FG2)
+
+        def _run():
+            ok, msg = llm_test(key, model)
+            self.root.after(0, lambda: self._show_test_result(ok, msg))
+
+        threading.Thread(target=_run, daemon=True).start()
+
+    def _show_test_result(self, ok: bool, msg: str):
+        self._test_btn.configure(state="normal", text="Testa anslutning")
+        color = "#27ae60" if ok else "#e74c3c"
+        self._test_result.configure(text=msg, fg=color)
+
     def _save(self):
         self.cfg["hotkey"] = self._hotkey_var.get().strip()
         self.cfg["model_size"] = self._model_var.get()
         self.cfg["use_cuda"] = self._cuda_var.get()
         mic = self._mic_var.get()
         self.cfg["mic_device"] = None if mic == "Auto" else mic
+        self.cfg["llm_enabled"] = self._llm_var.get()
+        self.cfg["llm_api_key"] = self._key_var.get().strip()
+        self.cfg["llm_model"] = self._llm_model_var.get()
         # Clean out removed keys from old configs
         self.cfg.pop("filter_fillers", None)
         self.cfg.pop("auto_punctuate", None)

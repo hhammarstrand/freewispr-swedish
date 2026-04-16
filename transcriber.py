@@ -244,11 +244,38 @@ def _load_hotwords() -> str | None:
     return result
 
 
+# In-memory hotwords cache — avoids re-reading disk on every transcription.
+# Invalidated when corrections.json or hotwords.txt change (checked by mtime).
+_hotwords_cache: str | None = None
+_hotwords_mtime: tuple[float, float] = (0.0, 0.0)  # (corrections_mtime, hotwords_mtime)
+
+
+def _get_hotwords_cached() -> str | None:
+    """Return cached hotwords string, reloading only if source files changed."""
+    global _hotwords_cache, _hotwords_mtime
+
+    corr_mt = corr_module._FILE.stat().st_mtime if corr_module._FILE.exists() else 0.0
+    hw_mt = HOTWORDS_FILE.stat().st_mtime if HOTWORDS_FILE.exists() else 0.0
+    current = (corr_mt, hw_mt)
+
+    if current != _hotwords_mtime:
+        _hotwords_cache = _load_hotwords()
+        _hotwords_mtime = current
+        log.debug("Hotwords-cache uppdaterad (mtime ändrad)")
+
+    return _hotwords_cache
+
+
 class Transcriber:
     def __init__(self, model_size: str = "small", language: str = "sv",
-                 use_cuda: bool = True):
+                 use_cuda: bool = True,
+                 llm_enabled: bool = False, llm_api_key: str = "",
+                 llm_model: str = "gpt-4.1-nano"):
         MODEL_DIR.mkdir(parents=True, exist_ok=True)
         self.language = language
+        self.llm_enabled = llm_enabled
+        self.llm_api_key = llm_api_key
+        self.llm_model = llm_model
         
         # Get the KBLab model name
         model_name = KBLAB_MODELS.get(model_size, model_size)
@@ -276,13 +303,15 @@ class Transcriber:
             download_root=str(MODEL_DIR),
         )
         log.info("Whisper '%s' (%s) laddad OK [%s, %s]", model_size, model_name, device, compute_type)
+        if self.llm_enabled and self.llm_api_key:
+            log.info("LLM-granskning aktiverad: %s", self.llm_model)
 
     def transcribe(self, audio: np.ndarray) -> str:
         log.info("Transkriberar: %d samples, peak=%.4f, modell=%s, lang=%s",
                  len(audio), np.abs(audio).max(), self.model_size, self.language)
 
         prompt = _INITIAL_PROMPTS.get(self.language, "")
-        hotwords = _load_hotwords()
+        hotwords = _get_hotwords_cached()
 
         # Try with VAD first, fall back to without on error.
         # segments is a lazy generator, so the error surfaces during
@@ -293,9 +322,12 @@ class Transcriber:
                     audio,
                     language=self.language,
                     beam_size=5,
+                    best_of=1,
                     vad_filter=use_vad,
                     vad_parameters={"min_silence_duration_ms": 300} if use_vad else None,
                     initial_prompt=prompt or None,
+                    condition_on_previous_text=False,
+                    without_timestamps=True,
                     # Decoder optimizations — zero latency cost:
                     # Mild penalty on repeated tokens (prevents "det det det")
                     repetition_penalty=1.1,
@@ -321,5 +353,18 @@ class Transcriber:
         text = re.sub(r"\s{2,}", " ", text).strip()
         text = corr_module.apply(text)
         text = _postprocess(text)
-        log.info("Resultat: '%s'", text)
+        log.info("Resultat (lokal): '%s'", text)
+
+        # LLM polishing — optional, never blocks on failure
+        if self.llm_enabled and self.llm_api_key and text:
+            from llm_polish import polish
+            from auto_learn import record_correction
+
+            result = polish(text, self.llm_api_key, self.llm_model)
+            if result.changed:
+                # Feed the before/after to auto-learning
+                record_correction(text, result.text)
+                text = result.text
+                log.info("Resultat (LLM, %dms): '%s'", result.latency_ms, text)
+
         return text

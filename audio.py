@@ -99,6 +99,7 @@ class MicRecorder:
 
     def __init__(self, device_name: str | None = None):
         self.frames: list[np.ndarray] = []
+        self._total_samples = 0  # Track total for pre-allocated concat
         self.recording = False
         self._stream: sd.InputStream | None = None
         self._device_name = device_name
@@ -106,6 +107,7 @@ class MicRecorder:
     def start(self):
         """Start recording. Tries multiple device/channel combos until one works."""
         self.frames = []
+        self._total_samples = 0
         self.recording = True
 
         candidates = self._build_candidates()
@@ -157,7 +159,9 @@ class MicRecorder:
 
     def _cb(self, indata, frames, time, status):
         if self.recording:
-            self.frames.append(indata.copy())
+            chunk = indata.copy()
+            self.frames.append(chunk)
+            self._total_samples += chunk.shape[0]
 
     def stop(self) -> np.ndarray:
         self.recording = False
@@ -170,13 +174,33 @@ class MicRecorder:
             self._stream = None
         if not self.frames:
             return np.array([], dtype=np.float32)
-        audio = np.concatenate(self.frames, axis=0)
+
+        # Pre-allocated buffer concatenation (WhisperFlow pattern):
+        # allocate once and copy — avoids repeated np.concatenate allocations
+        channels = self.frames[0].shape[1] if self.frames[0].ndim > 1 else 1
+        if channels > 1:
+            audio = np.empty((self._total_samples, channels), dtype=np.float32)
+            offset = 0
+            for chunk in self.frames:
+                n = chunk.shape[0]
+                audio[offset:offset + n] = chunk
+                offset += n
+        else:
+            audio = np.empty(self._total_samples, dtype=np.float32)
+            offset = 0
+            for chunk in self.frames:
+                flat = chunk.ravel()  # ravel() avoids copy for contiguous arrays
+                n = len(flat)
+                audio[offset:offset + n] = flat
+                offset += n
+
         orig_rate = getattr(self, "_rate", TARGET_RATE)
         log.info("Rå audio: shape=%s, dtype=%s, rate=%d, peak=%.4f",
                  audio.shape, audio.dtype, orig_rate, np.abs(audio).max())
         if audio.ndim > 1 and audio.shape[1] > 1:
             audio = audio.mean(axis=1)
-        audio = audio.flatten()
+        # ravel() returns a view if already contiguous — no copy overhead
+        audio = audio.ravel()
         resampled = _resample(audio, orig_rate)
         log.info("Resamplerad: %d → %d samples (%d→%dHz), peak=%.4f",
                  len(audio), len(resampled), orig_rate, TARGET_RATE,

@@ -9,6 +9,9 @@ DEFAULTS = {
     "model_size": "small",     # tiny/base/small/medium/large
     "use_cuda": True,         # True = auto-detect GPU, False = force CPU
     "mic_device": None,       # None = auto-detect, or device name string
+    "llm_enabled": False,     # LLM post-processing of transcribed text
+    "llm_api_key": "",        # GitHub token for Models API
+    "llm_model": "gpt-4.1-nano",  # Which LLM model to use
 }
 
 

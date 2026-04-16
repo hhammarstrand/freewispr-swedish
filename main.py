@@ -90,6 +90,9 @@ def _load_app():
         _transcriber = Transcriber(
             model_size=model_size,
             use_cuda=_config.get("use_cuda", True),
+            llm_enabled=_config.get("llm_enabled", False),
+            llm_api_key=_config.get("llm_api_key", ""),
+            llm_model=_config.get("llm_model", "gpt-4.1-nano"),
         )
     except Exception as e:
         log.error("Modellfel (%s): %s", model_size, e, exc_info=True)
@@ -168,18 +171,24 @@ def _apply_settings(new_cfg: dict):
 
     old_model = _config.get("model_size")
     old_cuda = _config.get("use_cuda")
+    old_llm = (_config.get("llm_enabled"), _config.get("llm_api_key"),
+               _config.get("llm_model"))
 
     _config.update(new_cfg)
     cfg_module.save(_config)
 
     new_model = _config.get("model_size", "small")
     new_cuda = _config.get("use_cuda", True)
+    new_llm = (_config.get("llm_enabled"), _config.get("llm_api_key"),
+               _config.get("llm_model"))
 
-    # Reload transcriber if model or CUDA setting changed
-    if old_model != new_model or old_cuda != new_cuda:
-        _set_tray_status(f"Laddar modell '{new_model}'...")
-        if _indicator:
-            _indicator.show(f"Laddar modell '{new_model}'...", state="transcribe")
+    # Reload transcriber if model, CUDA, or LLM settings changed
+    if old_model != new_model or old_cuda != new_cuda or old_llm != new_llm:
+        needs_model_reload = old_model != new_model or old_cuda != new_cuda
+        if needs_model_reload:
+            _set_tray_status(f"Laddar modell '{new_model}'...")
+            if _indicator:
+                _indicator.show(f"Laddar modell '{new_model}'...", state="transcribe")
 
         def _reload():
             global _transcriber, _dictation
@@ -187,6 +196,9 @@ def _apply_settings(new_cfg: dict):
                 _transcriber = Transcriber(
                     model_size=new_model,
                     use_cuda=new_cuda,
+                    llm_enabled=_config.get("llm_enabled", False),
+                    llm_api_key=_config.get("llm_api_key", ""),
+                    llm_model=_config.get("llm_model", "gpt-4.1-nano"),
                 )
                 log.info("Modell '%s' laddad!", new_model)
             except Exception as e:
@@ -212,7 +224,11 @@ def _apply_settings(new_cfg: dict):
                 _indicator.show(f"Modell '{new_model}' klar", state="done")
                 _indicator.hide(delay_ms=2000)
 
-        threading.Thread(target=_reload, daemon=True).start()
+        if needs_model_reload:
+            threading.Thread(target=_reload, daemon=True).start()
+        else:
+            # LLM-only change — no need for slow model reload
+            _reload()
         return
 
     # Restart dictation with new hotkey / mic

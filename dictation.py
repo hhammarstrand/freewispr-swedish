@@ -97,7 +97,8 @@ class DictationMode:
                 return
 
             # Reject near-silent recordings (accidental taps, muted mic)
-            rms = float(np.sqrt(np.mean(audio ** 2)))
+            # np.dot is faster than np.mean(audio**2) — single BLAS call
+            rms = float(np.sqrt(np.dot(audio, audio) / len(audio)))
             if rms < MIN_RMS_THRESHOLD:
                 log.info("Inspelning för tyst (RMS=%.5f < %.5f), ignorerar", rms, MIN_RMS_THRESHOLD)
                 self.on_status(f"Inget hördes — håll {self.hotkey.upper()}")
