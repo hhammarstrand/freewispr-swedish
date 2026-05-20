@@ -254,12 +254,11 @@ def test_dictation_parse_hotkey_normalises_cmd_to_windows():
     assert set(modifiers) == {"windows", "shift"}
 
 
-def test_audio_finalize_handles_empty_frames():
-    """finalize_audio must gracefully return an empty array for zero frames."""
-    import sys as _sys
-    # audio.py needs numpy/sounddevice/scipy — real ones present in test env.
+def test_audio_finalize_handles_empty_input():
+    """finalize_audio must gracefully return an empty array for zero input."""
+    import numpy as np
     audio = importlib.import_module("audio")
-    result = audio.finalize_audio([], 0, 16000)
+    result = audio.finalize_audio(np.empty(0, dtype=np.float32), 1, 16000)
     assert result.shape == (0,)
     assert result.dtype.name == "float32"
 
@@ -268,9 +267,31 @@ def test_audio_finalize_downmixes_stereo_via_first_channel():
     """Multi-channel input must downmix to mono using the first channel."""
     import numpy as np
     audio = importlib.import_module("audio")
-    # Two stereo chunks: left channel = 1.0, right channel = 0.0
-    chunk = np.array([[1.0, 0.0], [1.0, 0.0]], dtype=np.float32)
-    result = audio.finalize_audio([chunk, chunk], 4, audio.TARGET_RATE)
+    # Stereo buffer: left channel = 1.0, right channel = 0.0
+    stereo = np.array([[1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0]],
+                      dtype=np.float32)
+    result = audio.finalize_audio(stereo, 2, audio.TARGET_RATE)
     assert result.shape == (4,)
     assert np.allclose(result, 1.0)
+
+
+def test_corrections_apply_master_regex_handles_many_entries(tmp_path):
+    """Master-regex path must apply all corrections in a single pass."""
+    corrections = reload_with_home("corrections", tmp_path)
+    mapping = {
+        "motte": "möte",
+        "gar": "går",
+        "fika rasten": "fikarasten",
+    }
+    corrections.save(mapping)
+    # Longest key first ensures multi-word "fika rasten" wins over individual
+    # words that might overlap.
+    result = corrections.apply("Jag gar pa motte under fika rasten idag")
+    assert result == "Jag går pa möte under fikarasten idag"
+
+
+def test_corrections_apply_empty_dictionary_is_noop(tmp_path):
+    corrections = reload_with_home("corrections", tmp_path)
+    corrections.save({})
+    assert corrections.apply("oförändrad text") == "oförändrad text"
 

@@ -158,11 +158,11 @@ class DictationMode:
             return
         self._recording = False
         sounds.play_stop()
-        # Stop the stream cheaply and hand back raw frames. Concat/resample
-        # runs in the worker thread — keeping this hook callback under
-        # ~10 ms so Windows doesn't disable the low-level hook.
+        # Stop the stream cheaply and hand back the captured audio. Downmix
+        # and resample happen in the worker — keeping this hook callback
+        # under ~10 ms so Windows doesn't disable the low-level hook.
         try:
-            frames, total, rate = self.recorder.stop_fast()
+            audio, channels, rate = self.recorder.stop_fast()
         except Exception as e:
             log.error("Audio stop error: %s", e, exc_info=True)
             sounds.play_error()
@@ -178,7 +178,7 @@ class DictationMode:
         # Enqueue for the worker. Bounded queue: if full (previous job(s)
         # still being transcribed/polished), drop and tell the user.
         try:
-            self._jobs.put_nowait((frames, total, rate, rms))
+            self._jobs.put_nowait((audio, channels, rate, rms))
         except queue.Full:
             log.warning("Transkriberingskö full — hoppar över denna")
             self.on_status("Upptagen — vänta…")
@@ -205,10 +205,10 @@ class DictationMode:
             except Exception as e:
                 log.error("Worker exception: %s", e, exc_info=True)
 
-    def _process_job(self, frames: list, total_samples: int,
+    def _process_job(self, audio_raw: np.ndarray, channels: int,
                      rate: int, rms: float):
-        # Finalize off-hook: concat + downmix + resample
-        audio = finalize_audio(frames, total_samples, rate)
+        # Finalize off-hook: downmix + resample
+        audio = finalize_audio(audio_raw, channels, rate)
         n = len(audio)
         log.info("Audio: %d samples, RMS=%.5f", n, rms)
 

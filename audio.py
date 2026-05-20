@@ -9,6 +9,10 @@ log = logging.getLogger("freewispr")
 
 TARGET_RATE = 16000  # Whisper expects 16 kHz
 
+# Hard cap on a single recording. At 48 kHz mono float32 this is ~23 MB,
+# at 48 kHz stereo ~46 MB. Prevents a stuck hotkey from filling RAM.
+MAX_RECORD_SECONDS = 120
+
 # Host API preference order on Windows (best first)
 _API_PREF = ["WASAPI", "DirectSound", "MME"]
 
@@ -133,8 +137,13 @@ class MicRecorder:
             we try the exact (api, index) first, then fall back to name match
             so reordered USB devices still work.
         """
-        self.frames: list[np.ndarray] = []
-        self._total_samples = 0  # Track total for pre-allocated concat
+        # Pre-allocated ring buffer — written by the audio callback, read by
+        # the worker on stop. Avoids per-callback np.copy + final concat pass.
+        self._buffer: np.ndarray | None = None  # shape (capacity, channels) or (capacity,)
+        self._buffer_capacity = 0
+        self._buffer_offset = 0
+        self._buffer_channels = 1
+        self._buffer_overflow = False
         self.level = 0.0  # Current RMS level for UI visualization
         # Running sum of squares — lets stop() return RMS in O(1) without
         # the caller doing another full pass over the audio buffer.
@@ -157,11 +166,21 @@ class MicRecorder:
 
     def start(self):
         """Start recording. Tries multiple device/channel combos until one works."""
-        self.frames = []
-        self._total_samples = 0
+        # Defensive: if a previous start() never reached stop() (e.g. exception
+        # in the caller), close the leaked stream before opening a new one.
+        if self._stream is not None:
+            try:
+                self._stream.stop()
+                self._stream.close()
+            except Exception:
+                pass
+            self._stream = None
+
         self.level = 0.0
         self._sumsq = 0.0
         self._sumsq_count = 0
+        self._buffer_offset = 0
+        self._buffer_overflow = False
         self.recording = True
 
         candidates = self._build_candidates()
@@ -169,6 +188,9 @@ class MicRecorder:
 
         for dev_idx, rate, ch, label in candidates:
             try:
+                # Pre-allocate buffer for this (rate, channels). Reuse across
+                # subsequent starts when shape matches — saves an allocation.
+                self._ensure_buffer(rate, ch)
                 self._stream = _try_start(dev_idx, rate, ch, self._cb)
                 self._rate = rate
                 log.info("Inspelning startad: %s (dev=%d, %dHz, %dch)",
@@ -178,6 +200,19 @@ class MicRecorder:
                 last_err = e
 
         raise last_err or RuntimeError("Ingen mikrofon kunde oppnas")
+
+    def _ensure_buffer(self, rate: int, channels: int) -> None:
+        """Allocate or re-allocate the ring buffer for (rate, channels)."""
+        capacity = rate * MAX_RECORD_SECONDS
+        if (self._buffer is None
+                or self._buffer_capacity != capacity
+                or self._buffer_channels != channels):
+            if channels > 1:
+                self._buffer = np.empty((capacity, channels), dtype=np.float32)
+            else:
+                self._buffer = np.empty(capacity, dtype=np.float32)
+            self._buffer_capacity = capacity
+            self._buffer_channels = channels
 
     def _build_candidates(self) -> list[tuple[int, int, int, str]]:
         """Build ordered list of (device_idx, rate, channels, label) to try."""
@@ -233,18 +268,34 @@ class MicRecorder:
             if now - self._last_status_log > 5.0:
                 log.warning("Audio callback-status: %s", status)
                 self._last_status_log = now
-        if self.recording:
-            chunk = indata.copy()
-            self.frames.append(chunk)
-            self._total_samples += chunk.shape[0]
-            # Update level for UI visualization (fast: np.dot on small chunk)
-            flat = chunk.ravel()
-            n = len(flat)
-            if n:
-                ss = float(np.dot(flat, flat))
-                self._sumsq += ss
-                self._sumsq_count += n
-                self.level = float(np.sqrt(ss / n))
+        if not self.recording or self._buffer is None:
+            return
+        n = indata.shape[0]
+        if n <= 0:
+            return
+        remaining = self._buffer_capacity - self._buffer_offset
+        if remaining <= 0:
+            if not self._buffer_overflow:
+                log.warning("Inspelning naadde %d s max-cap, slutar buffra",
+                            MAX_RECORD_SECONDS)
+                self._buffer_overflow = True
+            return
+        n = min(n, remaining)
+        # Copy directly into the pre-allocated arena — no per-callback
+        # np.ndarray allocation, no final concat pass in stop_fast().
+        if self._buffer_channels > 1:
+            self._buffer[self._buffer_offset:self._buffer_offset + n] = indata[:n]
+            chunk_for_level = indata[:n, 0]
+        else:
+            chunk_for_level = indata[:n].ravel() if indata.ndim > 1 else indata[:n]
+            self._buffer[self._buffer_offset:self._buffer_offset + n] = chunk_for_level
+        self._buffer_offset += n
+        # Update level/RMS using the data we already have in cache.
+        if chunk_for_level.size:
+            ss = float(np.dot(chunk_for_level, chunk_for_level))
+            self._sumsq += ss
+            self._sumsq_count += chunk_for_level.size
+            self.level = float(np.sqrt(ss / chunk_for_level.size))
 
     def rms(self) -> float:
         """Return RMS of all captured audio so far.
@@ -257,13 +308,17 @@ class MicRecorder:
             return 0.0
         return float(np.sqrt(self._sumsq / self._sumsq_count))
 
-    def stop_fast(self) -> tuple[list, int, int]:
-        """Stop the stream cheaply and hand back raw frames.
+    def stop_fast(self) -> tuple[np.ndarray, int, int]:
+        """Stop the stream cheaply and hand back the captured audio view.
 
-        Returns ``(frames, total_samples, rate)`` without doing any concat or
-        resample work — that runs in the transcription worker via
-        :py:func:`finalize_audio`. Keeps the keyboard-hook thread responsive
-        (Windows can disable a low-level hook that blocks > ~300 ms).
+        Returns ``(audio_view, channels, rate)``. ``audio_view`` is a *view*
+        into the pre-allocated ring buffer — the worker must use it before
+        the next ``start()`` call (which may overwrite the buffer in place).
+        For dictation that's always safe because start/stop alternate with
+        the worker thread consuming each buffer in order.
+
+        Keeps the keyboard-hook thread responsive (Windows can disable a
+        low-level hook that blocks > ~300 ms).
         """
         self.recording = False
         if self._stream:
@@ -273,13 +328,14 @@ class MicRecorder:
             except Exception:
                 pass
             self._stream = None
-        frames = self.frames
-        total = self._total_samples
         rate = getattr(self, "_rate", TARGET_RATE)
-        # Detach so a subsequent start() doesn't share state with the worker.
-        self.frames = []
-        self._total_samples = 0
-        return frames, total, rate
+        if self._buffer is None or self._buffer_offset == 0:
+            return np.empty(0, dtype=np.float32), self._buffer_channels, rate
+        view = self._buffer[:self._buffer_offset]
+        # Copy so the worker can safely process while a new recording starts.
+        # The copy is contiguous and ~23 MB worst case (120 s @ 48 kHz mono).
+        captured = view.copy()
+        return captured, self._buffer_channels, rate
 
     def stop(self) -> np.ndarray:
         """Backward-compatible: stop + finalize in one call.
@@ -287,47 +343,34 @@ class MicRecorder:
         Prefer :py:meth:`stop_fast` + :py:func:`finalize_audio` for the
         latency-sensitive dictation path.
         """
-        frames, total, rate = self.stop_fast()
-        return finalize_audio(frames, total, rate)
+        audio, channels, rate = self.stop_fast()
+        return finalize_audio(audio, channels, rate)
 
 
-def finalize_audio(frames: list, total_samples: int, orig_rate: int) -> np.ndarray:
-    """Concat frames, downmix to mono, and resample to 16 kHz.
+def finalize_audio(audio: np.ndarray, channels: int, orig_rate: int) -> np.ndarray:
+    """Downmix to mono and resample to 16 kHz.
 
     Pulled out of ``MicRecorder.stop`` so the keyboard-hook thread can hand
-    raw frames to a worker thread for processing. On a 30 s recording at
+    raw audio to a worker thread for processing. On a 30 s recording at
     48 kHz this work takes ~20-80 ms and must not block the hook callback.
+
+    Accepts either a 1-D mono buffer or a 2-D ``(samples, channels)`` array;
+    multi-channel input is downmixed by taking the first channel (cheaper
+    than mean() and equivalent for dictation).
     """
-    if not frames:
+    if audio is None or audio.size == 0:
         return np.array([], dtype=np.float32)
 
-    # Pre-allocated buffer concatenation (WhisperFlow pattern):
-    # allocate once and copy — avoids repeated np.concatenate allocations.
-    channels = frames[0].shape[1] if frames[0].ndim > 1 else 1
-    if channels > 1:
-        # Multi-channel: take first channel only (cheaper than mean and
-        # equivalent for dictation; mics that need mixing are rare and
-        # the first channel usually carries the primary signal).
-        audio = np.empty(total_samples, dtype=np.float32)
-        offset = 0
-        for chunk in frames:
-            n = chunk.shape[0]
-            audio[offset:offset + n] = chunk[:, 0]
-            offset += n
+    if audio.ndim > 1 and audio.shape[1] > 1:
+        mono = np.ascontiguousarray(audio[:, 0])
     else:
-        audio = np.empty(total_samples, dtype=np.float32)
-        offset = 0
-        for chunk in frames:
-            flat = chunk.ravel()  # ravel() avoids copy for contiguous arrays
-            n = len(flat)
-            audio[offset:offset + n] = flat
-            offset += n
+        mono = audio.ravel()
 
     log.info("Rå audio: shape=%s, dtype=%s, rate=%d, peak=%.4f",
-             audio.shape, audio.dtype, orig_rate,
-             float(np.abs(audio).max()) if audio.size else 0.0)
-    resampled = _resample(audio, orig_rate)
+             mono.shape, mono.dtype, orig_rate,
+             float(np.abs(mono).max()) if mono.size else 0.0)
+    resampled = _resample(mono, orig_rate)
     log.info("Resamplerad: %d → %d samples (%d→%dHz), peak=%.4f",
-             len(audio), len(resampled), orig_rate, TARGET_RATE,
+             len(mono), len(resampled), orig_rate, TARGET_RATE,
              float(np.abs(resampled).max()) if resampled.size else 0.0)
     return resampled

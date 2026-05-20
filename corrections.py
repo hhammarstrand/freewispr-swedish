@@ -2,15 +2,28 @@
 Personal dictionary — word corrections applied after transcription.
 Stored at ~/.freewispr-swedish/corrections.json as {"wrong": "right", ...}
 """
-import json
 import re
 from pathlib import Path
+
+from json_store import load_json, save_json_atomic
 
 _FILE = Path.home() / ".freewispr-swedish" / "corrections.json"
 
 # In-memory cache — avoids re-reading JSON on every transcription.
 _cache: dict[str, str] | None = None
 _cache_mtime: float = 0.0
+
+
+def mtime() -> float:
+    """Return mtime of the corrections file (0.0 if missing).
+
+    Exposed so callers (e.g. hotwords cache in transcriber) can detect
+    changes without poking the private `_FILE` constant.
+    """
+    try:
+        return _FILE.stat().st_mtime
+    except OSError:
+        return 0.0
 
 
 def load() -> dict[str, str]:
@@ -20,13 +33,9 @@ def load() -> dict[str, str]:
     if _cache is not None and current_mt == _cache_mtime:
         return _cache
     if _FILE.exists():
-        try:
-            with open(_FILE, encoding="utf-8") as f:
-                _cache = json.load(f)
-                _cache_mtime = current_mt
-                return _cache
-        except Exception:
-            pass
+        _cache = dict(load_json(_FILE, {}))
+        _cache_mtime = _FILE.stat().st_mtime if _FILE.exists() else 0.0
+        return _cache
     _cache = {}
     _cache_mtime = current_mt
     return _cache
@@ -34,22 +43,40 @@ def load() -> dict[str, str]:
 
 def save(corrections: dict[str, str]):
     global _cache, _cache_mtime
-    _FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(_FILE, "w", encoding="utf-8") as f:
-        json.dump(corrections, f, indent=2, ensure_ascii=False)
+    save_json_atomic(_FILE, corrections)
     # Invalidate cache so next load() picks up the new data
     _cache = corrections
     _cache_mtime = _FILE.stat().st_mtime
 
 
+# Compiled-pattern cache for apply(). A *single* alternation regex with a
+# dispatch dict — one linear scan over the text replaces all corrections,
+# instead of N sequential substring scans (one per pair). For dictionaries
+# with 50+ entries this is the difference between O(N*M) and O(M) per call.
+_apply_master: re.Pattern[str] | None = None
+_apply_lookup: dict[str, str] = {}
+_apply_cache_mtime: float = -1.0
+
+
+def _build_apply_cache(corr: dict[str, str]) -> tuple[re.Pattern[str] | None, dict[str, str]]:
+    if not corr:
+        return None, {}
+    # Sort longest first so multi-word keys match before their prefixes.
+    keys = sorted(corr.keys(), key=len, reverse=True)
+    alternation = "|".join(re.escape(k) for k in keys)
+    pattern = re.compile(r"\b(?:" + alternation + r")\b", re.IGNORECASE)
+    lookup = {k.lower(): v for k, v in corr.items()}
+    return pattern, lookup
+
+
 def apply(text: str) -> str:
     """Replace all correction pairs (case-insensitive match, exact replacement)."""
+    global _apply_master, _apply_lookup, _apply_cache_mtime
     corr = load()
-    for wrong, right in corr.items():
-        text = re.sub(
-            r'\b' + re.escape(wrong) + r'\b',
-            right,
-            text,
-            flags=re.IGNORECASE,
-        )
-    return text
+    current_mt = _cache_mtime
+    if current_mt != _apply_cache_mtime:
+        _apply_master, _apply_lookup = _build_apply_cache(corr)
+        _apply_cache_mtime = current_mt
+    if _apply_master is None:
+        return text
+    return _apply_master.sub(lambda m: _apply_lookup[m.group(0).lower()], text)
