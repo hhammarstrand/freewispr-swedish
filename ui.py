@@ -7,12 +7,25 @@ Tkinter-based windows for freewispr-swedish.
 """
 import tkinter as tk
 from tkinter import ttk, messagebox
+import math
+import random
 import threading
+import time as time_module
 
 import snippets as snippet_module
 import corrections as corr_module
-from audio import list_input_devices
-from llm_polish import AVAILABLE_MODELS as LLM_MODELS, DEFAULT_MODEL as LLM_DEFAULT, test_connection as llm_test
+import config as cfg_module
+
+# llm_polish is imported lazily inside SettingsWindow methods.
+# Pulling it in at module import time forces openai + httpx (~80 ms cold)
+# which delays the tray icon and every window open, even when the user
+# never touches LLM polish.
+
+
+def _llm():
+    """Lazy import shim — returns (AVAILABLE_MODELS, DEFAULT_MODEL, test_connection)."""
+    from llm_polish import AVAILABLE_MODELS, DEFAULT_MODEL, test_connection
+    return AVAILABLE_MODELS, DEFAULT_MODEL, test_connection
 
 
 BG = "#0f0f0f"
@@ -78,6 +91,15 @@ def _style(root):
 # --------------------------------------------------------------------------- #
 
 class FloatingIndicator:
+    """Compact always-on-top pill with animated equalizer bars.
+
+    States:
+      listen     — purple bars driven by live microphone level
+      transcribe — orange bars pulsing as a traveling sine wave
+      done       — green bars at medium height (static)
+      error      — red bars at minimum height (static)
+    """
+
     _COLORS = {
         "listen":      "#7c5cfc",
         "transcribe":  "#f39c12",
@@ -85,20 +107,87 @@ class FloatingIndicator:
         "error":       "#e74c3c",
     }
 
+    _NUM_BARS = 5
+    _BAR_W = 4
+    _BAR_GAP = 3
+    _BAR_MIN = 3.0
+    _BAR_MAX = 18.0
+    _CANVAS_H = 22
+
     def __init__(self, root: tk.Tk):
         self._root = root
         self._win: tk.Toplevel | None = None
         self._label: tk.Label | None = None
-        self._dot: tk.Label | None = None
-        self._blink_job = None
+        self._canvas: tk.Canvas | None = None
+        self._bars: list[int] = []
+        self._bar_heights = [self._BAR_MIN] * self._NUM_BARS
+        self._level_source = None  # callable -> float (mic RMS) [legacy pull]
+        self._anim_job = None
+        self._hide_job = None
         self._state: str = "listen"
+        self._phase: int = 0
+        # Push-driven listen state — audio callback writes _pushed_level and
+        # marshals a redraw via _root.after(0, ...). Throttled so a 16 kHz
+        # callback fired ~50 Hz can't flood the Tk event queue.
+        self._pushed_level: float = 0.0
+        self._pending_push: bool = False
+        self._last_push_ms: float = 0.0
+        self._PUSH_MIN_INTERVAL_MS = 33.0  # ~30 Hz max redraw
 
-    def show(self, message: str, state: str = "listen"):
+    @property
+    def _canvas_w(self) -> int:
+        return self._NUM_BARS * self._BAR_W + (self._NUM_BARS - 1) * self._BAR_GAP
+
+    # -- public API --------------------------------------------------------- #
+
+    def show(self, message: str, state: str = "listen", level_source=None):
+        """Show the indicator. *level_source* is an optional callable returning
+        the current mic RMS (float) — used as a fallback driver for the
+        equalizer in listen state when ``push_level`` is not wired."""
         self._state = state
+        self._level_source = level_source if state == "listen" else None
+        self._pushed_level = 0.0
+        self._last_push_ms = 0.0  # re-enable polling fallback until first push
+        self._phase = 0
+        if self._hide_job:
+            self._root.after_cancel(self._hide_job)
+            self._hide_job = None
         self._root.after(0, self._show, message, state)
 
+    def push_level(self, level: float) -> None:
+        """Thread-safe push of a new mic RMS level from the audio callback.
+
+        Replaces the 50 ms pull-based polling loop in listen state: the
+        audio thread tells the UI when a new level is available, the UI
+        only redraws on demand. Throttled to ~30 Hz so high-rate callbacks
+        don't saturate the Tk event queue.
+        """
+        if self._state != "listen" or self._win is None:
+            return
+        self._pushed_level = float(level)
+        if self._pending_push:
+            return
+        now_ms = time_module.monotonic() * 1000.0
+        wait = self._PUSH_MIN_INTERVAL_MS - (now_ms - self._last_push_ms)
+        self._pending_push = True
+        if wait <= 0:
+            self._root.after(0, self._consume_push)
+        else:
+            self._root.after(int(wait), self._consume_push)
+
+    def _consume_push(self):
+        self._pending_push = False
+        self._last_push_ms = time_module.monotonic() * 1000.0
+        if self._state != "listen" or self._canvas is None:
+            return
+        self._animate_level(self._pushed_level)
+
     def hide(self, delay_ms: int = 800):
-        self._root.after(delay_ms, self._hide)
+        if self._hide_job:
+            self._root.after_cancel(self._hide_job)
+        self._hide_job = self._root.after(delay_ms, self._hide)
+
+    # -- internal ----------------------------------------------------------- #
 
     def _show(self, message: str, state: str):
         color = self._COLORS.get(state, ACC)
@@ -113,9 +202,12 @@ class FloatingIndicator:
             outer = tk.Frame(self._win, bg=BG2, padx=14, pady=7)
             outer.pack()
 
-            self._dot = tk.Label(outer, text="●", bg=BG2, fg=color,
-                                 font=("Segoe UI", 9))
-            self._dot.pack(side="left", padx=(0, 7))
+            self._canvas = tk.Canvas(
+                outer, width=self._canvas_w, height=self._CANVAS_H,
+                bg=BG2, highlightthickness=0,
+            )
+            self._canvas.pack(side="left", padx=(0, 10))
+            self._create_bars(color)
 
             self._label = tk.Label(outer, text=message, bg=BG2, fg=FG,
                                    font=("Segoe UI", 10))
@@ -128,30 +220,120 @@ class FloatingIndicator:
         else:
             if self._label:
                 self._label.configure(text=message)
-            if self._dot:
-                self._dot.configure(fg=color)
+            self._recolor_bars(color)
 
-        if self._blink_job:
-            self._root.after_cancel(self._blink_job)
-        self._blink(color)
+        # Cancel any previous animation
+        if self._anim_job:
+            self._root.after_cancel(self._anim_job)
+            self._anim_job = None
+
+        # Animated states get a loop; static states set bars once
+        if state in ("listen", "transcribe"):
+            self._animate()
+        else:
+            self._set_static_bars(state)
+
+    def _create_bars(self, color: str):
+        self._bars = []
+        self._bar_heights = [self._BAR_MIN] * self._NUM_BARS
+        for i in range(self._NUM_BARS):
+            x = i * (self._BAR_W + self._BAR_GAP)
+            y_top = self._CANVAS_H - self._BAR_MIN
+            bar = self._canvas.create_rectangle(
+                x, y_top, x + self._BAR_W, self._CANVAS_H,
+                fill=color, outline="",
+            )
+            self._bars.append(bar)
+
+    def _recolor_bars(self, color: str):
+        if self._canvas:
+            for bar in self._bars:
+                self._canvas.itemconfigure(bar, fill=color)
+
+    def _set_static_bars(self, state: str):
+        """Set bars to a fixed height for done/error states."""
+        h = self._BAR_MAX * 0.7 if state == "done" else self._BAR_MIN
+        for i in range(self._NUM_BARS):
+            x = i * (self._BAR_W + self._BAR_GAP)
+            y_top = self._CANVAS_H - h
+            if self._canvas and i < len(self._bars):
+                self._canvas.coords(
+                    self._bars[i], x, y_top, x + self._BAR_W, self._CANVAS_H,
+                )
+
+    # -- animation loop ----------------------------------------------------- #
+
+    def _animate(self):
+        if self._win is None or self._canvas is None:
+            return
+        # listen state is push-driven via push_level(); fall back to the
+        # legacy polling driver only if no pushes have arrived (e.g. a
+        # caller wired level_source= but not push_level).
+        if self._state == "listen":
+            if self._last_push_ms > 0.0:
+                return  # push pipeline owns redraws
+            self._animate_level()
+        elif self._state == "transcribe":
+            self._animate_wave()
+        interval = 50 if self._state == "listen" else 100
+        self._anim_job = self._root.after(interval, self._animate)
+
+    def _animate_level(self, level: float | None = None):
+        """Equalizer bars — *level* (0..1) supplied by push_level() or pulled
+        from the legacy ``level_source`` callable as a fallback."""
+        if level is None:
+            level = 0.0
+            if self._level_source:
+                try:
+                    level = min(self._level_source() * 12, 1.0)
+                except Exception:
+                    pass
+        else:
+            level = min(level * 12, 1.0)
+
+        for i in range(self._NUM_BARS):
+            # Each bar gets a slightly different target for an organic look
+            jitter = random.uniform(0.3, 1.3)
+            target_h = self._BAR_MIN + level * jitter * (self._BAR_MAX - self._BAR_MIN)
+            target_h = max(self._BAR_MIN, min(self._BAR_MAX, target_h))
+
+            cur = self._bar_heights[i]
+            if target_h > cur:
+                new_h = cur * 0.2 + target_h * 0.8   # fast attack
+            else:
+                new_h = cur * 0.65 + target_h * 0.35  # slow decay
+            self._bar_heights[i] = new_h
+
+            x = i * (self._BAR_W + self._BAR_GAP)
+            y_top = self._CANVAS_H - new_h
+            self._canvas.coords(
+                self._bars[i], x, y_top, x + self._BAR_W, self._CANVAS_H,
+            )
+
+    def _animate_wave(self):
+        """Traveling sine wave for the transcribe/processing state."""
+        self._phase += 1
+        for i in range(self._NUM_BARS):
+            t = (math.sin(self._phase * 0.18 + i * 0.9) + 1) / 2
+            h = self._BAR_MIN + t * (self._BAR_MAX - self._BAR_MIN)
+            x = i * (self._BAR_W + self._BAR_GAP)
+            y_top = self._CANVAS_H - h
+            self._canvas.coords(
+                self._bars[i], x, y_top, x + self._BAR_W, self._CANVAS_H,
+            )
 
     def _hide(self):
-        if self._blink_job:
-            self._root.after_cancel(self._blink_job)
-            self._blink_job = None
+        self._hide_job = None
+        if self._anim_job:
+            self._root.after_cancel(self._anim_job)
+            self._anim_job = None
+        self._level_source = None
         if self._win:
             self._win.destroy()
             self._win = None
             self._label = None
-            self._dot = None
-
-    def _blink(self, color: str):
-        if self._win is None or self._dot is None:
-            return
-        current = self._dot.cget("fg")
-        next_color = BG2 if current != BG2 else color
-        self._dot.configure(fg=next_color)
-        self._blink_job = self._root.after(550, self._blink, color)
+            self._canvas = None
+            self._bars = []
 
 
 # --------------------------------------------------------------------------- #
@@ -434,14 +616,15 @@ class DictionaryWindow:
 #  Settings window                                                             #
 # --------------------------------------------------------------------------- #
 
-# Tk keysym → human-readable name mapping for hotkey capture
+# Tk keysym → human-readable name mapping for hotkey capture.
+# Only keysyms whose lowercase form differs from the wanted display name
+# are listed here; everything else falls through to ``event.keysym.lower()``.
 _KEY_NAMES = {
     "Control_L": "ctrl", "Control_R": "right ctrl",
     "Alt_L": "alt", "Alt_R": "right alt",
     "Shift_L": "shift", "Shift_R": "right shift",
-    "space": "space", "Return": "enter", "Escape": "esc",
-    "Tab": "tab", "BackSpace": "backspace", "Delete": "delete",
-    "Up": "up", "Down": "down", "Left": "left", "Right": "right",
+    "Return": "enter", "Escape": "esc",
+    "BackSpace": "backspace",
 }
 
 
@@ -620,9 +803,17 @@ class SettingsWindow:
         card = self._card(outer)
         self._section_label(card, "Mikrofon")
 
+        from audio import list_input_devices
+
         self._mic_devices = list_input_devices()
         mic_names = ["Auto"] + [d["name"] for d in self._mic_devices]
-        saved_mic = self.cfg.get("mic_device") or ""
+        # mic_device may be None (auto), a str (legacy), or a dict
+        # {"name", "api", "index"} (new structured form).
+        saved_mic_raw = self.cfg.get("mic_device")
+        if isinstance(saved_mic_raw, dict):
+            saved_mic = saved_mic_raw.get("name", "")
+        else:
+            saved_mic = saved_mic_raw or ""
 
         self._mic_var = tk.StringVar(value=saved_mic if saved_mic else "Auto")
         mic_combo = ttk.Combobox(card, textvariable=self._mic_var,
@@ -662,7 +853,14 @@ class SettingsWindow:
         # -- Card: LLM-granskning ------------------------------------------ #
         card = self._card(outer)
         self._section_label(card, "LLM-granskning")
-        self._hint(card, "Granska och forbattra transkriberad text via AI")
+        self._hint(
+            card,
+            "Valfritt onlineläge: transkriberad text skickas till GitHub Models/Azure.",
+        )
+        self._hint(
+            card,
+            "Stäng av för helt lokal/offline diktering.",
+        )
 
         self._llm_var = tk.BooleanVar(value=self.cfg.get("llm_enabled", False))
         self._toggle(card, "Aktivera LLM-granskning", self._llm_var)
@@ -672,10 +870,11 @@ class SettingsWindow:
         llm_model_row.pack(fill="x", pady=(8, 0))
         tk.Label(llm_model_row, text="Modell:", bg=BG2, fg=FG2,
                  font=("Segoe UI", 9)).pack(side="left")
-        saved_llm = self.cfg.get("llm_model", LLM_DEFAULT)
+        llm_models, llm_default, _ = _llm()
+        saved_llm = self.cfg.get("llm_model", llm_default)
         self._llm_model_var = tk.StringVar(value=saved_llm)
         llm_combo = ttk.Combobox(llm_model_row, textvariable=self._llm_model_var,
-                                 values=list(LLM_MODELS.keys()),
+                                 values=list(llm_models.keys()),
                                  state="readonly", width=20)
         llm_combo.pack(side="left", padx=(8, 0))
         self._llm_model_desc = tk.Label(llm_model_row, text="", bg=BG2, fg=FG2,
@@ -766,7 +965,8 @@ class SettingsWindow:
 
     def _on_llm_model_change(self, _=None):
         model = self._llm_model_var.get()
-        desc = LLM_MODELS.get(model, "")
+        llm_models, _default, _test = _llm()
+        desc = llm_models.get(model, "")
         self._llm_model_desc.configure(text=desc)
 
     def _toggle_key_visibility(self):
@@ -790,7 +990,8 @@ class SettingsWindow:
         self._test_result.configure(text="Ansluter...", fg=FG2)
 
         def _run():
-            ok, msg = llm_test(key, model)
+            _models, _default, test_conn = _llm()
+            ok, msg = test_conn(key, model)
             self.root.after(0, lambda: self._show_test_result(ok, msg))
 
         threading.Thread(target=_run, daemon=True).start()
@@ -801,18 +1002,65 @@ class SettingsWindow:
         self._test_result.configure(text=msg, fg=color)
 
     def _save(self):
-        self.cfg["hotkey"] = self._hotkey_var.get().strip()
-        self.cfg["model_size"] = self._model_var.get()
-        self.cfg["use_cuda"] = self._cuda_var.get()
+        llm_enabled = self._llm_var.get()
+        api_key = self._key_var.get().strip()
+        llm_was_enabled = self.cfg.get("llm_enabled", False)
+        llm_privacy_accepted = self.cfg.get("llm_privacy_accepted", False)
+        needs_llm_consent = llm_enabled and (not llm_was_enabled or not llm_privacy_accepted)
+        if llm_enabled:
+            if api_key and not cfg_module.can_store_secret():
+                messagebox.showerror(
+                    "Kan inte spara API-nyckel",
+                    "Saknar saker lagring for API-nyckeln. Installera/aktivera "
+                    "keyring med Windows Credential Manager och forsok igen.",
+                )
+                return
+        if needs_llm_consent:
+            ok = messagebox.askokcancel(
+                "Aktivera LLM-granskning?",
+                "LLM-granskning skickar din transkriberade text till "
+                "GitHub Models/Azure for korrigering.\n\n"
+                "Aktivera bara detta om du accepterar att texten lamnar datorn.",
+            )
+            if not ok:
+                return
+
+        new_cfg = self.cfg.copy()
+        new_cfg["hotkey"] = self._hotkey_var.get().strip()
+        new_cfg["model_size"] = self._model_var.get()
+        new_cfg["use_cuda"] = self._cuda_var.get()
         mic = self._mic_var.get()
-        self.cfg["mic_device"] = None if mic == "Auto" else mic
-        self.cfg["llm_enabled"] = self._llm_var.get()
-        self.cfg["llm_api_key"] = self._key_var.get().strip()
-        self.cfg["llm_model"] = self._llm_model_var.get()
+        # Persist the full device descriptor (name + api + index) so we can
+        # re-select the same physical mic across reboots even if the user
+        # plugs other USB devices in front of it. Falls back gracefully to
+        # name matching — see audio.MicRecorder._build_candidates.
+        if mic == "Auto":
+            new_cfg["mic_device"] = None
+        else:
+            picked = next(
+                (d for d in getattr(self, "_mic_devices", []) if d["name"] == mic),
+                None,
+            )
+            if picked:
+                new_cfg["mic_device"] = {
+                    "name": picked["name"],
+                    "api": picked["api"],
+                    "index": picked["index"],
+                }
+            else:
+                # User typed something we didn't enumerate; save as bare name.
+                new_cfg["mic_device"] = mic
+        new_cfg["llm_enabled"] = llm_enabled
+        new_cfg["llm_api_key"] = api_key
+        new_cfg["llm_model"] = self._llm_model_var.get()
+        new_cfg["llm_privacy_accepted"] = bool(
+            llm_enabled and (llm_privacy_accepted or needs_llm_consent)
+        )
         # Clean out removed keys from old configs
-        self.cfg.pop("filter_fillers", None)
-        self.cfg.pop("auto_punctuate", None)
-        self.cfg.pop("language", None)
+        new_cfg.pop("filter_fillers", None)
+        new_cfg.pop("auto_punctuate", None)
+        new_cfg.pop("language", None)
         if self.on_save:
-            self.on_save(self.cfg)
+            if self.on_save(new_cfg) is False:
+                return
         self.root.destroy()

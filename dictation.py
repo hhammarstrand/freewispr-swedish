@@ -139,6 +139,13 @@ class DictationMode:
         if self._active and not self._recording and self._modifier_held():
             try:
                 self._recording = True
+                # Wire the audio thread to push RMS levels directly to the
+                # UI indicator — replaces the 50 ms polling timer with an
+                # event-driven path. Cleared in _on_release.
+                if self.indicator is not None:
+                    self.recorder.on_level = self.indicator.push_level
+                else:
+                    self.recorder.on_level = None
                 self.recorder.start()
                 sounds.play_start()
                 self.on_status("Lyssnar…")
@@ -157,6 +164,9 @@ class DictationMode:
         if not (self._active and self._recording):
             return
         self._recording = False
+        # Detach the UI push callback before stop_fast so a late audio
+        # callback can't redraw bars after we've switched to transcribe.
+        self.recorder.on_level = None
         sounds.play_stop()
         # Stop the stream cheaply and hand back the captured audio. Downmix
         # and resample happen in the worker — keeping this hook callback

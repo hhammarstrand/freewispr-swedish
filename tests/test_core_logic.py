@@ -295,3 +295,79 @@ def test_corrections_apply_empty_dictionary_is_noop(tmp_path):
     corrections.save({})
     assert corrections.apply("oförändrad text") == "oförändrad text"
 
+
+def test_indicator_push_level_throttles_redraws(monkeypatch):
+    """push_level must coalesce rapid audio-thread calls into ≤1 pending
+    Tk redraw — otherwise a 50 Hz audio callback floods after()."""
+    # Stub out tkinter — we only need the FloatingIndicator class itself,
+    # not a real Tk root.
+    import sys as _sys
+    fake_tk = type(_sys)("tkinter")
+    fake_tk.Tk = object
+    fake_tk.Toplevel = object
+    fake_tk.Label = object
+    fake_tk.Canvas = object
+    fake_tk.Frame = object
+    fake_tk.BooleanVar = object
+    fake_tk.StringVar = object
+    fake_tk.Button = object
+    fake_tk.Entry = object
+    fake_ttk = type(_sys)("tkinter.ttk")
+    fake_ttk.Style = object
+    fake_ttk.Combobox = object
+    fake_ttk.Treeview = object
+    fake_ttk.Scrollbar = object
+    fake_messagebox = type(_sys)("tkinter.messagebox")
+    fake_messagebox.showerror = lambda *a, **k: None
+    fake_messagebox.askokcancel = lambda *a, **k: True
+    fake_tk.ttk = fake_ttk
+    fake_tk.messagebox = fake_messagebox
+    monkeypatch.setitem(_sys.modules, "tkinter", fake_tk)
+    monkeypatch.setitem(_sys.modules, "tkinter.ttk", fake_ttk)
+    monkeypatch.setitem(_sys.modules, "tkinter.messagebox", fake_messagebox)
+
+    ui = importlib.reload(importlib.import_module("ui"))
+
+    scheduled: list = []
+
+    class FakeRoot:
+        def after(self, delay, fn=None, *args):
+            scheduled.append((delay, fn, args))
+            return 1
+        def after_cancel(self, _id):
+            pass
+
+    ind = ui.FloatingIndicator(FakeRoot())
+    # Simulate a shown listen window without invoking real Tk.
+    ind._win = object()
+    ind._canvas = object()
+    ind._state = "listen"
+
+    # 50 rapid pushes should result in exactly one scheduled redraw
+    # (subsequent ones coalesce while _pending_push is True).
+    for _ in range(50):
+        ind.push_level(0.2)
+    assert len(scheduled) == 1
+
+
+def test_main_apply_settings_serialised(monkeypatch):
+    """_apply_settings must acquire _config_lock before delegating, so
+    two concurrent Save clicks can't interleave config mutations."""
+    import threading as _th
+
+    pytest.importorskip("PIL")
+    pytest.importorskip("pystray")
+    main = importlib.reload(importlib.import_module("main"))
+
+    assert isinstance(main._config_lock, type(_th.Lock()))
+
+    holds = []
+
+    def tracer(cfg):
+        holds.append(main._config_lock.locked())
+        return True
+
+    monkeypatch.setattr(main, "_apply_settings_locked", tracer)
+    main._apply_settings({"hotkey": "ctrl+space"})
+    assert holds == [True]
+

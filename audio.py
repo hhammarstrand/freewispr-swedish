@@ -151,6 +151,11 @@ class MicRecorder:
         self._sumsq_count = 0
         self.recording = False
         self._stream: sd.InputStream | None = None
+        # Optional callback fired from the audio thread with the latest RMS
+        # level (float). Used by the UI to drive the equalizer without a
+        # polling timer. Must be cheap + thread-safe; the indicator throttles
+        # and marshals to Tk.
+        self.on_level = None  # type: ignore[assignment]
         # Normalise to (name, api, index) tuple regardless of input shape.
         if isinstance(device, dict):
             self._device_name = device.get("name") or None
@@ -296,6 +301,13 @@ class MicRecorder:
             self._sumsq += ss
             self._sumsq_count += chunk_for_level.size
             self.level = float(np.sqrt(ss / chunk_for_level.size))
+            cb = self.on_level
+            if cb is not None:
+                try:
+                    cb(self.level)
+                except Exception:
+                    # Never let a UI callback take down the audio thread.
+                    pass
 
     def rms(self) -> float:
         """Return RMS of all captured audio so far.

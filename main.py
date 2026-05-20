@@ -7,24 +7,37 @@ import logging
 from pathlib import Path
 
 # --------------------------------------------------------------------------- #
-#  Logging — sätts upp FÖRST, innan alla andra imports
+#  Logging — basic config now, file handler is wired in main()
 # --------------------------------------------------------------------------- #
-
-_LOG_DIR = Path.home() / ".freewispr-swedish"
-_LOG_DIR.mkdir(parents=True, exist_ok=True)
-_LOG_FILE = _LOG_DIR / "freewispr.log"
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
     datefmt="%H:%M:%S",
-    handlers=[
-        logging.FileHandler(_LOG_FILE, encoding="utf-8"),
-        logging.StreamHandler(sys.stdout),
-    ],
+    handlers=[logging.StreamHandler(sys.stdout)],
 )
 log = logging.getLogger("freewispr")
 log.info("=== freewispr-swedish startar ===")
+
+_LOG_DIR = Path.home() / ".freewispr-swedish"
+_LOG_FILE = _LOG_DIR / "freewispr.log"
+
+
+def _attach_file_logging() -> None:
+    """Create the log dir and attach the rotating file handler.
+
+    Done from main() (not at import) so unit tests can ``import main`` /
+    transitively pull config without writing to disk.
+    """
+    try:
+        _LOG_DIR.mkdir(parents=True, exist_ok=True)
+        handler = logging.FileHandler(_LOG_FILE, encoding="utf-8")
+        handler.setFormatter(
+            logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", "%H:%M:%S")
+        )
+        logging.getLogger().addHandler(handler)
+    except Exception as e:
+        log.warning("Kunde inte aktivera filloggning: %s", e)
 
 try:
     import threading
@@ -34,10 +47,10 @@ try:
     import pystray
 
     import config as cfg_module
-    from transcriber import Transcriber
-    from dictation import DictationMode
+    # Heavy modules (torch, faster_whisper, scipy) are imported lazily
+    # inside _load_app() so the tray icon appears in <1 second.
     from ui import SettingsWindow, SnippetsWindow, DictionaryWindow, FloatingIndicator, _style
-    log.info("Alla imports OK")
+    log.info("Snabb-imports OK")
 except Exception:
     log.critical("Import kraschade", exc_info=True)
     sys.exit(1)
@@ -47,32 +60,91 @@ except Exception:
 # --------------------------------------------------------------------------- #
 
 _config: dict = {}
-_transcriber: Transcriber | None = None
-_dictation: DictationMode | None = None
+_transcriber = None   # Transcriber (lazy-imported)
+_dictation = None     # DictationMode (lazy-imported)
 _tray_icon: pystray.Icon | None = None
 _tk_root: tk.Tk | None = None
 _status_var: tk.StringVar | None = None
 _indicator: FloatingIndicator | None = None
 
+# Serializes settings-driven reloads. Without it, a user spamming Save
+# could spawn two _reload threads, double-loading the model into VRAM
+# and leaking a Transcriber + DictationMode pair.
+_reload_lock = threading.Lock()
+
+# Serializes _apply_settings itself so two concurrent Save clicks can't
+# interleave config mutations / dictation restarts. The tray menu can
+# fire Save from a different thread than tkinter, and _reload_lock alone
+# only protects the model-reload branch.
+_config_lock = threading.Lock()
+
 
 # --------------------------------------------------------------------------- #
-#  Tray icon image (drawn with Pillow — no external asset needed)             #
+#  DRY constructors for Transcriber / DictationMode                            #
 # --------------------------------------------------------------------------- #
 
-def _make_icon() -> Image.Image:
+def _make_transcriber(model_size: str, use_cuda: bool):
+    """Build a Transcriber from current _config + the given overrides.
+
+    Kept in one place so _load_app, fallback, and reload paths cannot
+    drift apart in how they wire up LLM credentials.
+    """
+    from transcriber import Transcriber
+    return Transcriber(
+        model_size=model_size,
+        use_cuda=use_cuda,
+        llm_enabled=(
+            _config.get("llm_enabled", False)
+            and _config.get("llm_privacy_accepted", False)
+        ),
+        llm_api_key=_config.get("llm_api_key", ""),
+        llm_model=_config.get("llm_model", "gpt-4.1-nano"),
+    )
+
+
+def _make_dictation(transcriber):
+    from dictation import DictationMode, DEFAULT_MIN_RMS
+    return DictationMode(
+        transcriber,
+        hotkey=_config.get("hotkey", "ctrl+space"),
+        on_status=_set_tray_status,
+        indicator=_indicator,
+        mic_device=_config.get("mic_device"),
+        min_rms=float(_config.get("min_rms", DEFAULT_MIN_RMS)),
+    )
+
+
+# --------------------------------------------------------------------------- #
+#  Tray icon image — prefer bundled asset, fall back to Pillow-drawn mic      #
+# --------------------------------------------------------------------------- #
+
+# When frozen by PyInstaller, assets live next to the executable in _MEIPASS.
+_ASSET_DIR = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)) / "assets"
+_ICON_PATH = _ASSET_DIR / "icon.ico"
+
+
+def _draw_fallback_icon() -> Image.Image:
+    """Mic glyph drawn with Pillow — used only if assets/icon.ico is missing."""
     size = 64
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    # Purple circle
     draw.ellipse([4, 4, size - 4, size - 4], fill="#7c5cfc")
-    # White mic body
     cx = size // 2
     draw.rounded_rectangle([cx - 9, 12, cx + 9, 36], radius=9, fill="white")
-    # Mic stand
     draw.arc([cx - 16, 26, cx + 16, 50], start=0, end=180, fill="white", width=3)
     draw.line([cx, 50, cx, 58], fill="white", width=3)
     draw.line([cx - 8, 58, cx + 8, 58], fill="white", width=3)
     return img
+
+
+def _make_icon() -> Image.Image:
+    """Load the bundled tray icon, fall back to a drawn one on any failure."""
+    if _ICON_PATH.is_file():
+        try:
+            return Image.open(_ICON_PATH)
+        except Exception as e:
+            log.warning("Kunde inte läsa %s: %s — använder fallback", _ICON_PATH, e)
+    return _draw_fallback_icon()
 
 
 # --------------------------------------------------------------------------- #
@@ -82,27 +154,23 @@ def _make_icon() -> Image.Image:
 def _load_app():
     global _config, _transcriber, _dictation
 
+    # Lazy-import heavy modules here (runs in background thread)
+    # so the tray icon appears instantly.
+    log.info("Laddar tunga moduler (torch, whisper, scipy)...")
+    log.info("Alla imports OK")
+
     _config = cfg_module.load()
 
     model_size = _config.get("model_size", "small")
     _set_tray_status("Laddar modell...")
     try:
-        _transcriber = Transcriber(
-            model_size=model_size,
-            use_cuda=_config.get("use_cuda", True),
-            llm_enabled=_config.get("llm_enabled", False),
-            llm_api_key=_config.get("llm_api_key", ""),
-            llm_model=_config.get("llm_model", "gpt-4.1-nano"),
-        )
+        _transcriber = _make_transcriber(model_size, _config.get("use_cuda", True))
     except Exception as e:
         log.error("Modellfel (%s): %s", model_size, e, exc_info=True)
         log.info("Försöker fallback till 'small' med CPU...")
-        _set_tray_status(f"Modellfel — fallback till 'small'")
+        _set_tray_status("Modellfel — fallback till 'small'")
         try:
-            _transcriber = Transcriber(
-                model_size="small",
-                use_cuda=False,
-            )
+            _transcriber = _make_transcriber("small", False)
             # Update config so we don't crash again next time
             _config["model_size"] = "small"
             _config["use_cuda"] = False
@@ -113,24 +181,9 @@ def _load_app():
             return
     log.info("Modell laddad! Appen är redo.")
 
-    _dictation = DictationMode(
-        _transcriber,
-        hotkey=_config.get("hotkey", "ctrl+space"),
-        on_status=_set_tray_status,
-        indicator=_indicator,
-        mic_device=_config.get("mic_device"),
-    )
+    _dictation = _make_dictation(_transcriber)
     _dictation.start()
     _set_tray_status(f"Klar — håll {_config.get('hotkey','ctrl+space').upper()} för att prata")
-
-    # Auto-enable startup on first launch (when running as exe)
-    if getattr(sys, 'frozen', False) and not _is_startup_enabled():
-        try:
-            _enable_startup()
-            _rebuild_menu()
-        except Exception:
-            pass
-
 
 # --------------------------------------------------------------------------- #
 #  Status helpers                                                              #
@@ -167,82 +220,146 @@ def _show_settings():
 
 
 def _apply_settings(new_cfg: dict):
+    """Validated settings update. Serialised on _config_lock so two
+    rapid Save clicks can't interleave mutations / dictation restarts."""
+    with _config_lock:
+        return _apply_settings_locked(new_cfg)
+
+
+def _apply_settings_locked(new_cfg: dict):
     global _config, _dictation, _transcriber
 
+    old_config = dict(_config)  # shallow copy for rollback
     old_model = _config.get("model_size")
     old_cuda = _config.get("use_cuda")
     old_llm = (_config.get("llm_enabled"), _config.get("llm_api_key"),
                _config.get("llm_model"))
 
+    # Apply in-memory first; persist to disk only after the change is
+    # validated (model loaded, dictation rebuilt, etc.). This way a failed
+    # reload doesn't leave a broken config on disk for the next launch.
     _config.update(new_cfg)
-    cfg_module.save(_config)
+
+    def _persist() -> bool:
+        try:
+            cfg_module.save(_config)
+            return True
+        except Exception as e:
+            log.error("Kunde inte spara installningar: %s", e, exc_info=True)
+            _set_tray_status("Fel: kunde inte spara installningar")
+            if _indicator:
+                _indicator.show("Kunde inte spara installningar", state="error")
+                _indicator.hide(delay_ms=4000)
+            return False
+
+    def _rollback():
+        _config.clear()
+        _config.update(old_config)
 
     new_model = _config.get("model_size", "small")
     new_cuda = _config.get("use_cuda", True)
     new_llm = (_config.get("llm_enabled"), _config.get("llm_api_key"),
                _config.get("llm_model"))
 
-    # Reload transcriber if model, CUDA, or LLM settings changed
-    if old_model != new_model or old_cuda != new_cuda or old_llm != new_llm:
-        needs_model_reload = old_model != new_model or old_cuda != new_cuda
-        if needs_model_reload:
-            _set_tray_status(f"Laddar modell '{new_model}'...")
-            if _indicator:
-                _indicator.show(f"Laddar modell '{new_model}'...", state="transcribe")
+    model_changed = (old_model != new_model) or (old_cuda != new_cuda)
+    llm_changed = old_llm != new_llm
+
+    # Fast path: LLM-only change. Mutate the existing transcriber in place
+    # so we don't pay 5-15 s + extra VRAM for a full model reload.
+    if llm_changed and not model_changed and _transcriber is not None:
+        _transcriber.llm_enabled = (
+            _config.get("llm_enabled", False)
+            and _config.get("llm_privacy_accepted", False)
+        )
+        _transcriber.llm_api_key = _config.get("llm_api_key", "")
+        _transcriber.llm_model = _config.get("llm_model", "gpt-4.1-nano")
+        log.info("LLM-inställningar uppdaterade i befintlig transcriber")
+        # Hotkey/mic may still have changed; rebuild dictation cheaply.
+        _restart_dictation()
+        if not _persist():
+            _rollback()
+            return False
+        _set_tray_status(
+            f"Inställningar sparade — håll {_config.get('hotkey','ctrl+space').upper()}"
+        )
+        return True
+
+    if model_changed:
+        _set_tray_status(f"Laddar modell '{new_model}'...")
+        if _indicator:
+            _indicator.show(f"Laddar modell '{new_model}'...", state="transcribe")
 
         def _reload():
             global _transcriber, _dictation
-            try:
-                _transcriber = Transcriber(
-                    model_size=new_model,
-                    use_cuda=new_cuda,
-                    llm_enabled=_config.get("llm_enabled", False),
-                    llm_api_key=_config.get("llm_api_key", ""),
-                    llm_model=_config.get("llm_model", "gpt-4.1-nano"),
-                )
-                log.info("Modell '%s' laddad!", new_model)
-            except Exception as e:
-                log.error("Fel vid modellbyte: %s", e, exc_info=True)
-                _set_tray_status(f"Modellfel — använder tidigare modell")
-                if _indicator:
-                    _indicator.show(f"Modellfel: {e}", state="error")
-                    _indicator.hide(delay_ms=4000)
+            # Serialize reloads so two quick Saves can't double-load the model.
+            if not _reload_lock.acquire(blocking=False):
+                log.warning("Modellomladdning pågår redan — hoppar över denna")
                 return
-            # Restart dictation with the new transcriber
-            if _dictation:
-                _dictation.stop()
-            _dictation = DictationMode(
-                _transcriber,
-                hotkey=_config.get("hotkey", "ctrl+space"),
-                on_status=_set_tray_status,
-                indicator=_indicator,
-                mic_device=_config.get("mic_device"),
-            )
-            _dictation.start()
-            _set_tray_status(f"Modell '{new_model}' klar — håll {_config.get('hotkey','ctrl+space').upper()}")
-            if _indicator:
-                _indicator.show(f"Modell '{new_model}' klar", state="done")
-                _indicator.hide(delay_ms=2000)
+            try:
+                old_transcriber = _transcriber
+                try:
+                    new_transcriber = _make_transcriber(new_model, new_cuda)
+                except Exception as e:
+                    log.error("Fel vid modellbyte: %s", e, exc_info=True)
+                    _set_tray_status("Modellfel — använder tidigare modell")
+                    if _indicator:
+                        _indicator.show(f"Modellfel: {e}", state="error")
+                        _indicator.hide(delay_ms=4000)
+                    # Roll back the in-memory config so the next Save attempt
+                    # sees the real previous state.
+                    _rollback()
+                    return
+                _transcriber = new_transcriber
+                # Release the old model's VRAM/RAM BEFORE telling the user
+                # we're done — keeping two WhisperModels alive can OOM
+                # smaller CUDA devices.
+                if old_transcriber is not None:
+                    try:
+                        old_transcriber.close()
+                    except Exception as e:
+                        log.debug("Kunde inte stänga gammal transcriber: %s", e)
+                log.info("Modell '%s' laddad!", new_model)
+                _restart_dictation()
+                # Model loaded OK — now it's safe to persist the new config.
+                if not _persist():
+                    # Rare: disk write failed after a successful reload.
+                    # Leave the running app on the new model (already loaded)
+                    # but warn the user that the next launch will revert.
+                    log.warning("Modell laddad men config kunde inte sparas")
+                _set_tray_status(
+                    f"Modell '{new_model}' klar — håll {_config.get('hotkey','ctrl+space').upper()}"
+                )
+                if _indicator:
+                    _indicator.show(f"Modell '{new_model}' klar", state="done")
+                    _indicator.hide(delay_ms=2000)
+            finally:
+                _reload_lock.release()
 
-        if needs_model_reload:
-            threading.Thread(target=_reload, daemon=True).start()
-        else:
-            # LLM-only change — no need for slow model reload
-            _reload()
-        return
+        threading.Thread(target=_reload, daemon=True).start()
+        return True
 
-    # Restart dictation with new hotkey / mic
+    # No model/LLM change — just hotkey/mic. Restart dictation cheaply.
+    _restart_dictation()
+    if not _persist():
+        _rollback()
+        _restart_dictation()  # rebind to rolled-back hotkey/mic
+        return False
+    _set_tray_status(
+        f"Inställningar sparade — håll {_config.get('hotkey','ctrl+space').upper()} för att prata"
+    )
+    return True
+
+
+def _restart_dictation():
+    """Stop the current DictationMode (if any) and start a fresh one
+    bound to the current _transcriber + _config."""
+    global _dictation
     if _dictation:
         _dictation.stop()
-    _dictation = DictationMode(
-        _transcriber,
-        hotkey=_config.get("hotkey", "ctrl+space"),
-        on_status=_set_tray_status,
-        indicator=_indicator,
-        mic_device=_config.get("mic_device"),
-    )
+    if _transcriber is None:
+        return
+    _dictation = _make_dictation(_transcriber)
     _dictation.start()
-    _set_tray_status(f"Inställningar sparade — håll {_config.get('hotkey','ctrl+space').upper()} för att prata")
 
 
 def _startup_exe_path() -> str:
@@ -260,13 +377,25 @@ def _startup_exe_path() -> str:
         return f'"{pythonw}" "{script}"'
 
 
+_RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_RUN_VALUE = "freewispr-swedish"
+
+
+def _open_run_key(write: bool = False):
+    """Return an open HKCU\\...\\Run registry key. Caller must CloseKey."""
+    import winreg
+    access = winreg.KEY_SET_VALUE if write else winreg.KEY_READ
+    return winreg.OpenKey(winreg.HKEY_CURRENT_USER, _RUN_KEY, 0, access)
+
+
 def _is_startup_enabled() -> bool:
     import winreg
     try:
-        key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                             r"Software\Microsoft\Windows\CurrentVersion\Run")
-        winreg.QueryValueEx(key, "freewispr-swedish")
-        winreg.CloseKey(key)
+        key = _open_run_key(write=False)
+        try:
+            winreg.QueryValueEx(key, _RUN_VALUE)
+        finally:
+            winreg.CloseKey(key)
         return True
     except Exception:
         return False
@@ -274,25 +403,25 @@ def _is_startup_enabled() -> bool:
 
 def _enable_startup():
     import winreg
-    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                         r"Software\Microsoft\Windows\CurrentVersion\Run",
-                         0, winreg.KEY_SET_VALUE)
-    winreg.SetValueEx(key, "freewispr-swedish", 0, winreg.REG_SZ, _startup_exe_path())
-    winreg.CloseKey(key)
+    key = _open_run_key(write=True)
+    try:
+        winreg.SetValueEx(key, _RUN_VALUE, 0, winreg.REG_SZ, _startup_exe_path())
+    finally:
+        winreg.CloseKey(key)
 
 
 def _toggle_startup(_=None):
     import winreg
-    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER,
-                         r"Software\Microsoft\Windows\CurrentVersion\Run",
-                         0, winreg.KEY_SET_VALUE)
-    if _is_startup_enabled():
-        winreg.DeleteValue(key, "freewispr-swedish")
-        _set_tray_status("Borttagen från uppstart")
-    else:
-        winreg.SetValueEx(key, "freewispr-swedish", 0, winreg.REG_SZ, _startup_exe_path())
-        _set_tray_status("Startar med Windows ✓")
-    winreg.CloseKey(key)
+    key = _open_run_key(write=True)
+    try:
+        if _is_startup_enabled():
+            winreg.DeleteValue(key, _RUN_VALUE)
+            _set_tray_status("Borttagen från uppstart")
+        else:
+            winreg.SetValueEx(key, _RUN_VALUE, 0, winreg.REG_SZ, _startup_exe_path())
+            _set_tray_status("Startar med Windows ✓")
+    finally:
+        winreg.CloseKey(key)
     _rebuild_menu()
 
 
@@ -330,6 +459,10 @@ def _quit(_=None):
 
 def main():
     global _tray_icon, _tk_root, _status_var, _indicator
+
+    # Wire up file logging now (deferred from import time so tests can import
+    # this module without touching ~/.freewispr-swedish/).
+    _attach_file_logging()
 
     # Hidden tk root — keeps tkinter event loop running for Toplevel windows
     _tk_root = tk.Tk()
