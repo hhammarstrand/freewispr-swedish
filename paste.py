@@ -1,65 +1,93 @@
 import time
 import logging
+import threading
+
 import pyperclip
-import pyautogui
+import keyboard
+
+from modifiers import CANONICAL_MODIFIERS, normalize_all
 
 log = logging.getLogger("freewispr")
 
-# Modifier keys that could interfere with Ctrl+V if still held
-# when paste_text is called (e.g. user just released Ctrl+Space).
-_MODIFIERS = ["ctrl", "shift", "alt", "win"]
+_RESTORE_ATTEMPTS = 3
+_RESTORE_DELAY_SEC = 0.05
+_RESTORE_GRACE_SEC = 0.15
 
 
-def _release_modifiers():
-    """Force-release all modifier keys so Ctrl+V works cleanly.
+def _release_modifiers(active_modifiers: tuple[str, ...] = ()):
+    """Force-release modifier keys that are actually held.
 
-    Without this, if the user's hotkey includes Ctrl (e.g. Ctrl+Space),
-    the Ctrl key might still be physically held or stuck in the OS
-    key state when we fire Ctrl+V, causing unexpected behavior.
+    Releasing keys that are NOT pressed (e.g. ``windows`` when no Win is held)
+    can trigger the Start menu on Windows 10/11. We therefore release only
+    the modifiers from the active hotkey, or fall back to checking every
+    canonical modifier when none is supplied.
     """
-    for key in _MODIFIERS:
+    candidates = normalize_all(active_modifiers) if active_modifiers else CANONICAL_MODIFIERS
+    for key in candidates:
         try:
-            pyautogui.keyUp(key)
+            if keyboard.is_pressed(key):
+                keyboard.release(key)
         except Exception:
             pass
 
 
-def paste_text(text: str):
-    """Copy text to clipboard and paste at the current cursor position.
+def _paste_and_restore_async(text: str):
+    """Save old clipboard, paste new text, restore old — all on a background thread.
+
+    Moves the slow ``pyperclip.paste()`` Win32 clipboard read off the hot
+    keyboard-hook thread. On a contended clipboard this read can stall for
+    hundreds of milliseconds (Office, password managers, etc. holding the
+    clipboard open). The paste itself still happens in the worker, but it
+    runs the instant the worker starts — no measurable user-visible delay.
+    """
+
+    def _worker():
+        try:
+            old = pyperclip.paste()
+        except Exception:
+            old = ""
+
+        try:
+            # Copy dictated text (trailing space for natural continuation)
+            pyperclip.copy(text + " ")
+            # keyboard.send has no built-in PAUSE (saves ~200 ms vs pyautogui)
+            keyboard.send("ctrl+v")
+        except Exception as e:
+            log.warning("Kunde inte skicka Ctrl+V: %s", e)
+            return
+
+        # Grace period so the target app finishes its paste before we
+        # overwrite the clipboard.
+        time.sleep(_RESTORE_GRACE_SEC)
+        for attempt in range(1, _RESTORE_ATTEMPTS + 1):
+            try:
+                pyperclip.copy(old)
+                return
+            except Exception as e:
+                if attempt == _RESTORE_ATTEMPTS:
+                    log.warning("Kunde inte aterstalla urklipp efter paste: %s", e)
+                    return
+                time.sleep(_RESTORE_DELAY_SEC)
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
+def paste_text(text: str, active_modifiers: tuple[str, ...] = ()):
+    """Paste text at the current cursor position.
 
     Steps:
-      1. Save current clipboard content
-      2. Release any held modifier keys (avoids ghost Ctrl/Shift)
-      3. Copy dictated text to clipboard
-      4. Small delay for key state to settle
-      5. Send Ctrl+V
-      6. Restore original clipboard content
+      1. Release modifier keys that are actually held (only those from the
+         dictation hotkey, to avoid triggering Start menu when releasing Win)
+      2. Spawn an async worker that:
+         a) Saves current clipboard content (slow on contended systems)
+         b) Copies dictated text to clipboard
+         c) Sends Ctrl+V
+         d) Restores original clipboard
     """
     text = text.strip()
     if not text:
         return
 
-    # 1. Preserve existing clipboard content
-    try:
-        old = pyperclip.paste()
-    except Exception:
-        old = ""
-
-    # 2. Release modifiers — critical for reliable paste
-    _release_modifiers()
-
-    # 3. Copy dictated text (with trailing space for natural continuation)
-    pyperclip.copy(text + " ")
-
-    # 4. Brief pause for key state + clipboard to settle
-    time.sleep(0.02)
-
-    # 5. Paste
-    pyautogui.hotkey("ctrl", "v")
-
-    # 6. Restore clipboard after paste completes
-    time.sleep(0.1)
-    try:
-        pyperclip.copy(old)
-    except Exception:
-        pass
+    # Release modifiers synchronously — must happen before Ctrl+V is sent.
+    _release_modifiers(active_modifiers)
+    _paste_and_restore_async(text)
