@@ -168,6 +168,18 @@ def save(cfg):
     CONFIG_DIR.mkdir(exist_ok=True)
     data = cfg.copy()
 
+    # Bakåtkompatibilitet: UI:t kan fortfarande skicka in legacy-fält
+    # (``llm_api_key``, ``llm_model``) tills Settings-UI:t skrivits om.
+    # Översätt dessa till den aktiva provider-slotten *före* hemligheter
+    # plockas ut, så att nyckeln hamnar i rätt keyring-entry.
+    active_provider = data.get("llm_provider", "github")
+    legacy_key = data.pop(_LEGACY_KEYRING_USERNAME, None)
+    if legacy_key is not None:
+        data.setdefault(f"llm_api_key_{active_provider}", legacy_key)
+    legacy_model = data.pop("llm_model", None)
+    if legacy_model:
+        data.setdefault(f"llm_model_{active_provider}", legacy_model)
+
     # Plocka bort alla hemligheter — de hör hemma i Credential Manager.
     new_secrets = {p: (data.pop(f"llm_api_key_{p}", "") or "") for p in _LLM_PROVIDERS}
     data.pop(_LEGACY_KEYRING_USERNAME, None)

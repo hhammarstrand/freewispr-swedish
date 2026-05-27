@@ -309,21 +309,48 @@ class Transcriber:
     def __init__(self, model_size: str = "small", language: str = "sv",
                  use_cuda: bool = True,
                  llm_enabled: bool = False, llm_api_key: str = "",
-                 llm_model: str = "openai/gpt-4.1-nano"):
+                 llm_model: str = "openai/gpt-4.1-nano",
+                 llm_provider: str = "github",
+                 llm_base_url: str = "",
+                 transcription_provider: str = "local",
+                 transcription_api_key: str = "",
+                 transcription_model: str = "",
+                 transcription_base_url: str = ""):
         MODEL_DIR.mkdir(parents=True, exist_ok=True)
         self.language = language
         self.llm_enabled = llm_enabled
         self.llm_api_key = llm_api_key
         self.llm_model = llm_model
+        self.llm_provider = llm_provider
+        self.llm_base_url = llm_base_url
+        self.transcription_provider = transcription_provider
+        self.transcription_api_key = transcription_api_key
+        self.transcription_model = transcription_model
+        self.transcription_base_url = transcription_base_url
         self.on_stage = None
-        
-        # Get the KBLab model name
-        model_name = KBLAB_MODELS.get(model_size, model_size)
-        
-        # Use local snapshot if already downloaded — avoids network check
-        model_path = _find_local_model(model_name)
+        self.last_transcribe_error: str | None = None
 
-        # Determine device and compute type
+        # When the user has opted into a remote transcription provider, the
+        # local Whisper model is *not* loaded. This saves 0.5–3 GB of RAM/VRAM
+        # and skips the warmup pass. There is no fallback — if the remote
+        # request fails we surface the error to the user.
+        self.model_size = model_size
+        self._model_lock = threading.RLock()
+        self.model = None
+        self._warmed = False
+
+        if transcription_provider != "local":
+            log.info("Remote-transkribering aktiv: provider=%s, model=%s",
+                     transcription_provider, transcription_model or "(default)")
+            if self.llm_enabled:
+                log.info("LLM-granskning aktiverad: %s/%s",
+                         self.llm_provider, self.llm_model)
+            self.last_polish_state = "local"
+            return
+
+        # ---- Local Whisper path ----
+        model_name = KBLAB_MODELS.get(model_size, model_size)
+        model_path = _find_local_model(model_name)
         device, compute_type, cuda_used = _get_device_and_compute(use_cuda)
 
         # Fail-closed when the model isn't cached locally: faster-whisper would
@@ -344,8 +371,6 @@ class Transcriber:
         if cuda_used:
             log.info("GPU: NVIDIA CUDA aktiverad")
 
-        self.model_size = model_size
-        self._model_lock = threading.RLock()
         self.model = WhisperModel(
             model_path,
             device=device,
@@ -353,9 +378,11 @@ class Transcriber:
             download_root=str(MODEL_DIR),
             local_files_only=True,  # belt-and-braces: never hit the network
         )
-        log.info("Whisper '%s' (%s) laddad OK [%s, %s]", model_size, model_name, device, compute_type)
+        log.info("Whisper '%s' (%s) laddad OK [%s, %s]",
+                 model_size, model_name, device, compute_type)
         if self.llm_enabled:
-            log.info("LLM-granskning aktiverad: %s", self.llm_model)
+            log.info("LLM-granskning aktiverad: %s/%s",
+                     self.llm_provider, self.llm_model)
 
         self.last_polish_state = "local"
 
@@ -364,7 +391,6 @@ class Transcriber:
         # call, which adds 300-800 ms to the user's first hotkey press.
         # Running a silent inference here eats that cost while the tray is
         # still loading.
-        self._warmed = False
         threading.Thread(target=self._warmup, name="whisper-warmup",
                          daemon=True).start()
 
@@ -422,10 +448,51 @@ class Transcriber:
 
     def transcribe(self, audio: np.ndarray) -> str:
         self.last_polish_state = "local"
-        log.info("Transkriberar: %d samples, peak=%.4f, modell=%s, lang=%s",
+        self.last_transcribe_error = None
+        log.info("Transkriberar: %d samples, peak=%.4f, modell=%s, lang=%s, provider=%s",
                  len(audio), float(np.max(np.abs(audio))) if audio.size else 0.0,
-                 self.model_size, self.language)
+                 self.model_size, self.language, self.transcription_provider)
 
+        if self.transcription_provider != "local":
+            text = self._transcribe_remote(audio)
+        else:
+            text = self._transcribe_local(audio)
+
+        if not text:
+            return text
+
+        # LLM polishing — optional, never blocks on failure
+        if self.llm_enabled:
+            from llm_polish import polish
+            from auto_learn import record_correction
+
+            self.last_polish_state = "llm_reviewing"
+            on_stage = getattr(self, "on_stage", None)
+            if on_stage is not None:
+                try:
+                    on_stage("llm_reviewing")
+                except Exception:
+                    pass
+            result = polish(
+                text,
+                self.llm_api_key,
+                model=self.llm_model,
+                provider=self.llm_provider,
+                base_url_override=self.llm_base_url,
+            )
+            if result.changed:
+                # Feed the before/after to auto-learning
+                record_correction(text, result.text)
+                text = result.text
+                self.last_polish_state = "llm_changed"
+                log.info("Resultat (LLM) klart (%dms, %s)",
+                         result.latency_ms, _text_meta(text))
+            else:
+                self.last_polish_state = "llm_unchanged"
+
+        return text
+
+    def _transcribe_local(self, audio: np.ndarray) -> str:
         prompt = _INITIAL_PROMPTS.get(self.language, "")
         hotwords = _get_hotwords_cached()
 
@@ -476,28 +543,47 @@ class Transcriber:
         text = corr_module.apply(text)
         text = _postprocess(text)
         log.info("Resultat (lokal) klart (%s)", _text_meta(text))
+        return text
 
-        # LLM polishing — optional, never blocks on failure
-        if self.llm_enabled and text:
-            from llm_polish import polish
-            from auto_learn import record_correction
+    def _transcribe_remote(self, audio: np.ndarray) -> str:
+        """Skicka ljud till remote-leverantör.
 
-            self.last_polish_state = "llm_reviewing"
-            on_stage = getattr(self, "on_stage", None)
+        Inget fallback till lokal modell — vi sätter ``last_transcribe_error``
+        så att UI:t kan visa ett kort meddelande och returnerar tom sträng.
+        Dictation-pipelinen ska inte klistra in tom text, vilket är önskat.
+        """
+        import remote_transcribe as rt
+
+        on_stage = getattr(self, "on_stage", None)
+        if on_stage is not None:
+            try:
+                on_stage("remote_transcribing")
+            except Exception:
+                pass
+
+        try:
+            raw = rt.transcribe(
+                audio,
+                sample_rate=16000,
+                provider=self.transcription_provider,
+                api_key=self.transcription_api_key,
+                model=self.transcription_model,
+                language=self.language,
+                base_url_override=self.transcription_base_url,
+            )
+        except rt.RemoteTranscribeError as e:
+            self.last_transcribe_error = str(e)
+            log.warning("Remote-transkribering misslyckades: %s", e)
             if on_stage is not None:
                 try:
-                    on_stage("llm_reviewing")
+                    on_stage("remote_error")
                 except Exception:
                     pass
-            result = polish(text, self.llm_api_key, self.llm_model)
-            if result.changed:
-                # Feed the before/after to auto-learning
-                record_correction(text, result.text)
-                text = result.text
-                self.last_polish_state = "llm_changed"
-                log.info("Resultat (LLM) klart (%dms, %s)",
-                         result.latency_ms, _text_meta(text))
-            else:
-                self.last_polish_state = "llm_unchanged"
+            return ""
 
+        log.info("Rå text mottagen (%s)", _text_meta(raw))
+        text = _NOISE_PLACEHOLDERS.sub("", raw)
+        text = corr_module.apply(text)
+        text = _postprocess(text)
+        log.info("Resultat (remote) klart (%s)", _text_meta(text))
         return text

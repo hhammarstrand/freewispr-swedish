@@ -525,6 +525,10 @@ def test_llm_only_save_failure_restores_transcriber_state(monkeypatch):
         llm_api_key="old-key",
         llm_model="old-model",
         llm_base_url="",
+        transcription_provider="local",
+        transcription_api_key="",
+        transcription_model="",
+        transcription_base_url="",
     )
     restarted = []
     monkeypatch.setattr(main, "_restart_dictation", lambda: restarted.append(True))
@@ -640,6 +644,12 @@ def test_transcriber_close_waits_for_inflight_transcribe(fake_transcriber_deps):
     inst.llm_enabled = False
     inst.llm_api_key = ""
     inst.llm_model = "gpt-4.1-nano"
+    inst.llm_provider = "github"
+    inst.llm_base_url = ""
+    inst.transcription_provider = "local"
+    inst.transcription_api_key = ""
+    inst.transcription_model = ""
+    inst.transcription_base_url = ""
     inst.model = FakeModel()
     inst._model_lock = __import__("threading").RLock()
     original_model = inst.model
@@ -682,11 +692,17 @@ def test_transcriber_runs_llm_when_enabled_without_saved_api_key(monkeypatch, fa
     inst.llm_enabled = True
     inst.llm_api_key = ""
     inst.llm_model = "gpt-4.1-nano"
+    inst.llm_provider = "github"
+    inst.llm_base_url = ""
+    inst.transcription_provider = "local"
+    inst.transcription_api_key = ""
+    inst.transcription_model = ""
+    inst.transcription_base_url = ""
     inst.model = FakeModel()
     inst._model_lock = __import__("threading").RLock()
 
     fake_llm = SimpleNamespace(
-        polish=lambda text, key, model: SimpleNamespace(
+        polish=lambda text, key, model=None, provider=None, base_url_override=None: SimpleNamespace(
             text="hej!", changed=True, latency_ms=1
         )
     )

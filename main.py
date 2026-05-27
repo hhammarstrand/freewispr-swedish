@@ -83,6 +83,42 @@ _config_lock = threading.Lock()
 #  DRY constructors for Transcriber / DictationMode                            #
 # --------------------------------------------------------------------------- #
 
+def _active_llm_settings() -> tuple[bool, str, str, str, str]:
+    """Plocka ut (enabled, api_key, model, provider, base_url) för aktiv LLM-provider.
+
+    Hålls i en funktion så _make_transcriber och _apply_settings ser
+    exakt samma vy av configgen.
+    """
+    provider = _config.get("llm_provider", "github")
+    enabled = bool(
+        _config.get("llm_enabled", False)
+        and _config.get("llm_privacy_accepted", False)
+    )
+    api_key = _config.get(f"llm_api_key_{provider}", "")
+    model = _config.get(f"llm_model_{provider}", "")
+    base_url = _config.get("llm_custom_base_url", "") if provider == "custom" else ""
+    return enabled, api_key, model, provider, base_url
+
+
+def _active_transcription_settings() -> tuple[str, str, str, str]:
+    """(provider, api_key, model, base_url) för aktiv transkriberingsleverantör."""
+    provider = _config.get("transcription_provider", "local")
+    if provider == "local":
+        return "local", "", "", ""
+    # Remote: kräver consent — annars degradera till lokal.
+    if not _config.get("transcription_privacy_accepted", False):
+        log.warning("transcription_provider=%s utan consent — använder lokal", provider)
+        return "local", "", "", ""
+    # Återanvänd LLM-nyckeln för samma leverantör (samma konto/API).
+    api_key = _config.get(f"llm_api_key_{provider}", "")
+    model = _config.get(f"transcription_model_{provider}", "")
+    base_url = (
+        _config.get("transcription_custom_base_url", "")
+        if provider == "custom" else ""
+    )
+    return provider, api_key, model, base_url
+
+
 def _make_transcriber(model_size: str, use_cuda: bool):
     """Build a Transcriber from current _config + the given overrides.
 
@@ -90,15 +126,20 @@ def _make_transcriber(model_size: str, use_cuda: bool):
     drift apart in how they wire up LLM credentials.
     """
     from transcriber import Transcriber
+    llm_enabled, llm_key, llm_model, llm_provider, llm_base = _active_llm_settings()
+    tr_provider, tr_key, tr_model, tr_base = _active_transcription_settings()
     return Transcriber(
         model_size=model_size,
         use_cuda=use_cuda,
-        llm_enabled=(
-            _config.get("llm_enabled", False)
-            and _config.get("llm_privacy_accepted", False)
-        ),
-        llm_api_key=_config.get("llm_api_key", ""),
-        llm_model=_config.get("llm_model", "openai/gpt-4.1-nano"),
+        llm_enabled=llm_enabled,
+        llm_api_key=llm_key,
+        llm_model=llm_model,
+        llm_provider=llm_provider,
+        llm_base_url=llm_base,
+        transcription_provider=tr_provider,
+        transcription_api_key=tr_key,
+        transcription_model=tr_model,
+        transcription_base_url=tr_base,
     )
 
 
@@ -242,8 +283,8 @@ def _apply_settings_locked(new_cfg: dict):
     old_config = dict(_config)  # shallow copy for rollback
     old_model = _config.get("model_size")
     old_cuda = _config.get("use_cuda")
-    old_llm = (_config.get("llm_enabled"), _config.get("llm_api_key"),
-               _config.get("llm_model"))
+    old_llm = _active_llm_settings()
+    old_tr = _active_transcription_settings()
 
     # Apply in-memory first; persist to disk only after the change is
     # validated (model loaded, dictation rebuilt, etc.). This way a failed
@@ -268,42 +309,65 @@ def _apply_settings_locked(new_cfg: dict):
 
     new_model = _config.get("model_size", "small")
     new_cuda = _config.get("use_cuda", True)
-    new_llm = (_config.get("llm_enabled"), _config.get("llm_api_key"),
-               _config.get("llm_model"))
+    new_llm = _active_llm_settings()
+    new_tr = _active_transcription_settings()
 
     model_changed = (old_model != new_model) or (old_cuda != new_cuda)
     llm_changed = old_llm != new_llm
+    # Byte mellan local <-> remote kräver full rebuild eftersom det styr
+    # om WhisperModel laddas eller inte. Byten *mellan* remote-leverantörer
+    # går också via rebuild — det är billigt (ingen modell laddas).
+    transcription_changed = old_tr != new_tr
+    tr_topology_changed = (old_tr[0] == "local") != (new_tr[0] == "local")
 
-    # Fast path: LLM-only change. Mutate the existing transcriber in place
-    # so we don't pay 5-15 s + extra VRAM for a full model reload.
-    if llm_changed and not model_changed and _transcriber is not None:
-        old_transcriber_llm = (
+    # Fast path: LLM-only change *eller* remote-only transcription-change.
+    # Mutera befintlig transcriber så vi slipper 5-15 s + extra VRAM för
+    # en full reload. Endast tillåtet när topologin (local↔remote) inte ändras.
+    fast_path = (
+        (llm_changed or transcription_changed)
+        and not model_changed
+        and not tr_topology_changed
+        and _transcriber is not None
+    )
+    if fast_path:
+        old_transcriber_state = (
             _transcriber.llm_enabled,
             _transcriber.llm_api_key,
             _transcriber.llm_model,
+            _transcriber.llm_provider,
+            _transcriber.llm_base_url,
+            _transcriber.transcription_provider,
+            _transcriber.transcription_api_key,
+            _transcriber.transcription_model,
+            _transcriber.transcription_base_url,
         )
-        _transcriber.llm_enabled = (
-            _config.get("llm_enabled", False)
-            and _config.get("llm_privacy_accepted", False)
-        )
-        _transcriber.llm_api_key = _config.get("llm_api_key", "")
-        _transcriber.llm_model = _config.get("llm_model", "openai/gpt-4.1-nano")
-        log.info("LLM-inställningar uppdaterade i befintlig transcriber")
+        (_transcriber.llm_enabled, _transcriber.llm_api_key,
+         _transcriber.llm_model, _transcriber.llm_provider,
+         _transcriber.llm_base_url) = new_llm
+        (_transcriber.transcription_provider, _transcriber.transcription_api_key,
+         _transcriber.transcription_model, _transcriber.transcription_base_url) = new_tr
+        log.info("LLM/transkriberings-inställningar uppdaterade i befintlig transcriber")
         # Hotkey/mic may still have changed; rebuild dictation cheaply.
         _restart_dictation()
         if not _persist():
             _rollback()
-            (
-                _transcriber.llm_enabled,
-                _transcriber.llm_api_key,
-                _transcriber.llm_model,
-            ) = old_transcriber_llm
+            (_transcriber.llm_enabled, _transcriber.llm_api_key,
+             _transcriber.llm_model, _transcriber.llm_provider,
+             _transcriber.llm_base_url,
+             _transcriber.transcription_provider, _transcriber.transcription_api_key,
+             _transcriber.transcription_model,
+             _transcriber.transcription_base_url) = old_transcriber_state
             _restart_dictation()
             return False
         _set_tray_status(
             f"Inställningar sparade — håll {_config.get('hotkey','ctrl+space').upper()}"
         )
         return True
+
+    # Topology change (local <-> remote) faller igenom till model_changed-grenen
+    # nedan så att Whisper-modellen laddas/släpps korrekt.
+    if tr_topology_changed:
+        model_changed = True
 
     if model_changed:
         if _indicator:
