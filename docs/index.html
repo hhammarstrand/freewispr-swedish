@@ -297,6 +297,26 @@ h1 {
 .meta b { display: block; font-size: 1.1rem; }
 .meta span { color: var(--muted); font-size: 0.82rem; }
 
+/* Status cycle animation in product card */
+.status-cycle { position: relative; display: inline-block; height: 1.2em; overflow: hidden; vertical-align: bottom; }
+.status-cycle span {
+  display: block;
+  animation: statusCycle 9s step-end infinite;
+  opacity: 0;
+  position: absolute;
+  white-space: nowrap;
+}
+.status-cycle span:nth-child(1) { animation-delay: 0s; }
+.status-cycle span:nth-child(2) { animation-delay: 1.5s; }
+.status-cycle span:nth-child(3) { animation-delay: 3s; }
+.status-cycle span:nth-child(4) { animation-delay: 4.5s; }
+.status-cycle span:nth-child(5) { animation-delay: 6s; }
+.status-cycle span:nth-child(6) { animation-delay: 7.5s; }
+@keyframes statusCycle {
+  0%   { opacity: 1; }
+  16.6% { opacity: 0; }
+}
+
 section { padding: 70px 0; border-top: 1px solid var(--line); }
 .section-head { display: grid; grid-template-columns: minmax(0, 0.75fr) minmax(280px, 0.55fr); gap: 34px; align-items: end; margin-bottom: 28px; }
 .eyebrow { color: var(--accent); font: 700 0.78rem/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
@@ -488,7 +508,7 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
   background: var(--accent);
   box-shadow: 0 0 8px rgba(0, 106, 167, 0.5);
   opacity: 0;
-  animation: dotTravel 5.5s linear infinite;
+  animation: dotTravel 4.4s linear infinite;
 }
 .pipe-connector:nth-of-type(2)::after  { animation-delay: 0s; }
 .pipe-connector:nth-of-type(4)::after  { animation-delay: 1.1s; }
@@ -515,51 +535,49 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
 .pipe-step:nth-child(1) .pipe-node {
   --glow-color: var(--accent);
   --glow-shadow: rgba(0, 106, 167, 0.25);
-  animation: pipelinePulse 5.5s ease infinite 0s;
+  animation: pipelinePulse 4.4s ease infinite 0s;
 }
 .pipe-step:nth-child(1) .pipe-node svg {
-  animation: pipelineIconPulse 5.5s ease infinite 0s;
+  animation: pipelineIconPulse 4.4s ease infinite 0s;
   --glow-color: var(--accent);
 }
 
 .pipe-step:nth-child(3) .pipe-node {
   --glow-color: #e67e22;
   --glow-shadow: rgba(230, 126, 34, 0.25);
-  animation: pipelinePulse 5.5s ease infinite 1.1s;
+  animation: pipelinePulse 4.4s ease infinite 1.1s;
 }
 .pipe-step:nth-child(3) .pipe-node svg {
-  animation: pipelineIconPulse 5.5s ease infinite 1.1s;
+  animation: pipelineIconPulse 4.4s ease infinite 1.1s;
   --glow-color: #e67e22;
 }
 
 .pipe-step:nth-child(5) .pipe-node {
   --glow-color: var(--ok);
   --glow-shadow: rgba(17, 132, 91, 0.25);
-  animation: pipelinePulse 5.5s ease infinite 2.2s;
+  animation: pipelinePulse 4.4s ease infinite 2.2s;
 }
 .pipe-step:nth-child(5) .pipe-node svg {
-  animation: pipelineIconPulse 5.5s ease infinite 2.2s;
+  animation: pipelineIconPulse 4.4s ease infinite 2.2s;
   --glow-color: var(--ok);
 }
 
 .pipe-step:nth-child(7) .pipe-node {
   --glow-color: var(--ok);
   --glow-shadow: rgba(17, 132, 91, 0.25);
-  animation: pipelinePulse 5.5s ease infinite 3.3s;
+  animation: pipelinePulse 4.4s ease infinite 3.3s;
 }
 .pipe-step:nth-child(7) .pipe-node svg {
-  animation: pipelineIconPulse 5.5s ease infinite 3.3s;
+  animation: pipelineIconPulse 4.4s ease infinite 3.3s;
   --glow-color: var(--ok);
 }
 
-.pipe-step:nth-child(9) .pipe-node {
-  --glow-color: #7c3aed;
-  --glow-shadow: rgba(124, 58, 237, 0.25);
-  animation: pipelinePulse 5.5s ease infinite 4.4s;
-}
-.pipe-step:nth-child(9) .pipe-node svg {
-  animation: pipelineIconPulse 5.5s ease infinite 4.4s;
-  --glow-color: #7c3aed;
+.pipeline-note {
+  text-align: center;
+  color: var(--muted);
+  font-size: 0.9rem;
+  margin-top: 24px;
+  line-height: 1.6;
 }
 
 @media (max-width: 860px) {
@@ -639,7 +657,7 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
         <aside class="product-card" aria-label="Produktstatus">
           <div class="card-head"><span>dictation session</span><span class="dots"><i></i><i></i><i></i></span></div>
           <div class="card-body">
-            <div class="status-pill"><span class="levels"><span></span><span></span><span></span><span></span><span></span></span><span>LLM-granskar...</span></div>
+            <div class="status-pill"><span class="levels"><span></span><span></span><span></span><span></span><span></span></span><span class="status-cycle"><span>Lyssnar...</span><span>Transkriberar...</span><span>Korrigerar...</span><span>Klistrad (lokal)</span><span>LLM-polerar...</span><span>Klistrad (LLM-polerad)</span></span></div>
             <div class="result">
               <small>Urklipp</small>
               <p>"Skicka sammanfattningen till projektgruppen innan lunch."</p>
@@ -657,7 +675,7 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
         <div class="section-head">
           <div><p class="eyebrow">Så funkar det</p><h2>Från röst till text på under en sekund.</h2></div>
         </div>
-        <div class="pipeline" aria-label="Dikteringsflöde i fem steg">
+        <div class="pipeline" aria-label="Dikteringsflöde i fyra steg">
           <!-- Step 1: Lyssnar -->
           <div class="pipe-step">
             <div class="pipe-node"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></div>
@@ -679,19 +697,13 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
           </div>
           <!-- Connector 3-4 -->
           <div class="pipe-connector" aria-hidden="true"></div>
-          <!-- Step 4: Klistrar in -->
+          <!-- Step 4: Klar -->
           <div class="pipe-step">
             <div class="pipe-node"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg></div>
-            <div><span class="pipe-label">Klistrar in</span></div>
-          </div>
-          <!-- Connector 4-5 -->
-          <div class="pipe-connector" aria-hidden="true"></div>
-          <!-- Step 5: LLM-polerar -->
-          <div class="pipe-step">
-            <div class="pipe-node"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.09 6.26L20.18 9l-5 4.09L16.64 20 12 16.52 7.36 20l1.46-6.91-5-4.09 6.09-.74z"/></svg></div>
-            <div><span class="pipe-label">LLM-polerar</span><span class="pipe-sub">(valfritt)</span></div>
+            <div><span class="pipe-label">Klistrad</span></div>
           </div>
         </div>
+        <p class="pipeline-note">Om LLM-granskning är aktiverad poleras texten i bakgrunden efter inklistringen — urklipp uppdateras automatiskt med den förbättrade versionen.</p>
       </section>
 
       <section id="funktioner">
