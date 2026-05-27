@@ -75,7 +75,7 @@ Den dikterade texten kopieras till urklipp och klistras in via syntetisk Ctrl+V 
 - Hotwords från ordlista och `~/.freewispr-swedish/hotwords.txt`.
 - Snippets och textmallar.
 - Valfri remote-transkribering via staik.se eller Berget AI.
-- Auto-lärning: appen lär sig från LLM-korrigeringar och befordrar frekventa rättningar till ordlistan.
+- Auto-lärning från LLM-korrigeringar (se nedan).
 - Statuslägen i indikatorn: lokal, LLM-granskad eller LLM-polerad.
 
 ## Modeller
@@ -156,6 +156,18 @@ I appen: Inställningar → LLM-granskning → Leverantör: **Custom** → Base 
 | `mistral-small:24b` | ~16 GB | Bäst kvalitet, kräver mycket RAM |
 
 > **Tips:** LLM-polishen körs asynkront — texten klistras in direkt och korrigeringen uppdaterar urklipp i bakgrunden. Latensen märks inte oavsett om LLM:en tar 300 ms eller 2 s.
+
+## Auto-lärning
+
+När LLM-granskning är aktiverad lär sig appen automatiskt från korrigeringarna som LLM:en gör. Så här fungerar det:
+
+1. Du dikterar och Whisper transkriberar lokalt.
+2. LLM:en korrigerar texten (t.ex. "motte" → "möte").
+3. Appen jämför före/efter och sparar varje ordkorrigering i `~/.freewispr-swedish/learned.json`.
+4. När samma korrigering setts **3 gånger** befordras den automatiskt till den personliga ordlistan (`corrections.json`) och som hotword till Whisper.
+5. Nästa gång korrigerar Whisper och ordlistan felet direkt — utan att behöva LLM:en.
+
+> **OBS:** Auto-lärningen fångar bara korrigeringar som LLM:en gör, inte manuella redigeringar du gör i appen efteråt (t.ex. om du ändrar text i ett chattfält innan du skickar). Vill du lägga till egna korrigeringar manuellt kan du göra det via **Personlig ordlista** i tray-menyn.
 
 ## Datafiler
 
