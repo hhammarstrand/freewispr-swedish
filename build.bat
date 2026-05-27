@@ -42,6 +42,7 @@ echo Bygger exe...
   --hidden-import=sounddevice ^
   --hidden-import=keyboard ^
   --hidden-import=pystray._win32 ^
+  --collect-submodules=ui ^
   --hidden-import=keyring.backends.Windows ^
   --hidden-import=customtkinter ^
   --add-data "%FW_DIR%\assets;faster_whisper\assets" ^

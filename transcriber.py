@@ -234,7 +234,7 @@ def _get_device_and_compute(use_cuda: bool) -> tuple:
     Returns (device, compute_type, cuda_used).
     """
     cuda_available = _check_cuda()
-    
+
     if use_cuda and cuda_available:
         return ("cuda", "float16", True)
     elif use_cuda and not cuda_available:
