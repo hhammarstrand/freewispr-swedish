@@ -1,42 +1,41 @@
 # freewispr-swedish
 
-**Svensk diktering för Windows.** Håll en tangent, prata och få texten där markören redan står.
+Svensk diktering för Windows. Håll en tangent, prata, släpp – texten hamnar där markören står.
 
 [![Windows build](https://github.com/hhammarstrand/freewispr-swedish/actions/workflows/build-windows.yml/badge.svg)](https://github.com/hhammarstrand/freewispr-swedish/actions/workflows/build-windows.yml)
 [![GitHub Pages](https://github.com/hhammarstrand/freewispr-swedish/actions/workflows/pages.yml/badge.svg)](https://hhammarstrand.github.io/freewispr-swedish/)
 
 ![freewispr-swedish preview](docs/og-image.png)
 
-freewispr-swedish är en svensk fork av [x26prakhar/freewispr](https://github.com/x26prakhar/freewispr), anpassad för svensk Whisper-diktering, Windows-arbetsflöden och terminaler där vanlig automatisk paste ofta fallerar.
+Det här är en svensk fork av [x26prakhar/freewispr](https://github.com/x26prakhar/freewispr). Den använder KBLab:s svenska Whisper-modeller och är trimmad för att fungera även i terminaler och CLI-verktyg där vanlig syntetisk paste brukar misslyckas.
 
-## Vad som är annorlunda
+## Vad som skiljer mot originalet
 
-- **Svenska KBLab-modeller** via `faster-whisper`, med `KBLab/kb-whisper-small` som standard.
-- **Lokal först**: ljud och transkribering sker på datorn när LLM-granskning är avstängd.
-- **Clipboard-fallback**: dikterad text lämnas kvar i urklipp, så den går att klistra in manuellt även i terminaler och CLI-verktyg.
-- **Valfri LLM-granskning** via GitHub Models/Azure efter lokal Whisper-transkribering. Text skickas bara när du aktiverar funktionen.
-- **Tydlig status**: indikatorn visar om appen transkriberar lokalt, LLM-granskar eller har klistrat in lokal/LLM-granskad text.
-- **Musföljande indikator**: lyssnarrutan kan följa muspekaren över flera skärmar eller ligga fast på huvudskärmen.
-- **Personlig ordlista, hotwords och snippets** för namn, facktermer och återkommande text.
-- **Automatiska Windows-buildar** via GitHub Actions.
+- Svenska Whisper-modeller från KBLab via `faster-whisper`. Standard är `KBLab/kb-whisper-small`.
+- Inget skickas över nätet vid normal användning. Ljudet stannar på datorn och transkriberingen sker lokalt.
+- Den dikterade texten lämnas kvar i urklipp efter pasteförsöket, så att den går att klistra in manuellt om en terminal eller ett CLI-verktyg blockerar syntetisk paste.
+- Indikatorn kan följa muspekaren mellan skärmar, eller ligga still på huvudskärmen.
+- Personlig ordlista, hotwords och snippets för namn, facktermer och fraser man skriver ofta.
+- Valfri eftergranskning via GitHub Models. Avstängd som standard.
+- Windows-byggen via GitHub Actions.
 
 ## Snabbstart
 
-### Ladda ner senaste build
+### Färdig build
 
-Det finns ännu ingen stabil release. Använd senaste GitHub Actions-build tills versionerna stabiliseras:
+Det finns ännu ingen taggad release. Använd senaste lyckade Actions-bygget tills vidare:
 
 1. Öppna [Build Windows EXE](https://github.com/hhammarstrand/freewispr-swedish/actions/workflows/build-windows.yml).
 2. Välj senaste lyckade körningen på `master`.
 3. Ladda ner artifact `freewispr-swedish-windows`.
 4. Packa upp zip-filen och kör `freewispr-swedish.exe`.
-5. Håll `Ctrl+Space`, prata och släpp för att klistra in texten.
+5. Håll `Ctrl+Space`, prata, släpp.
 
-Artifacts på GitHub kan kräva att du är inloggad och sparas normalt bara en begränsad tid.
+Actions-artifacts kräver att du är inloggad på GitHub och sparas en begränsad tid.
 
-### Kör från källkod
+### Från källkod
 
-Krav: Windows 10/11 och Python 3.10+.
+Kräver Windows 10/11 och Python 3.10+.
 
 ```bash
 git clone https://github.com/hhammarstrand/freewispr-swedish.git
@@ -45,7 +44,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-Valfri CUDA-installation för NVIDIA GPU:
+Om du har en NVIDIA-GPU och vill använda CUDA:
 
 ```bash
 pip install torch --index-url https://download.pytorch.org/whl/cu124
@@ -53,44 +52,42 @@ pip install torch --index-url https://download.pytorch.org/whl/cu124
 
 ## Integritet
 
-Standardläget skickar inte ljud eller transkriberad text till en LLM.
+Appen pratar bara med nätverket i två fall:
 
-Appen kan använda nätverk i dessa fall:
+- Första gången du använder en modell laddas den ner från Hugging Face om den inte redan finns lokalt.
+- Om du själv slår på LLM-granskning skickas den transkriberade texten – inte ljudet – till GitHub Models.
 
-- Första modellstarten laddar ner vald KBLab-modell från Hugging Face om den saknas lokalt.
-- LLM-granskning är avstängd som standard. Om du aktiverar den skickas transkriberad text, inte ljud, till GitHub Models/Azure.
-- GitHub-token för LLM kan hämtas från sparad nyckel, `GITHUB_TOKEN`, `GH_TOKEN` eller `gh auth token` och skrivs inte ut i loggar.
+GitHub-token för LLM hämtas i tur och ordning från sparad nyckel, `GITHUB_TOKEN`, `GH_TOKEN` eller `gh auth token`. Token loggas aldrig.
 
-Dikterad text lämnas avsiktligt kvar i urklipp efter pasteförsök. Det gör appen mer robust i terminaler, opencode/CLI och andra miljöer som blockerar syntetisk paste.
+Den dikterade texten ligger kvar i urklipp efter att appen har försökt klistra in. Det är ett medvetet val: gamla urklippets innehåll återställs inte, men du kan alltid klistra in manuellt om paste-försöket inte gick fram.
 
 ## Funktioner
 
-- Push-to-talk med valfri snabbtangent, standard `Ctrl+Space`.
+- Push-to-talk, standard `Ctrl+Space`.
 - Systemfacksapp med inställningar för mikrofon, modell, CUDA och autostart.
 - WASAPI/DirectSound/MME med automatisk prioritering.
-- Flerkanalig ljudhantering och resampling till 16 kHz för Whisper.
-- Tystnadsdetektion som avvisar för tysta inspelningar.
-- Personliga korrigeringar för ord som ofta hörs fel.
+- Flerkanalig inspelning och resampling till 16 kHz.
+- Tystnadsdetektion som kastar för tysta inspelningar.
+- Personliga ordkorrigeringar.
 - Hotwords från ordlista och `~/.freewispr-swedish/hotwords.txt`.
-- Snippets/textmallar.
-- LLM-status: lokal, LLM-granskad eller LLM-polerad.
-- Ny projektspecifik ikon, favicon och social preview.
+- Snippets och textmallar.
+- Statuslägen i indikatorn: lokal, LLM-granskad eller LLM-polerad.
 
 ## Modeller
 
-freewispr-swedish använder [KBLab:s Whisper-modeller](https://huggingface.co/KBLab), tränade på svenskt tal.
+Appen använder [KBLab:s Whisper-modeller](https://huggingface.co/KBLab), tränade på svenskt tal.
 
 | Modell | Storlek | Kommentar |
 |--------|---------|-----------|
-| `tiny` | cirka 40 MB | Snabbast, lägre precision |
-| `base` | cirka 150 MB | Liten och snabb |
-| `small` | cirka 500 MB | Standard och bästa balans för de flesta |
-| `medium` | cirka 1.5 GB | Bättre precision, tyngre |
-| `large` | cirka 3 GB | Tyngst, kan kräva konvertering |
+| `tiny` | ~40 MB | Snabbast, lägre precision |
+| `base` | ~150 MB | Liten och snabb |
+| `small` | ~500 MB | Standard |
+| `medium` | ~1.5 GB | Bättre precision, tyngre |
+| `large` | ~3 GB | Tyngst, kan behöva konverteras |
 
-Modeller sparas i `~/.freewispr-swedish/models/` och laddas ner automatiskt vid första användning.
+Modellerna sparas i `~/.freewispr-swedish/models/` och hämtas automatiskt första gången de används.
 
-Medium- och large-modeller kan behöva konverteras till CTranslate2-format:
+Medium och large kan behöva konverteras till CTranslate2-format:
 
 ```bash
 pip install ctranslate2 transformers
@@ -107,11 +104,11 @@ Högerklicka på systemfacksikonen och välj **Inställningar**.
 | Snabbtangent | Tangentkombination för diktering |
 | Mikrofon | Specifik mikrofon eller auto |
 | Modell | `tiny`, `base`, `small`, `medium` eller `large` |
-| GPU/CUDA | Använd NVIDIA GPU när tillgänglig |
-| Lyssnarindikator | Följ muspekaren eller visa fast på huvudskärmen |
+| GPU/CUDA | Använd NVIDIA-GPU när tillgänglig |
+| Lyssnarindikator | Följ muspekaren eller ligg still på huvudskärmen |
 | LLM-granskning | Valfri eftergranskning av transkriberad text |
 
-Konfiguration sparas i `~/.freewispr-swedish/config.json`. LLM API-nyckel sparas i Windows Credential Manager via `keyring`, inte i config-filen.
+Konfiguration sparas i `~/.freewispr-swedish/config.json`. API-nyckeln för LLM lagras i Windows Credential Manager via `keyring`, inte i config-filen.
 
 Exempel:
 
@@ -143,9 +140,9 @@ Exempel:
 build.bat
 ```
 
-Bygget skapar `dist/freewispr-swedish/freewispr-swedish.exe` med PyInstaller.
+Resultatet hamnar i `dist/freewispr-swedish/freewispr-swedish.exe`.
 
-Ikoner och webbassets genereras med:
+Ikoner och webbgrafik genereras med:
 
 ```bash
 python make_icon.py
@@ -175,7 +172,7 @@ freewispr-swedish/
 +-- docs/            # GitHub Pages-site
 ```
 
-## Uppdatera från originalet
+## Synka med originalet
 
 ```bash
 git remote add upstream https://github.com/x26prakhar/freewispr.git
@@ -187,9 +184,6 @@ git merge upstream/master
 
 [MIT](LICENSE)
 
-## Tack till
+## Tack
 
-- [KBLab](https://huggingface.co/KBLab) för svenska Whisper-modeller.
-- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) för effektiv Whisper-inferens via CTranslate2.
-- [OpenAI Whisper](https://github.com/openai/whisper) för den ursprungliga modellen.
-- [freewispr](https://github.com/x26prakhar/freewispr) för originalprojektet.
+[KBLab](https://huggingface.co/KBLab), [faster-whisper](https://github.com/SYSTRAN/faster-whisper), [OpenAI Whisper](https://github.com/openai/whisper) och [freewispr](https://github.com/x26prakhar/freewispr).
