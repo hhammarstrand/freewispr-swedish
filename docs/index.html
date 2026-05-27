@@ -4,17 +4,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>freewispr-swedish &mdash; Svensk speech-to-text for Windows</title>
-<meta name="description" content="freewispr-swedish ar en gratis, lokal, open-source dikteringsapp for Windows. Optimerad for svenska med KBLab:s Whisper-modeller. Inget moln. Ingen prenumeration.">
-<link rel="icon" type="image/x-icon" href="/favicon.ico">
-<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
-<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16.png">
-<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<meta name="description" content="freewispr-swedish ar en gratis, open-source dikteringsapp for Windows. Lokal svensk Whisper-transkribering med valfri LLM-granskning via GitHub Models.">
+<link rel="icon" type="image/x-icon" href="favicon.ico">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta property="og:title" content="freewispr-swedish &mdash; Svensk speech-to-text for Windows">
-<meta property="og:description" content="Gratis, lokal, open-source diktering for Windows. Optimerad for svenska med KBLab Whisper. Inget moln. Ingen prenumeration.">
-<meta property="og:image" content="https://freewispr.vercel.app/og-image.png">
+<meta property="og:description" content="Gratis, open-source diktering for Windows. Lokal svensk Whisper-transkribering med valfri LLM-granskning via GitHub Models.">
+<meta property="og:image" content="https://hhammarstrand.github.io/freewispr-swedish/og-image.png">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:image" content="https://freewispr.vercel.app/og-image.png">
+<meta name="twitter:image" content="https://hhammarstrand.github.io/freewispr-swedish/og-image.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -507,7 +507,7 @@ footer {
 
 <!-- Header -->
 <header>
-  <a href="/" class="logo">free<em>wispr</em>-swedish</a>
+  <a href="./" class="logo">free<em>wispr</em>-swedish</a>
   <ul class="header-links">
     <li><a href="#features">Funktioner</a></li>
     <li><a href="#models">Modeller</a></li>
@@ -531,7 +531,7 @@ footer {
 
   <p class="hero-sub">
     Svensk speech-to-text for Windows.<br>
-    <strong>Inget moln. Ingen prenumeration. Allt stannar pa din dator.</strong>
+    <strong>Lokal som standard. Valfri LLM-granskning nar du vill.</strong>
   </p>
 
   <a href="https://github.com/hhammarstrand/freewispr-swedish/releases" id="download-btn" class="dl-btn">
@@ -546,7 +546,7 @@ footer {
   <div class="hero-badges">
     <span>open source</span>
     <span class="dot"></span>
-    <span>helt lokalt</span>
+    <span>lokal standard</span>
     <span class="dot"></span>
     <span>Windows 10 / 11</span>
     <span class="dot"></span>
@@ -563,7 +563,7 @@ footer {
   <div class="wrap">
     <p class="section-eyebrow">Funktioner</p>
     <h2 class="section-title">Allt du behover for att<br><em>prata istallet for att skriva.</em></h2>
-    <p style="font-size:0.9rem;color:var(--fg2);margin-top:-36px;margin-bottom:48px;line-height:1.6;">Diktering, snippets, personlig ordlista, automatisk punktuation &mdash; allt kor lokalt med svenska Whisper-modeller.</p>
+    <p style="font-size:0.9rem;color:var(--fg2);margin-top:-36px;margin-bottom:48px;line-height:1.6;">Diktering, snippets, personlig ordlista, clipboard-fallback och tydlig status for lokal/LLM-granskad text.</p>
     <div class="features">
 
       <div class="feat">
@@ -576,7 +576,7 @@ footer {
           </svg>
         </div>
         <h3>Diktering</h3>
-        <p>Hall Ctrl+Space, prata, slapp. Texten klistras in vid markoren &mdash; i alla appar, alla textfalt. En flytande indikator visar vad som hander.</p>
+        <p>Hall Ctrl+Space, prata, slapp. Texten klistras in vid markoren och ligger kvar i urklipp om en CLI-terminal inte accepterar auto-paste.</p>
       </div>
 
       <div class="feat">
@@ -609,8 +609,8 @@ footer {
             <line x1="12" y1="4" x2="12" y2="20"/>
           </svg>
         </div>
-        <h3>Autopunktuation</h3>
-        <p>Texten far automatiskt stor bokstav och punkt. Inget mer oformaterade lopande meningar. Sla av nar som helst i installningar.</p>
+        <h3>Flytande indikator</h3>
+        <p>Lyssnarrutan kan folja muspekaren over flera skarmar eller ligga fast pa huvudskarmen. Den visar lokal transkribering och LLM-granskning separat.</p>
       </div>
 
       <div class="feat">
@@ -620,8 +620,8 @@ footer {
             <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
           </svg>
         </div>
-        <h3>Helt lokalt</h3>
-        <p>Whisper AI kor pa din dator med GPU (float16) eller CPU (int8). Inget konto, ingen API-nyckel, ingen data lamnar din dator.</p>
+        <h3>Lokal som standard</h3>
+        <p>Whisper kor pa din dator med GPU (float16) eller CPU (int8). LLM-granskning ar valfri och skickar bara transkriberad text, aldrig ljud.</p>
       </div>
 
       <div class="feat">
@@ -705,7 +705,7 @@ footer {
         <div class="step-n">1</div>
         <div>
           <h3>Ladda ner</h3>
-          <p>Ladda ner och packa upp freewispr-swedish-mappen fran GitHub Releases. Ingen installation kravs.</p>
+          <p>Ladda ner och packa upp senaste Windows-artifact eller release fran GitHub. Ingen installation kravs.</p>
         </div>
       </div>
 
@@ -713,7 +713,7 @@ footer {
         <div class="step-n">2</div>
         <div>
           <h3>Kor</h3>
-          <p>Dubbelklicka <code>freewispr-swedish.exe</code>. Vid forsta starten laddas KB-Whisper-small (~500 MB) ner automatiskt. Darefter lever appen i systemfacket.</p>
+          <p>Dubbelklicka <code>freewispr-swedish.exe</code>. Vald KB-Whisper-modell laddas/konverteras lokalt enligt installningarna. Darefter lever appen i systemfacket.</p>
         </div>
       </div>
 
@@ -721,7 +721,7 @@ footer {
         <div class="step-n">3</div>
         <div>
           <h3>Hall <code>Ctrl+Space</code> och prata</h3>
-          <p>Hall tangenten nedtryckt, sag vad du vill skriva, slapp. Klart. Andra snabbtangent nar som helst i installningarna.</p>
+          <p>Hall tangenten nedtryckt, sag vad du vill skriva, slapp. Klart. Andra snabbtangent, indikatorlage, mikrofon, modell och LLM-granskning i installningarna.</p>
         </div>
       </div>
 
@@ -735,7 +735,7 @@ footer {
 <section id="download">
   <div class="wrap">
     <div class="dl-card">
-      <p class="dl-tag">Senaste release</p>
+      <p class="dl-tag">GitHub Actions / Releases</p>
       <h2>freewispr-swedish</h2>
       <p class="platform">For Windows 10 och Windows 11</p>
       <a href="https://github.com/hhammarstrand/freewispr-swedish/releases" class="dl-btn">
@@ -748,8 +748,8 @@ footer {
       </a>
       <p class="dl-note">
         Kraver Windows 10 / 11<br>
-        Forsta start laddar ner ~500 MB Whisper-modell automatiskt<br>
-        Valfritt: NVIDIA GPU for snabbare transkribering
+        GitHub Actions bygger Windows-exe automatiskt<br>
+        Valfritt: NVIDIA GPU och GitHub Models for LLM-granskning
       </p>
     </div>
   </div>
