@@ -11,6 +11,9 @@ jobs:
   build-windows:
     runs-on: windows-latest
 
+    permissions:
+      contents: write   # behövs för att publicera/uppdatera rolling release
+
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -62,3 +65,31 @@ jobs:
           path: dist/freewispr-swedish/
           if-no-files-found: error
           retention-days: 14
+
+      - name: Package release zip
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        shell: pwsh
+        run: |
+          $zip = "freewispr-swedish-windows.zip"
+          if (Test-Path $zip) { Remove-Item $zip -Force }
+          Compress-Archive -Path "dist/freewispr-swedish/*" -DestinationPath $zip
+          Get-ChildItem $zip | Format-List
+
+      - name: Publish rolling 'latest' release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Senaste bygge (master)
+          body: |
+            Automatiskt bygge från senaste lyckade Actions-körning på `master`.
+
+            - Commit: ${{ github.sha }}
+            - Workflow: [Build Windows EXE](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+            - Skapad: ${{ github.event.head_commit.timestamp }}
+
+            Zippen nedan innehåller `freewispr-swedish.exe` plus alla beroenden.
+            Packa upp och kör `freewispr-swedish.exe`.
+          files: freewispr-swedish-windows.zip
+          prerelease: true
+          target_commitish: ${{ github.sha }}

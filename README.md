@@ -23,15 +23,14 @@ Det här är en svensk fork av [x26prakhar/freewispr](https://github.com/x26prak
 
 ### Färdig build
 
-Det finns ännu ingen taggad release. Använd senaste lyckade Actions-bygget tills vidare:
+Senaste lyckade bygge från `master` publiceras automatiskt som pre-release:
 
-1. Öppna [Build Windows EXE](https://github.com/hhammarstrand/freewispr-swedish/actions/workflows/build-windows.yml).
-2. Välj senaste lyckade körningen på `master`.
-3. Ladda ner artifact `freewispr-swedish-windows`.
-4. Packa upp zip-filen och kör `freewispr-swedish.exe`.
-5. Håll `Ctrl+Space`, prata, släpp.
+1. Öppna [Releases](https://github.com/hhammarstrand/freewispr-swedish/releases/tag/latest).
+2. Ladda ner `freewispr-swedish-windows.zip`.
+3. Packa upp zippen och kör `freewispr-swedish.exe`.
+4. Håll `Ctrl+Space`, prata, släpp.
 
-Actions-artifacts kräver att du är inloggad på GitHub och sparas en begränsad tid.
+Vill du se loggarna från bygget, eller bygga själv? Se [Build Windows EXE](https://github.com/hhammarstrand/freewispr-swedish/actions/workflows/build-windows.yml).
 
 ### Från källkod
 
