@@ -133,6 +133,30 @@ Exempel:
 }
 ```
 
+## Lokal LLM (valfritt)
+
+LLM-granskning kan köras mot en lokal server istället för molnet. Alla OpenAI-kompatibla servrar fungerar — t.ex. [Ollama](https://ollama.com), [LM Studio](https://lmstudio.ai) eller [llama.cpp](https://github.com/ggml-org/llama.cpp).
+
+### Exempel med Ollama
+
+```bash
+ollama serve
+ollama pull gemma3:12b
+```
+
+I appen: Inställningar → LLM-granskning → Leverantör: **Custom** → Base URL: `http://localhost:11434/v1` → Modell: `gemma3:12b`.
+
+### Rekommenderade modeller
+
+| Modell | VRAM | Kommentar |
+|--------|------|-----------|
+| `gemma3:4b` | ~3 GB | Snabbast, enklare korrigeringar |
+| `gemma3:12b` | ~8 GB | Bra balans, ryms i de flesta GPU:er |
+| `qwen3:14b` | ~9 GB | Stark på korrigering, kräver offload till RAM |
+| `mistral-small:24b` | ~16 GB | Bäst kvalitet, kräver mycket RAM |
+
+> **Tips:** LLM-polishen körs asynkront — texten klistras in direkt och korrigeringen uppdaterar urklipp i bakgrunden. Latensen märks inte oavsett om LLM:en tar 300 ms eller 2 s.
+
 ## Datafiler
 
 | Fil | Beskrivning |
@@ -231,6 +255,10 @@ git remote add upstream https://github.com/x26prakhar/freewispr.git
 git fetch upstream
 git merge upstream/master
 ```
+
+## Ändringslogg
+
+Se [Releases](https://github.com/hhammarstrand/freewispr-swedish/releases) för detaljerade release notes.
 
 ## Licens
 
