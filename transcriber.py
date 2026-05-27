@@ -110,6 +110,17 @@ KBLAB_MODELS = {
     "large": "KBLab/kb-whisper-large",
 }
 
+# Pin specific HuggingFace revisions for reproducible downloads.
+# Set to a commit SHA from the model's HF page to lock to that version.
+# None = use latest (current behavior).
+KBLAB_REVISIONS: dict[str, str | None] = {
+    "tiny": None,
+    "base": None,
+    "small": None,
+    "medium": None,
+    "large": None,
+}
+
 # Whisper noise/placeholder tokens to strip (always, regardless of settings).
 # These appear when Whisper hallucinates on silence or background noise.
 _NOISE_PLACEHOLDERS = re.compile(
@@ -371,6 +382,10 @@ class Transcriber:
         if cuda_used:
             log.info("GPU: NVIDIA CUDA aktiverad")
 
+        # NOTE: Revision pinning only matters at download/convert time
+        # (convert_model.py). Here local_files_only=True means we load
+        # whatever snapshot is already on disk — no network request is made,
+        # so the revision parameter has no effect.
         self.model = WhisperModel(
             model_path,
             device=device,

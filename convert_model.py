@@ -30,6 +30,17 @@ KBLAB_MODELS = {
     "large": "KBLab/kb-whisper-large",
 }
 
+# Pin specific HuggingFace revisions for reproducible downloads.
+# Set to a commit SHA from the model's HF page to lock to that version.
+# None = use latest (current behavior).
+KBLAB_REVISIONS: dict[str, str | None] = {
+    "tiny": None,
+    "base": None,
+    "small": None,
+    "medium": None,
+    "large": None,
+}
+
 
 def convert(size: str) -> None:
     repo = KBLAB_MODELS.get(size)
@@ -58,10 +69,15 @@ def convert(size: str) -> None:
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    converter = TransformersConverter(
-        repo,
+    revision = KBLAB_REVISIONS.get(size)
+    converter_kwargs: dict = dict(
         copy_files=["tokenizer.json", "preprocessor_config.json"],
     )
+    if revision is not None:
+        converter_kwargs["revision"] = revision
+        log.info("Använder pinnad revision: %s", revision)
+
+    converter = TransformersConverter(repo, **converter_kwargs)
     converter.convert(
         output_dir=str(output_dir),
         quantization="float16",
