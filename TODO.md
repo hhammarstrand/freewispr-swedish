@@ -88,7 +88,7 @@ Kompletterad med pre-launch-granskning 2026-05-27.
 
 ## Kodkvalitet och robusthet
 
-- [ ] Dela upp `ui.py` i mindre moduler.
+- [x] Dela upp `ui.py` i mindre moduler.
   - Föreslagen struktur: `ui/indicator.py`, `ui/settings_window.py`, `ui/snippets_window.py`, `ui/dictionary_window.py`, `ui/hotkey_capture.py`, `ui/styles.py`.
   - Mål: lättare testning, mindre koppling och enklare ändringar.
 
@@ -203,11 +203,11 @@ Kompletterad med pre-launch-granskning 2026-05-27.
   - Ersätt breda `>=` med låsta versioner eller skapa separat lockfil.
   - Pin även `torch` och `pyinstaller` i buildflödet.
 
-- [ ] Lägg till dependency/security scanning i CI.
+- [x] Lägg till dependency/security scanning i CI.
   - Exempel: pip-audit, safety eller GitHub Dependabot.
   - Kör även lint och tester i CI.
 
-- [ ] Pin modellrevisioner och verifiera checksums.
+- [x] Pin modellrevisioner och verifiera checksums.
   - Berör: `transcriber.py`, `convert_model.py`, `README.md`.
   - Använd fasta Hugging Face revisions/commit-SHA och dokumentera nätverksendpoints.
 
@@ -305,7 +305,7 @@ Kompletterad med pre-launch-granskning 2026-05-27.
   - Bygg en `re.compile(r'\b(' + '|'.join(re.escape(k) for k in corr) + r')\b', re.IGNORECASE)` cachad på mtime.
   - Verifiera case-bevarande för "Prak" vs "PRAK" → "Prakhar".
 
-- [ ] Pre-allokera audio ring-buffer i `MicRecorder`.
+- [x] Pre-allokera audio ring-buffer i `MicRecorder`.
   - Berör: `audio.py:162-200`.
   - `indata.copy()` per callback allokerar småarrayer från realtidstråden → GC-thrashing.
   - Använd `np.empty((MAX_SECONDS * rate, channels))` och `memcpy` chunks in.
@@ -350,7 +350,7 @@ Kompletterad med pre-launch-granskning 2026-05-27.
   - Berör: `dictation.py:107`, `audio.py:169`.
   - Level beräknas redan per chunk i capture; återanvänd istället för full audio-pass efter resample.
 
-- [ ] Cacha polyphase-filter eller byt till `soxr` för resampling.
+- [x] Cacha polyphase-filter eller byt till `soxr` för resampling.
   - Berör: `audio.py:73-86`.
   - `resample_poly` rekomputerar FIR-filter varje anrop (~30-80 ms på 10s audio).
 
@@ -358,7 +358,7 @@ Kompletterad med pre-launch-granskning 2026-05-27.
   - Berör: `transcriber.py:262-263`, `corrections.py`.
   - Bryt koppling till private modulvariabler.
 
-- [ ] Hantera kanaldetektering vid stream-open, inte från första frame.
+- [x] Hantera kanaldetektering vid stream-open, inte från första frame.
   - Berör: `audio.py:185-200`.
   - `_total_samples` räknar frames men buffer-alloc antar flat = mono.
 
