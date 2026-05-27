@@ -44,6 +44,7 @@ echo Bygger exe...
   --hidden-import=pystray._win32 ^
   --hidden-import=keyring.backends.Windows ^
   --hidden-import=customtkinter ^
+  --collect-submodules=ui ^
   --add-data "%FW_DIR%\assets;faster_whisper\assets" ^
   --add-data "%CTK_DIR%;customtkinter" ^
   main.py
