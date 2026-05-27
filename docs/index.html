@@ -123,8 +123,26 @@ header.nav::after {
 }
 
 .links { display: flex; align-items: center; gap: 22px; }
-.links a { color: var(--muted); font-size: 0.94rem; text-decoration: none; transition: color 0.2s ease; }
+.links a {
+  color: var(--muted);
+  font-size: 0.94rem;
+  text-decoration: none;
+  transition: color 0.25s ease;
+  position: relative;
+}
+.links a::after {
+  content: "";
+  position: absolute;
+  bottom: -4px;
+  left: 0;
+  width: 0;
+  height: 1.5px;
+  background: var(--accent);
+  border-radius: 1px;
+  transition: width 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
 .links a:hover { color: var(--ink); }
+.links a:hover::after { width: 100%; }
 
 /* ---- Fade-in-up on sections ---- */
 .hero > * {
@@ -151,8 +169,7 @@ section:not(.hero):not(.download) > .steps { animation-delay: 0.2s; }
 .download {
   opacity: 0;
   transform: translateY(24px);
-  animation: fadeUp 0.7s ease forwards;
-  animation-delay: 0.1s;
+  animation: fadeUp 0.7s ease 0.1s forwards, gradientShimmer 8s ease 0.8s infinite;
 }
 
 .hero {
@@ -188,7 +205,10 @@ h1 {
   line-height: 0.94;
   letter-spacing: -0.075em;
   font-weight: 760;
-  text-shadow: 0 2px 30px rgba(0,106,167,0.08);
+  background: linear-gradient(135deg, var(--ink) 0%, var(--accent-dark) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .lead {
@@ -210,16 +230,34 @@ h1 {
   border: 1px solid var(--line);
   text-decoration: none;
   font-weight: 700;
-  transition: all 0.25s ease;
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              box-shadow 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              background 0.25s ease,
+              border-color 0.25s ease;
 }
 .btn.primary { background: var(--ink); border-color: var(--ink); color: white; }
-.btn.primary:hover { background: #000; box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
+.btn.primary:hover { background: #000; box-shadow: 0 6px 20px rgba(0,0,0,0.18); transform: translateY(-2px); }
+.btn.primary:active { transform: translateY(0); box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
 .btn.secondary { background: transparent; color: var(--ink); }
-.btn.secondary:hover { border-color: var(--ink); }
+.btn.secondary:hover { border-color: var(--ink); transform: translateY(-2px); box-shadow: 0 4px 12px rgba(17,24,39,0.06); }
+.btn.secondary:active { transform: translateY(0); }
 
 .note { margin-top: 14px; color: var(--muted); font-size: 0.94rem; }
 .trust { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
-.trust span { padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font: 700 0.78rem/1 var(--mono); background: rgba(255,255,255,0.56); }
+.trust span {
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font: 700 0.78rem/1 var(--mono);
+  background: rgba(255,255,255,0.56);
+  transition: border-color 0.25s ease, color 0.25s ease, box-shadow 0.25s ease;
+}
+.trust span:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0,106,167,0.08);
+}
 
 .product-card {
   border: 1px solid var(--line);
@@ -227,11 +265,12 @@ h1 {
   background: var(--panel);
   box-shadow: var(--shadow);
   overflow: hidden;
-  transition: transform 0.3s ease, box-shadow 0.3s ease;
+  transition: transform 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              box-shadow 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 .product-card:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 24px 60px rgba(17, 24, 39, 0.13);
+  transform: translateY(-5px);
+  box-shadow: 0 28px 70px rgba(17, 24, 39, 0.14);
 }
 
 .card-head {
@@ -288,34 +327,64 @@ h1 {
   padding: 13px;
   border-radius: 14px;
   border: 1px solid var(--line);
-  transition: all 0.25s ease;
+  background: rgba(255,255,255,0.5);
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              box-shadow 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              border-color 0.25s ease,
+              background 0.25s ease;
 }
 .meta:hover {
+  transform: translateY(-2px);
   border-color: var(--accent);
-  box-shadow: 0 4px 12px rgba(0,106,167,0.08);
+  background: rgba(0,106,167,0.03);
+  box-shadow: 0 6px 16px rgba(0,106,167,0.10);
 }
 .meta b { display: block; font-size: 1.1rem; }
 .meta span { color: var(--muted); font-size: 0.82rem; }
 
-/* Status cycle animation in product card */
+/* Status cycle animation in product card — smooth sliding text */
 .status-cycle {
-  display: inline;
+  display: inline-block;
+  height: 1.2em;
+  overflow: hidden;
+  vertical-align: bottom;
+  mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 15%, black 85%, transparent 100%);
 }
-.status-cycle::after {
-  content: "Lyssnar...";
-  animation: statusCycle 9s step-end infinite;
+.status-cycle-inner {
+  animation: statusSlide 9s ease infinite;
 }
-.status-cycle span { display: none; }
-@keyframes statusCycle {
-  0%      { content: "Lyssnar..."; }
-  16.66%  { content: "Transkriberar..."; }
-  33.33%  { content: "Korrigerar..."; }
-  50%     { content: "Klar (lokal)"; }
-  66.66%  { content: "LLM-polerar..."; }
-  83.33%  { content: "Klar (LLM-polerad)"; }
+.status-cycle-inner span {
+  display: block;
+  height: 1.2em;
+  line-height: 1.2em;
+}
+@keyframes statusSlide {
+  0%, 14%       { transform: translateY(0); }
+  16.66%, 30.66% { transform: translateY(-1.2em); }
+  33.33%, 47.33% { transform: translateY(-2.4em); }
+  50%, 64%       { transform: translateY(-3.6em); }
+  66.66%, 80.66% { transform: translateY(-4.8em); }
+  83.33%, 97.33% { transform: translateY(-6em); }
 }
 
-section { padding: 70px 0; border-top: 1px solid var(--line); }
+section {
+  padding: 84px 0;
+  border-top: none;
+  position: relative;
+}
+section::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 5%;
+  right: 5%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line) 20%, var(--line) 80%, transparent);
+  border-radius: 1px;
+}
+section.hero::before,
+section.download::before { display: none; }
 .section-head { display: grid; grid-template-columns: minmax(0, 0.75fr) minmax(280px, 0.55fr); gap: 34px; align-items: end; margin-bottom: 28px; }
 .eyebrow { color: var(--accent); font: 700 0.78rem/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
 h2 { margin: 10px 0 0; font-size: clamp(2.1rem, 4vw, 3.7rem); line-height: 1; letter-spacing: -0.055em; }
@@ -328,12 +397,14 @@ h2 { margin: 10px 0 0; font-size: clamp(2.1rem, 4vw, 3.7rem); line-height: 1; le
   border: 1px solid var(--line);
   border-radius: 22px;
   background: rgba(255,255,255,0.62);
-  transition: all 0.25s ease;
+  transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              box-shadow 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              border-color 0.3s ease;
 }
 .feature:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 32px rgba(17, 24, 39, 0.10);
-  border-color: rgba(0,106,167,0.18);
+  transform: translateY(-5px);
+  box-shadow: 0 16px 40px rgba(17, 24, 39, 0.11);
+  border-color: rgba(0,106,167,0.22);
 }
 /* ---- Feature icon container ---- */
 .feature .icon-wrap {
@@ -361,11 +432,14 @@ h2 { margin: 10px 0 0; font-size: clamp(2.1rem, 4vw, 3.7rem); line-height: 1; le
   border: 1px solid var(--line);
   border-radius: 24px;
   background: var(--panel);
-  transition: all 0.25s ease;
+  transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              box-shadow 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              border-color 0.3s ease;
 }
 .panel:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.07);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 32px rgba(17, 24, 39, 0.09);
+  border-color: rgba(0,106,167,0.12);
 }
 .panel h3 { margin: 0 0 10px; font-size: 1.35rem; }
 .panel p { margin: 0; color: var(--muted); line-height: 1.7; }
@@ -385,12 +459,14 @@ h2 { margin: 10px 0 0; font-size: clamp(2.1rem, 4vw, 3.7rem); line-height: 1; le
   border: 1px solid var(--line);
   border-radius: 22px;
   background: rgba(255,255,255,0.62);
-  transition: all 0.25s ease;
+  transition: transform 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              box-shadow 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              border-color 0.3s ease;
 }
 .step:hover {
-  transform: translateY(-4px);
-  box-shadow: 0 12px 32px rgba(17, 24, 39, 0.10);
-  border-color: rgba(0,106,167,0.18);
+  transform: translateY(-5px);
+  box-shadow: 0 16px 40px rgba(17, 24, 39, 0.11);
+  border-color: rgba(0,106,167,0.22);
 }
 .step b { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: var(--ink); color: white; font-family: var(--mono); }
 .step h3 { margin: 18px 0 8px; }
@@ -404,22 +480,74 @@ h2 { margin: 10px 0 0; font-size: clamp(2.1rem, 4vw, 3.7rem); line-height: 1; le
   gap: 20px;
   align-items: center;
   border-radius: 26px;
-  background: linear-gradient(135deg, #111827 0%, #1e293b 100%);
+  background: linear-gradient(135deg, #111827 0%, #1e293b 50%, #111827 100%);
+  background-size: 200% 200%;
   color: white;
+}
+@keyframes gradientShimmer {
+  0%, 100% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
 }
 .download h2 { color: white; margin: 0 0 8px; }
 .download p { margin: 0; color: #cbd5e1; line-height: 1.6; }
-.download .btn { color: var(--ink); background: white; }
-.download .btn:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.2); transform: translateY(-1px); }
+.download .btn { color: var(--ink); background: white; border-color: white; }
+.download .btn:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.25); transform: translateY(-2px); }
+.download .btn:active { transform: translateY(0); box-shadow: 0 2px 8px rgba(0,0,0,0.15); }
 .download small { display: block; margin-top: 8px; color: #94a3b8; }
 
-footer { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 30px 0 44px; color: var(--muted); border-top: 1px solid var(--line); }
-footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
+footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 36px 0 52px;
+  color: var(--muted);
+  border-top: none;
+  position: relative;
+  font-size: 0.94rem;
+  line-height: 1.7;
+}
+footer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 5%;
+  right: 5%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line) 20%, var(--line) 80%, transparent);
+  border-radius: 1px;
+}
+footer a {
+  text-decoration: none;
+  color: var(--ink);
+  font-weight: 700;
+  background-image: linear-gradient(var(--accent), var(--accent));
+  background-size: 0% 1.5px;
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  transition: background-size 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), color 0.25s ease;
+  padding-bottom: 1px;
+}
+footer a:hover {
+  background-size: 100% 1.5px;
+  color: var(--accent);
+}
 
 /* ---- Pipeline visualization ---- */
 .pipeline-section {
-  padding: 70px 0;
-  border-top: 1px solid var(--line);
+  padding: 84px 0;
+  border-top: none;
+  position: relative;
+}
+.pipeline-section::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 5%;
+  right: 5%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line) 20%, var(--line) 80%, transparent);
+  border-radius: 1px;
 }
 .pipeline-section > .section-head,
 .pipeline-section > .pipeline {
@@ -458,12 +586,12 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
   display: grid;
   place-items: center;
   position: relative;
-  transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  transition: border-color 0.4s ease-in-out, box-shadow 0.4s ease-in-out, transform 0.4s ease-in-out;
 }
 .pipe-node svg {
   display: block;
   color: var(--muted);
-  transition: color 0.3s ease;
+  transition: color 0.4s ease-in-out;
 }
 
 .pipe-label {
@@ -522,51 +650,52 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
 
 /* Step glow animation — each step lights up in sequence */
 @keyframes pipelinePulse {
-  0%, 14%   { border-color: var(--glow-color); box-shadow: 0 0 14px var(--glow-shadow); }
-  20%, 100% { border-color: var(--line); box-shadow: none; }
+  0%, 5%    { border-color: var(--glow-color); box-shadow: 0 0 18px var(--glow-shadow); transform: scale(1.08); }
+  14%       { border-color: var(--glow-color); box-shadow: 0 0 14px var(--glow-shadow); transform: scale(1.04); }
+  22%, 100% { border-color: var(--line); box-shadow: none; transform: scale(1); }
 }
 @keyframes pipelineIconPulse {
   0%, 14%   { color: var(--glow-color); }
-  20%, 100% { color: var(--muted); }
+  22%, 100% { color: var(--muted); }
 }
 
 .pipe-step:nth-child(1) .pipe-node {
   --glow-color: var(--accent);
   --glow-shadow: rgba(0, 106, 167, 0.25);
-  animation: pipelinePulse 4.4s ease infinite 0s;
+  animation: pipelinePulse 4.4s ease-in-out infinite 0s;
 }
 .pipe-step:nth-child(1) .pipe-node svg {
-  animation: pipelineIconPulse 4.4s ease infinite 0s;
+  animation: pipelineIconPulse 4.4s ease-in-out infinite 0s;
   --glow-color: var(--accent);
 }
 
 .pipe-step:nth-child(3) .pipe-node {
   --glow-color: #e67e22;
   --glow-shadow: rgba(230, 126, 34, 0.25);
-  animation: pipelinePulse 4.4s ease infinite 1.1s;
+  animation: pipelinePulse 4.4s ease-in-out infinite 1.1s;
 }
 .pipe-step:nth-child(3) .pipe-node svg {
-  animation: pipelineIconPulse 4.4s ease infinite 1.1s;
+  animation: pipelineIconPulse 4.4s ease-in-out infinite 1.1s;
   --glow-color: #e67e22;
 }
 
 .pipe-step:nth-child(5) .pipe-node {
   --glow-color: var(--ok);
   --glow-shadow: rgba(17, 132, 91, 0.25);
-  animation: pipelinePulse 4.4s ease infinite 2.2s;
+  animation: pipelinePulse 4.4s ease-in-out infinite 2.2s;
 }
 .pipe-step:nth-child(5) .pipe-node svg {
-  animation: pipelineIconPulse 4.4s ease infinite 2.2s;
+  animation: pipelineIconPulse 4.4s ease-in-out infinite 2.2s;
   --glow-color: var(--ok);
 }
 
 .pipe-step:nth-child(7) .pipe-node {
   --glow-color: var(--ok);
   --glow-shadow: rgba(17, 132, 91, 0.25);
-  animation: pipelinePulse 4.4s ease infinite 3.3s;
+  animation: pipelinePulse 4.4s ease-in-out infinite 3.3s;
 }
 .pipe-step:nth-child(7) .pipe-node svg {
-  animation: pipelineIconPulse 4.4s ease infinite 3.3s;
+  animation: pipelineIconPulse 4.4s ease-in-out infinite 3.3s;
   --glow-color: var(--ok);
 }
 
@@ -643,7 +772,7 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
         <div>
           <span class="kicker">Open source för Windows</span>
           <h1>Svensk diktering utan omvägar.</h1>
-          <p class="lead">Håll en tangent, prata och få texten där markören redan står. freewispr-swedish kör KBLab Whisper lokalt och kan, om du vill, granska texten med GitHub Models efteråt.</p>
+          <p class="lead">Håll en tangent, prata och få texten där markören redan står. freewispr-swedish kör KBLab Whisper lokalt och kan, om du vill, granska texten med valfri LLM efteråt.</p>
           <div class="actions">
             <a class="btn primary" href="https://github.com/hhammarstrand/freewispr-swedish/releases/tag/latest">Hämta senaste build</a>
             <a class="btn secondary" href="https://github.com/hhammarstrand/freewispr-swedish">Visa källkod</a>
@@ -655,7 +784,7 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
         <aside class="product-card" aria-label="Produktstatus">
           <div class="card-head"><span>dictation session</span><span class="dots"><i></i><i></i><i></i></span></div>
           <div class="card-body">
-            <div class="status-pill"><span class="levels"><span></span><span></span><span></span><span></span><span></span></span><span class="status-cycle"><span>Lyssnar...</span><span>Transkriberar...</span><span>Korrigerar...</span><span>Klistrad (lokal)</span><span>LLM-polerar...</span><span>Klistrad (LLM-polerad)</span></span></div>
+            <div class="status-pill"><span class="levels"><span></span><span></span><span></span><span></span><span></span></span><span class="status-cycle"><div class="status-cycle-inner"><span>Lyssnar...</span><span>Transkriberar...</span><span>Korrigerar...</span><span>Klistrad (lokal)</span><span>LLM-polerar...</span><span>Klistrad (LLM-polerad)</span></div></span></div>
             <div class="result">
               <small>Urklipp</small>
               <p>"Skicka sammanfattningen till projektgruppen innan lunch."</p>
@@ -750,8 +879,8 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
     </main>
 
     <footer>
-      <span>&copy; 2025&ndash;2026 freewispr-swedish &mdash; svensk fork av <a href="https://github.com/x26prakhar/freewispr">freewispr</a></span>
-      <span><a href="https://github.com/hhammarstrand/freewispr-swedish">GitHub</a> · <a href="https://github.com/hhammarstrand/freewispr-swedish/blob/master/LICENSE">MIT License</a> · <a href="https://huggingface.co/KBLab">KBLab</a></span>
+      <span>&copy; 2025&ndash;2026 <code style="font-family:var(--mono);font-weight:700;font-size:0.92em;letter-spacing:-0.02em;">freewispr-swedish</code> <span style="color:var(--line);margin:0 4px;">&vert;</span> svensk fork av <a href="https://github.com/x26prakhar/freewispr">freewispr</a></span>
+      <span><a href="https://github.com/hhammarstrand/freewispr-swedish">GitHub</a> <span style="color:var(--line);margin:0 2px;">&middot;</span> <a href="https://github.com/hhammarstrand/freewispr-swedish/blob/master/LICENSE">MIT License</a> <span style="color:var(--line);margin:0 2px;">&middot;</span> <a href="https://huggingface.co/KBLab">KBLab</a></span>
     </footer>
   </div>
 </body>
