@@ -152,28 +152,59 @@ Ikoner och webbgrafik genereras med:
 python make_icon.py
 ```
 
-## Testa
+## Utveckling
+
+### Testa
 
 ```bash
 python -m pytest tests/ -q
 ```
 
+Tester som behöver `sounddevice`, `keyboard` eller `pyperclip` kräver att dessa paket är installerade (de skippas annars).
+
+### Lint och format
+
+Projektet har ingen formell linter-konfiguration ännu, men koden följer PEP 8 med 100-teckensbredd.
+
+### Modellkonvertering
+
+Medium- och large-modeller kan behöva konverteras till CTranslate2-format:
+
+```bash
+pip install ctranslate2 transformers
+python convert_model.py medium
+python convert_model.py large
+```
+
+### Release-flöde
+
+1. Push till `master` triggar GitHub Actions som bygger `.exe` och publicerar en rolling pre-release.
+2. Webbsidan deployar automatiskt via GitHub Pages vid ändringar i `docs/`.
+3. Ikoner och OG-bild genereras med `python make_icon.py` (kräver Windows-fonter för bästa resultat).
+
 ## Projektstruktur
 
 ```text
 freewispr-swedish/
-+-- main.py          # systemfack, inställningar, applifecycle
-+-- dictation.py     # push-to-talk, pipeline och paste-status
-+-- transcriber.py   # KBLab Whisper, CUDA och LLM-granskning
-+-- audio.py         # mikrofoninspelning, resampling och kanalhantering
-+-- paste.py         # urklipp och terminalvänlig paste
-+-- ui.py            # Tkinter UI och flytande indikator
-+-- config.py        # config och nyckelhantering
-+-- corrections.py   # personlig ordlista
-+-- snippets.py      # snippets/textmallar
-+-- llm_polish.py    # GitHub Models-integration
-+-- make_icon.py     # genererar appikon, favicon och OG-bild
-+-- docs/            # GitHub Pages-site
++-- main.py              # systemfack, inställningar, applifecycle
++-- dictation.py         # push-to-talk, pipeline och paste-status
++-- transcriber.py       # KBLab Whisper, CUDA och LLM-granskning
++-- audio.py             # mikrofoninspelning, resampling och kanalhantering
++-- paste.py             # urklipp och terminalvänlig paste
++-- ui.py                # Tkinter/CustomTkinter UI och flytande indikator
++-- config.py            # config, nyckelhantering och keyring-integration
++-- corrections.py       # personlig ordlista med cachad regex
++-- snippets.py          # snippets/textmallar
++-- llm_polish.py        # LLM-leverantörer (GitHub, staik, Berget, OpenAI, custom)
++-- remote_transcribe.py # remote-transkribering via OpenAI-kompatibelt API
++-- auto_learn.py        # auto-lärning från LLM-korrigeringar
++-- json_store.py        # atomisk JSON-lagring med backup vid korruption
++-- modifiers.py         # kanoniska modifier-namn för tangentbord
++-- sounds.py            # syntetiserade ljudeffekter
++-- make_icon.py         # genererar appikon, favicon och OG-bild
++-- convert_model.py     # konverterar Whisper-modeller till CTranslate2
++-- docs/                # GitHub Pages-site
++-- tests/               # pytest-tester
 ```
 
 ## Synka med originalet

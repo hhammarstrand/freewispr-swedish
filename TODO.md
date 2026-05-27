@@ -248,7 +248,7 @@ Kompletterad med pre-launch-granskning 2026-05-27.
   - Antingen flytta till historik/arkiv eller synka mot aktuell implementation.
   - Innehåller kinesiska tecken, stavfel, och föråldrad filstruktur.
 
-- [ ] Lägg till utvecklarguide.
+- [x] Lägg till utvecklarguide.
   - Beskriv testkommandon, lint/format, build, release, modellkonvertering och felsökning.
 
 - [x] `docs/index.html` — Webbsidan nämner inte remote-transkribering, auto-lärning, eller
@@ -453,7 +453,7 @@ Kompletterad med pre-launch-granskning 2026-05-27.
 - [x] `docs/index.html` — Footer: `"svensk fork av freewispr"` bör lägga till `"av x26prakhar"` för
   tydlig attribution och copyright-compliance med MIT-licensen.
 
-- [ ] `docs/index.html` — Webbsidan saknar `lang`-attributets delsida `xml:lang`.
+- [x] `docs/index.html` — Webbsidan saknar `lang`-attributets delsida `xml:lang`.
   - `lang="sv"` på `<html>` är korrekt men saknar `hreflang`-link för SEO (minor).
 
 - [x] `docs/index.html` — Ingen `<meta name="author">` — tillägg kan hjälpa sökmotorer.
