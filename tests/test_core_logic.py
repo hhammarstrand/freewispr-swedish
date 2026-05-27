@@ -562,7 +562,8 @@ def test_paste_text_serializes_clipboard_workers(monkeypatch):
     monkeypatch.setattr(paste.keyboard, "send", lambda key: events.append(("send", key)))
     monkeypatch.setattr(paste, "_active_window_class", lambda: "NotConsole")
     monkeypatch.setattr(paste, "_release_modifiers", lambda mods=(): None)
-    monkeypatch.setattr(paste.threading.Thread, "start", lambda self: self._target(*self._args, **self._kwargs))
+    monkeypatch.setattr(paste, "_paste_and_keep_clipboard_async",
+                        lambda text: paste._paste_and_keep_clipboard(text))
 
     paste.paste_text("first")
     paste.paste_text("second")
@@ -581,7 +582,8 @@ def test_paste_text_uses_shift_insert_for_console_windows(monkeypatch):
     monkeypatch.setattr(paste.pyperclip, "copy", lambda value: None)
     monkeypatch.setattr(paste.keyboard, "send", lambda key: sent.append(key))
     monkeypatch.setattr(paste, "_release_modifiers", lambda mods=(): None)
-    monkeypatch.setattr(paste.threading.Thread, "start", lambda self: self._target(*self._args, **self._kwargs))
+    monkeypatch.setattr(paste, "_paste_and_keep_clipboard_async",
+                        lambda text: paste._paste_and_keep_clipboard(text))
 
     paste.paste_text("hej")
 
