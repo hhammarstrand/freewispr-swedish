@@ -128,7 +128,7 @@ def _draw_fallback_icon() -> Image.Image:
     size = 64
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    draw.ellipse([4, 4, size - 4, size - 4], fill="#7c5cfc")
+    draw.ellipse([4, 4, size - 4, size - 4], fill="#006aa7")
     cx = size // 2
     draw.rounded_rectangle([cx - 9, 12, cx + 9, 36], radius=9, fill="white")
     draw.arc([cx - 16, 26, cx + 16, 50], start=0, end=180, fill="white", width=3)

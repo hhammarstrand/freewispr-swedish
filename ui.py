@@ -51,8 +51,8 @@ def _virtual_screen_bounds(root) -> tuple[int, int, int, int]:
 
 BG = "#0f0f0f"
 BG2 = "#1a1a1a"
-ACC = "#7c5cfc"
-ACC2 = "#5a3fd4"
+ACC = "#006aa7"
+ACC2 = "#004f7c"
 FG = "#e8e8e8"
 FG2 = "#888"
 FONT = ("Segoe UI", 10)
@@ -115,14 +115,14 @@ class FloatingIndicator:
     """Compact always-on-top pill with animated equalizer bars.
 
     States:
-      listen     — purple bars driven by live microphone level
+      listen     — blue bars driven by live microphone level
       transcribe — orange bars pulsing as a traveling sine wave
       done       — green bars at medium height (static)
       error      — red bars at minimum height (static)
     """
 
     _COLORS = {
-        "listen":      "#7c5cfc",
+        "listen":      "#006aa7",
         "transcribe":  "#f39c12",
         "done":        "#27ae60",
         "error":       "#e74c3c",

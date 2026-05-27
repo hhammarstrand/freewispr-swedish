@@ -14,10 +14,11 @@ DOCS = ROOT / "docs"
 INK = "#111827"
 PANEL = "#fbfaf7"
 LINE = "#e6e1d8"
-BLUE = "#4f46e5"
-YELLOW = "#facc15"
+BLUE = "#006AA7"
+YELLOW = "#FECC02"
 GREEN = "#11845b"
 MUTED = "#667085"
+SOFT = "#f2efe8"
 
 
 def _font(size: int, bold: bool = False) -> ImageFont.FreeTypeFont | ImageFont.ImageFont:
@@ -70,23 +71,8 @@ def make_icon(size: int = 256) -> Image.Image:
     draw.line([cx, 166 * scale, cx, 190 * scale], fill=PANEL, width=max(3, int(9 * scale)))
     draw.line([cx - 34 * scale, 190 * scale, cx + 34 * scale, 190 * scale], fill=PANEL, width=max(3, int(9 * scale)))
 
-    draw.rounded_rectangle(
-        [32 * scale, 174 * scale, 96 * scale, 216 * scale],
-        radius=int(17 * scale),
-        fill=BLUE,
-    )
-    _centered_text(draw, (int(32 * scale), int(171 * scale), int(96 * scale), int(216 * scale)), "sv", _font(max(10, int(25 * scale)), True), "white")
-
-    draw.rounded_rectangle(
-        [160 * scale, 52 * scale, 214 * scale, 66 * scale],
-        radius=int(7 * scale),
-        fill=YELLOW,
-    )
-    draw.rounded_rectangle(
-        [180 * scale, 32 * scale, 194 * scale, 86 * scale],
-        radius=int(7 * scale),
-        fill=YELLOW,
-    )
+    draw.rounded_rectangle([160 * scale, 40 * scale, 216 * scale, 54 * scale], radius=int(7 * scale), fill=YELLOW)
+    draw.rounded_rectangle([160 * scale, 62 * scale, 198 * scale, 76 * scale], radius=int(7 * scale), fill=BLUE)
     return img
 
 
@@ -95,37 +81,43 @@ def make_og_image() -> Image.Image:
     draw = ImageDraw.Draw(img)
 
     draw.rectangle([0, 0, 1200, 630], fill=PANEL)
-    for x in range(0, 1200, 48):
-        draw.line([x, 0, x, 630], fill="#f0ece3", width=1)
-    for y in range(0, 630, 48):
-        draw.line([0, y, 1200, y], fill="#f0ece3", width=1)
+    draw.rounded_rectangle([72, 72, 1128, 558], radius=46, fill="white", outline=LINE, width=2)
 
-    draw.rounded_rectangle([70, 70, 1130, 560], radius=48, fill="white", outline=LINE, width=2)
-    draw.rounded_rectangle([106, 106, 232, 232], radius=34, fill=INK)
-    icon = make_icon(126)
-    img.paste(icon, (106, 106), icon)
+    icon = make_icon(112)
+    img.paste(icon, (116, 118), icon)
+    draw.text((252, 128), "freewispr-swedish", font=_font(56, True), fill=INK)
+    draw.text((256, 202), "Svensk diktering för Windows", font=_font(31, False), fill=MUTED)
 
-    draw.rounded_rectangle([910, 116, 1058, 190], radius=24, fill="#f8fafc", outline=LINE, width=2)
-    draw.text((946, 135), "sv", font=_font(34, True), fill=BLUE)
+    draw.line([116, 292, 650, 292], fill=LINE, width=2)
+    draw.text((116, 342), "Lokal Whisper-transkribering", font=_font(29, True), fill=INK)
+    draw.text((116, 388), "KBLab-modeller, terminalvänlig paste och valfri LLM.", font=_font(24, False), fill=MUTED)
 
-    draw.text((106, 284), "freewispr-swedish", font=_font(72, True), fill=INK)
-    draw.text((110, 372), "Svensk diktering för Windows", font=_font(38, False), fill=MUTED)
+    labels = [("lokal först", GREEN), ("svenska modeller", BLUE), ("Windows", INK)]
+    x = 116
+    for text, color in labels:
+        bbox = draw.textbbox((0, 0), text, font=_font(19, True))
+        width = bbox[2] - bbox[0] + 38
+        draw.rounded_rectangle([x, 468, x + width, 510], radius=21, fill="#f8fafc", outline=LINE, width=1)
+        draw.ellipse([x + 16, 484, x + 26, 494], fill=color)
+        draw.text((x + 36, 477), text, font=_font(19, True), fill=INK)
+        x += width + 12
 
-    chips = [
-        ("lokal Whisper", GREEN),
-        ("KBLab", BLUE),
-        ("valfri LLM", INK),
-    ]
-    x = 110
-    for text, color in chips:
-        bbox = draw.textbbox((0, 0), text, font=_font(24, True))
-        width = bbox[2] - bbox[0] + 42
-        draw.rounded_rectangle([x, 458, x + width, 508], radius=25, fill="#f8fafc", outline=LINE, width=1)
-        draw.ellipse([x + 18, 477, x + 30, 489], fill=color)
-        draw.text((x + 42, 469), text, font=_font(24, True), fill=INK)
-        x += width + 16
+    draw.rounded_rectangle([768, 132, 1058, 468], radius=34, fill=SOFT, outline=LINE, width=2)
+    draw.rounded_rectangle([804, 174, 1022, 224], radius=25, fill=INK)
+    draw.ellipse([828, 192, 840, 204], fill=GREEN)
+    draw.text((858, 187), "Lyssnar", font=_font(22, True), fill="white")
 
-    draw.text((820, 486), "hhammarstrand.github.io", font=_font(22, False), fill=MUTED)
+    bars = [16, 34, 22, 46, 26, 38, 18]
+    bx = 828
+    for height in bars:
+        draw.rounded_rectangle([bx, 300 - height, bx + 12, 300], radius=6, fill=BLUE)
+        bx += 22
+
+    draw.rounded_rectangle([804, 338, 1022, 410], radius=20, fill="white", outline=LINE, width=1)
+    draw.text((828, 355), "Transkriberar lokalt", font=_font(20, True), fill=INK)
+    draw.text((828, 382), "Klistrad", font=_font(18, False), fill=MUTED)
+
+    draw.text((816, 502), "hhammarstrand.github.io/freewispr-swedish", font=_font(18, False), fill=MUTED)
     return img
 
 
