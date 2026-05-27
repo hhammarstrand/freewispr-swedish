@@ -45,18 +45,18 @@ class FloatingIndicator:
     """
 
     _COLORS = {
-        "listen":      "#006aa7",
-        "transcribe":  "#f39c12",
-        "done":        "#27ae60",
-        "error":       "#e74c3c",
+        "listen":      "#0080cc",
+        "transcribe":  "#f59e0b",
+        "done":        "#22c55e",
+        "error":       "#ef4444",
     }
 
     _NUM_BARS = 5
-    _BAR_W = 4
+    _BAR_W = 5
     _BAR_GAP = 3
     _BAR_MIN = 3.0
-    _BAR_MAX = 18.0
-    _CANVAS_H = 22
+    _BAR_MAX = 20.0
+    _CANVAS_H = 24
     _FOLLOW_MS = 16  # ~60 FPS cursor follow; cheap because unchanged geometry is skipped
     _CURSOR_OFFSET_X = 18
     _CURSOR_OFFSET_Y = 18
@@ -157,21 +157,21 @@ class FloatingIndicator:
             self._win = tk.Toplevel(self._root)
             self._win.overrideredirect(True)
             self._win.attributes("-topmost", True)
-            self._win.attributes("-alpha", 0.93)
+            self._win.attributes("-alpha", 0.95)
             self._win.configure(bg=BG2)
 
-            outer = tk.Frame(self._win, bg=BG2, padx=14, pady=7)
+            outer = tk.Frame(self._win, bg=BG2, padx=16, pady=9)
             outer.pack()
 
             self._canvas = tk.Canvas(
                 outer, width=self._canvas_w, height=self._CANVAS_H,
                 bg=BG2, highlightthickness=0,
             )
-            self._canvas.pack(side="left", padx=(0, 10))
+            self._canvas.pack(side="left", padx=(0, 12))
             self._create_bars(color)
 
             self._label = tk.Label(outer, text=message, bg=BG2, fg=FG,
-                                   font=("Segoe UI", 10))
+                                   font=("Segoe UI Semibold", 10))
             self._label.pack(side="left")
 
             self._win.update_idletasks()
