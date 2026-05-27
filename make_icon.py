@@ -42,38 +42,61 @@ def _centered_text(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], te
 
 
 def make_icon(size: int = 256) -> Image.Image:
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    """Flat modern mikrofon-ikon: gul mic på Sverigeblå rund bakgrund.
+
+    Designprinciper:
+    - Inga inre ramar eller dekorativa accenter (de blir grötiga vid 16px).
+    - Solid cirkel istället för rounded rect — bättre på tray vid små storlekar.
+    - Gul (Sverigeflaggans) mikrofon med generös padding så formen är
+      igenkännbar även när tray-OS:et skalar ner till 16x16.
+    - 4x supersampling: rita i 4x och nedskalera med LANCZOS för att slippa
+      taggiga kurvor i mikrofonens båge.
+    """
+    ss = 4
+    work = size * ss
+    img = Image.new("RGBA", (work, work), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    scale = size / 256
-    radius = int(54 * scale)
 
-    draw.rounded_rectangle([0, 0, size, size], radius=radius, fill=INK)
+    # Solid blå cirkel som bakgrund. En cirkel skalar bättre än rounded rect
+    # vid <= 24px (rounded rect blir nästan kvadratisk pga aliasing).
+    draw.ellipse([0, 0, work, work], fill=BLUE)
+
+    # Mikrofon-proportioner (i 256-koordinatsystem, multipliceras med ss).
+    cx = work / 2
+    # Kapseln (mikrofonens kropp): smal, centrerad, ungefär 35% av höjden.
+    cap_w = work * 0.22
+    cap_top = work * 0.22
+    cap_bot = work * 0.56
     draw.rounded_rectangle(
-        [int(26 * scale), int(26 * scale), int(230 * scale), int(230 * scale)],
-        radius=int(42 * scale),
-        outline="#263244",
-        width=max(1, int(2 * scale)),
+        [cx - cap_w / 2, cap_top, cx + cap_w / 2, cap_bot],
+        radius=cap_w / 2,
+        fill=YELLOW,
     )
 
-    cx = size / 2
-    draw.rounded_rectangle(
-        [cx - 28 * scale, 48 * scale, cx + 28 * scale, 128 * scale],
-        radius=int(28 * scale),
-        fill=PANEL,
-    )
+    # U-formad arm (stativ-arc) under kapseln. Tjock kontur i samma gula färg.
+    arc_w = work * 0.42
+    arc_top = work * 0.42
+    arc_bot = work * 0.72
+    arc_thick = max(2, int(work * 0.045))
     draw.arc(
-        [cx - 54 * scale, 86 * scale, cx + 54 * scale, 168 * scale],
-        start=0,
-        end=180,
-        fill=PANEL,
-        width=max(3, int(9 * scale)),
+        [cx - arc_w / 2, arc_top, cx + arc_w / 2, arc_bot],
+        start=0, end=180, fill=YELLOW, width=arc_thick,
     )
-    draw.line([cx, 166 * scale, cx, 190 * scale], fill=PANEL, width=max(3, int(9 * scale)))
-    draw.line([cx - 34 * scale, 190 * scale, cx + 34 * scale, 190 * scale], fill=PANEL, width=max(3, int(9 * scale)))
 
-    draw.rounded_rectangle([160 * scale, 40 * scale, 216 * scale, 54 * scale], radius=int(7 * scale), fill=YELLOW)
-    draw.rounded_rectangle([160 * scale, 62 * scale, 198 * scale, 76 * scale], radius=int(7 * scale), fill=BLUE)
-    return img
+    # Stolpe från arc ner till basen.
+    post_top = work * 0.69
+    post_bot = work * 0.80
+    draw.line([cx, post_top, cx, post_bot], fill=YELLOW, width=arc_thick)
+
+    # Bas (horisontell linje under stolpen) — ger ikonen tydlig "stå-känsla".
+    base_w = work * 0.22
+    draw.line(
+        [cx - base_w / 2, post_bot, cx + base_w / 2, post_bot],
+        fill=YELLOW, width=arc_thick,
+    )
+
+    # Nedskala med LANCZOS för mjuka kanter.
+    return img.resize((size, size), Image.LANCZOS)
 
 
 def make_og_image() -> Image.Image:
