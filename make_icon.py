@@ -107,10 +107,10 @@ def make_og_image() -> Image.Image:
     draw.rounded_rectangle([78, 80, 1122, 550], radius=44, fill="#f6f3ed")
     draw.rounded_rectangle([72, 72, 1128, 540], radius=44, fill="white", outline=LINE, width=2)
 
-    icon = make_icon(104)
-    img.paste(icon, (116, 118), icon)
-    draw.text((248, 122), "freewispr-swedish", font=_font(58, True), fill=INK)
-    draw.text((252, 197), "Svensk diktering för Windows", font=_font(31, False), fill=MUTED)
+    icon = make_icon(96)
+    img.paste(icon, (116, 122), icon)
+    draw.text((246, 125), "freewispr-swedish", font=_font(52, True), fill=INK)
+    draw.text((250, 194), "Svensk diktering för Windows", font=_font(29, False), fill=MUTED)
 
     draw.line([116, 286, 662, 286], fill=LINE, width=2)
     draw.text((116, 335), "Lokal Whisper-transkribering", font=_font(31, True), fill=INK)
@@ -127,22 +127,22 @@ def make_og_image() -> Image.Image:
         draw.text((x + 38, 478), text, font=_font(18, True), fill=INK)
         x += width + 12
 
-    draw.rounded_rectangle([756, 126, 1058, 454], radius=38, fill=SOFT, outline=LINE, width=2)
-    draw.rounded_rectangle([802, 174, 1012, 224], radius=25, fill=INK)
-    draw.ellipse([827, 192, 840, 205], fill=GREEN)
-    draw.text((858, 187), "Lyssnar", font=_font(22, True), fill="white")
+    draw.rounded_rectangle([744, 126, 1072, 454], radius=38, fill=SOFT, outline=LINE, width=2)
+    draw.rounded_rectangle([792, 174, 1024, 224], radius=25, fill=INK)
+    draw.ellipse([819, 192, 832, 205], fill=GREEN)
+    draw.text((856, 187), "Lyssnar", font=_font(22, True), fill="white")
 
     bars = [18, 38, 28, 56, 34, 46, 22]
-    bx = 828
+    bx = 820
     for height in bars:
         draw.rounded_rectangle([bx, 308 - height, bx + 13, 308], radius=7, fill=BLUE)
         bx += 22
 
-    draw.rounded_rectangle([804, 346, 1010, 408], radius=20, fill="white", outline=LINE, width=1)
-    draw.text((828, 361), "Transkriberar lokalt", font=_font(19, True), fill=INK)
-    draw.text((828, 387), "Texten klistras in", font=_font(16, False), fill=MUTED)
+    draw.rounded_rectangle([790, 342, 1026, 414], radius=20, fill="white", outline=LINE, width=1)
+    draw.text((814, 358), "Transkriberar lokalt", font=_font(18, True), fill=INK)
+    draw.text((814, 386), "Texten klistras in", font=_font(16, False), fill=MUTED)
 
-    draw.text((792, 498), "hhammarstrand.github.io/freewispr-swedish", font=_font(18, False), fill=MUTED)
+    draw.text((756, 500), "hhammarstrand.github.io/freewispr-swedish", font=_font(16, False), fill=MUTED)
     return img
 
 
