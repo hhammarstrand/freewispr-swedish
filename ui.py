@@ -536,46 +536,87 @@ class SnippetsWindow:
     """
 
     def __init__(self):
-        self.root = tk.Toplevel()
+        # CustomTkinter only re-styles the chrome; the Treeview is still ttk
+        # because ctk hasn't shipped a native tree widget. That's fine — the
+        # ttk style is applied via _style() and matches the dark theme.
+        if _CTK_AVAILABLE:
+            try:
+                ctk.set_appearance_mode("system")
+            except Exception:
+                pass
+            self.root = ctk.CTkToplevel()
+        else:
+            self.root = tk.Toplevel()
         self.root.title("freewispr-swedish — Snippets")
-        self.root.geometry("640x420")
-        self.root.configure(bg=BG)
+        self.root.geometry("640x440")
+        if not _CTK_AVAILABLE:
+            self.root.configure(bg=BG)
         _style(self.root)
         self._build()
         self._load()
 
     def _build(self):
-        # Header
-        hdr = tk.Frame(self.root, bg=BG)
-        hdr.pack(fill="x", padx=16, pady=(16, 4))
-        ttk.Label(hdr, text="Snippets", font=("Segoe UI", 13, "bold")).pack(side="left")
+        outer = ctk.CTkFrame(self.root, fg_color="transparent") if _CTK_AVAILABLE \
+                else tk.Frame(self.root, bg=BG)
+        outer.pack(fill="both", expand=True, padx=16, pady=16)
 
-        ttk.Label(
-            self.root,
-            text="Säg en trigger exakt vid diktering — den expanderar till fulltext.",
-            style="Sub.TLabel",
-        ).pack(anchor="w", padx=16, pady=(0, 10))
+        if _CTK_AVAILABLE:
+            ctk.CTkLabel(
+                outer, text="Snippets", anchor="w",
+                font=ctk.CTkFont(size=15, weight="bold"),
+            ).pack(anchor="w")
+            ctk.CTkLabel(
+                outer, anchor="w", justify="left",
+                text="Säg en trigger exakt vid diktering — den expanderar till fulltext.",
+                text_color=("gray40", "gray60"),
+            ).pack(anchor="w", pady=(2, 10))
+        else:
+            ttk.Label(outer, text="Snippets",
+                      font=("Segoe UI", 13, "bold")).pack(anchor="w")
+            ttk.Label(
+                outer, style="Sub.TLabel",
+                text="Säg en trigger exakt vid diktering — den expanderar till fulltext.",
+            ).pack(anchor="w", pady=(0, 10))
 
-        # Treeview
+        # Treeview (always ttk — no ctk equivalent)
+        tree_wrap = tk.Frame(outer, bg=BG)
+        tree_wrap.pack(fill="both", expand=True, pady=(0, 10))
+
         cols = ("trigger", "expansion")
-        self._tree = ttk.Treeview(self.root, columns=cols, show="headings",
+        self._tree = ttk.Treeview(tree_wrap, columns=cols, show="headings",
                                   selectmode="browse")
         self._tree.heading("trigger",   text="Trigger")
         self._tree.heading("expansion", text="Ersätter med")
         self._tree.column("trigger",   width=160, minwidth=100, stretch=False)
         self._tree.column("expansion", width=420, minwidth=200)
-        self._tree.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+        self._tree.pack(side="left", fill="both", expand=True)
 
-        sb = ttk.Scrollbar(self.root, orient="vertical", command=self._tree.yview)
+        sb = ttk.Scrollbar(tree_wrap, orient="vertical", command=self._tree.yview)
+        sb.pack(side="right", fill="y")
         self._tree.configure(yscrollcommand=sb.set)
 
-        # Buttons
-        btn_row = ttk.Frame(self.root)
-        btn_row.pack(fill="x", padx=16, pady=(0, 16))
-        ttk.Button(btn_row, text="Lägg till",    command=self._add).pack(side="left", padx=(0, 8))
-        ttk.Button(btn_row, text="Redigera",   command=self._edit).pack(side="left", padx=(0, 8))
-        ttk.Button(btn_row, text="Ta bort", command=self._delete,
-                   style="Danger.TButton").pack(side="left")
+        # Button row
+        btn_row = ctk.CTkFrame(outer, fg_color="transparent") if _CTK_AVAILABLE \
+                  else ttk.Frame(outer)
+        btn_row.pack(fill="x")
+
+        if _CTK_AVAILABLE:
+            ctk.CTkButton(btn_row, text="Lägg till", command=self._add,
+                          width=110).pack(side="left", padx=(0, 8))
+            ctk.CTkButton(btn_row, text="Redigera", command=self._edit,
+                          width=110, fg_color="transparent", border_width=1,
+                          text_color=("gray20", "gray80")
+                          ).pack(side="left", padx=(0, 8))
+            ctk.CTkButton(btn_row, text="Ta bort", command=self._delete,
+                          width=110, fg_color=("#c0392b", "#96281b"),
+                          hover_color="#7c1f15").pack(side="left")
+        else:
+            ttk.Button(btn_row, text="Lägg till", command=self._add
+                       ).pack(side="left", padx=(0, 8))
+            ttk.Button(btn_row, text="Redigera", command=self._edit
+                       ).pack(side="left", padx=(0, 8))
+            ttk.Button(btn_row, text="Ta bort", command=self._delete,
+                       style="Danger.TButton").pack(side="left")
 
     def _load(self):
         for item in self._tree.get_children():
@@ -649,43 +690,84 @@ class DictionaryWindow:
     """
 
     def __init__(self):
-        self.root = tk.Toplevel()
+        if _CTK_AVAILABLE:
+            try:
+                ctk.set_appearance_mode("system")
+            except Exception:
+                pass
+            self.root = ctk.CTkToplevel()
+        else:
+            self.root = tk.Toplevel()
         self.root.title("freewispr-swedish — Personlig ordlista")
-        self.root.geometry("580x400")
-        self.root.configure(bg=BG)
+        self.root.geometry("600x420")
+        if not _CTK_AVAILABLE:
+            self.root.configure(bg=BG)
         _style(self.root)
         self._build()
         self._load()
 
     def _build(self):
-        hdr = tk.Frame(self.root, bg=BG)
-        hdr.pack(fill="x", padx=16, pady=(16, 4))
-        ttk.Label(hdr, text="Personlig ordlista", font=("Segoe UI", 13, "bold")).pack(side="left")
+        outer = ctk.CTkFrame(self.root, fg_color="transparent") if _CTK_AVAILABLE \
+                else tk.Frame(self.root, bg=BG)
+        outer.pack(fill="both", expand=True, padx=16, pady=16)
 
-        ttk.Label(
-            self.root,
-            text="Ord som Whisper missförstår ersätts automatiskt efter transkribering.",
-            style="Sub.TLabel",
-        ).pack(anchor="w", padx=16, pady=(0, 10))
+        if _CTK_AVAILABLE:
+            ctk.CTkLabel(
+                outer, text="Personlig ordlista", anchor="w",
+                font=ctk.CTkFont(size=15, weight="bold"),
+            ).pack(anchor="w")
+            ctk.CTkLabel(
+                outer, anchor="w", justify="left",
+                text="Ord som Whisper missförstår ersätts automatiskt efter transkribering.",
+                text_color=("gray40", "gray60"),
+            ).pack(anchor="w", pady=(2, 10))
+        else:
+            ttk.Label(outer, text="Personlig ordlista",
+                      font=("Segoe UI", 13, "bold")).pack(anchor="w")
+            ttk.Label(
+                outer, style="Sub.TLabel",
+                text="Ord som Whisper missförstår ersätts automatiskt efter transkribering.",
+            ).pack(anchor="w", pady=(0, 10))
+
+        # Treeview (always ttk — no ctk equivalent)
+        tree_wrap = tk.Frame(outer, bg=BG)
+        tree_wrap.pack(fill="both", expand=True, pady=(0, 10))
 
         cols = ("wrong", "right")
-        self._tree = ttk.Treeview(self.root, columns=cols, show="headings",
+        self._tree = ttk.Treeview(tree_wrap, columns=cols, show="headings",
                                   selectmode="browse")
         self._tree.heading("wrong", text="Whisper hör")
         self._tree.heading("right", text="Ersätt med")
         self._tree.column("wrong", width=230, minwidth=100, stretch=False)
         self._tree.column("right", width=310, minwidth=150)
-        self._tree.pack(fill="both", expand=True, padx=16, pady=(0, 8))
+        self._tree.pack(side="left", fill="both", expand=True)
 
-        sb = ttk.Scrollbar(self.root, orient="vertical", command=self._tree.yview)
+        sb = ttk.Scrollbar(tree_wrap, orient="vertical", command=self._tree.yview)
+        sb.pack(side="right", fill="y")
         self._tree.configure(yscrollcommand=sb.set)
 
-        btn_row = ttk.Frame(self.root)
-        btn_row.pack(fill="x", padx=16, pady=(0, 16))
-        ttk.Button(btn_row, text="Lägg till",    command=self._add).pack(side="left", padx=(0, 8))
-        ttk.Button(btn_row, text="Redigera",   command=self._edit).pack(side="left", padx=(0, 8))
-        ttk.Button(btn_row, text="Ta bort", command=self._delete,
-                   style="Danger.TButton").pack(side="left")
+        # Button row
+        btn_row = ctk.CTkFrame(outer, fg_color="transparent") if _CTK_AVAILABLE \
+                  else ttk.Frame(outer)
+        btn_row.pack(fill="x")
+
+        if _CTK_AVAILABLE:
+            ctk.CTkButton(btn_row, text="Lägg till", command=self._add,
+                          width=110).pack(side="left", padx=(0, 8))
+            ctk.CTkButton(btn_row, text="Redigera", command=self._edit,
+                          width=110, fg_color="transparent", border_width=1,
+                          text_color=("gray20", "gray80")
+                          ).pack(side="left", padx=(0, 8))
+            ctk.CTkButton(btn_row, text="Ta bort", command=self._delete,
+                          width=110, fg_color=("#c0392b", "#96281b"),
+                          hover_color="#7c1f15").pack(side="left")
+        else:
+            ttk.Button(btn_row, text="Lägg till", command=self._add
+                       ).pack(side="left", padx=(0, 8))
+            ttk.Button(btn_row, text="Redigera", command=self._edit
+                       ).pack(side="left", padx=(0, 8))
+            ttk.Button(btn_row, text="Ta bort", command=self._delete,
+                       style="Danger.TButton").pack(side="left")
 
     def _load(self):
         for item in self._tree.get_children():
