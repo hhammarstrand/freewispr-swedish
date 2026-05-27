@@ -181,7 +181,7 @@ def test_corrections_apply_cache_invalidates_on_mtime(tmp_path, monkeypatch):
     corrections.save({"gar": "går"})
     new_mtime = corrections.mtime() + 1
     import os
-    os.utime(corrections._FILE, (new_mtime, new_mtime))
+    os.utime(corrections._store.path, (new_mtime, new_mtime))
 
     assert corrections.apply("gar") == "går"
     # Old mapping no longer applies after replacement.

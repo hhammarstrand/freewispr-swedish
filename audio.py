@@ -402,9 +402,9 @@ def finalize_audio(audio: np.ndarray, channels: int, orig_rate: int) -> np.ndarr
 
     log.info("Rå audio: shape=%s, dtype=%s, rate=%d, peak=%.4f",
              mono.shape, mono.dtype, orig_rate,
-             float(np.abs(mono).max()) if mono.size else 0.0)
+             max(abs(float(mono.min())), abs(float(mono.max()))) if mono.size else 0.0)
     resampled = _resample(mono, orig_rate)
     log.info("Resamplerad: %d -> %d samples (%d->%dHz), peak=%.4f",
              len(mono), len(resampled), orig_rate, TARGET_RATE,
-             float(np.abs(resampled).max()) if resampled.size else 0.0)
+             max(abs(float(resampled.min())), abs(float(resampled.max()))) if resampled.size else 0.0)
     return resampled

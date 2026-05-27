@@ -60,7 +60,7 @@ GitHub-token för LLM hämtas i tur och ordning från sparad nyckel, `GITHUB_TOK
 
 - Om du slår på remote-transkribering skickas ljudet – inte bara text – till vald leverantör (staik.se eller Berget AI).
 
-Den dikterade texten ligger kvar i urklipp efter att appen har försökt klistra in. Det är ett medvetet val: gamla urklippets innehåll återställs inte, men du kan alltid klistra in manuellt om paste-försöket inte gick fram.
+Den dikterade texten kopieras till urklipp och klistras in via syntetisk Ctrl+V (eller Shift+Insert i konsolterminaler). Texten stannar kvar i urklipp efteråt som fallback — gammalt urklippsinnehåll återställs inte.
 
 ## Funktioner
 
@@ -73,6 +73,7 @@ Den dikterade texten ligger kvar i urklipp efter att appen har försökt klistra
 - Hotwords från ordlista och `~/.freewispr-swedish/hotwords.txt`.
 - Snippets och textmallar.
 - Valfri remote-transkribering via staik.se eller Berget AI.
+- Auto-lärning: appen lär sig från LLM-korrigeringar och befordrar frekventa rättningar till ordlistan.
 - Statuslägen i indikatorn: lokal, LLM-granskad eller LLM-polerad.
 
 ## Modeller

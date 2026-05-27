@@ -21,6 +21,7 @@
 <meta name="twitter:title" content="freewispr-swedish - svensk diktering för Windows">
 <meta name="twitter:description" content="Lokal svensk Whisper-diktering, clipboard-fallback och valfri LLM-granskning.">
 <meta name="twitter:image" content="https://hhammarstrand.github.io/freewispr-swedish/og-image.png">
+<meta name="author" content="Henrik Hammarstrand">
 <style>
 :root {
   --bg: #fbfaf7;
@@ -328,6 +329,8 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
           <article class="feature"><span class="num">04</span><h3>Personlig ordlista</h3><p>Rätta vanliga felhörningar, namn och facktermer en gång och återanvänd lokalt.</p></article>
           <article class="feature"><span class="num">05</span><h3>Valfri LLM</h3><p>Eftergranska text via GitHub Models och se direkt om den är lokal, LLM-granskad eller LLM-polerad.</p></article>
           <article class="feature"><span class="num">06</span><h3>Egen identitet</h3><p>Ny ikon, favicon och social preview som hör till den svenska forken, inte originalprojektet.</p></article>
+          <article class="feature"><span class="num">07</span><h3>Remote-transkribering</h3><p>Valfri molnbaserad transkribering via staik.se eller Berget AI med KB-Whisper Large — bättre svenska utan lokal GPU.</p></article>
+          <article class="feature"><span class="num">08</span><h3>Auto-lärning</h3><p>Appen lär sig från LLM-korrigeringar och befordrar frekventa rättningar till den lokala ordlistan automatiskt.</p></article>
         </div>
       </section>
 
@@ -338,7 +341,7 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
         </div>
         <div class="privacy-panel">
           <div class="panel"><h3>Whisper kör lokalt</h3><p>Ljud spelas in, resamplas och transkriberas på din Windows-dator. Modeller och ordlistor ligger i användarmappen.</p></div>
-          <div class="panel log"><span class="ok">status: Transkriberar lokalt</span><span class="warn">status: LLM-granskar (om aktiverat)</span><span class="ok">resultat: Klistrad (lokal / LLM-granskad / LLM-polerad)</span></div>
+          <div class="panel log"><span class="ok">status: Transkriberar lokalt</span><span class="warn">status: LLM-granskar (om aktiverat)</span><span class="warn">status: Remote-transkribering (om aktiverat)</span><span class="ok">resultat: Klistrad (lokal / LLM-granskad / LLM-polerad)</span></div>
         </div>
       </section>
 

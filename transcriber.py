@@ -450,7 +450,7 @@ class Transcriber:
         self.last_polish_state = "local"
         self.last_transcribe_error = None
         log.info("Transkriberar: %d samples, peak=%.4f, modell=%s, lang=%s, provider=%s",
-                 len(audio), float(np.max(np.abs(audio))) if audio.size else 0.0,
+                 len(audio), max(abs(float(audio.min())), abs(float(audio.max()))) if audio.size else 0.0,
                  self.model_size, self.language, self.transcription_provider)
 
         if self.transcription_provider != "local":
