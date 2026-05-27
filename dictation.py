@@ -229,17 +229,8 @@ class DictationMode:
 
     def _process_job(self, audio_raw: np.ndarray, channels: int,
                      rate: int, rms: float):
-        # Finalize off-hook: downmix + resample
-        audio = finalize_audio(audio_raw, channels, rate)
-        n = len(audio)
-        log.info("Audio: %d samples, RMS=%.5f", n, rms)
-
-        if n < MIN_AUDIO_SAMPLES:
-            log.info("Inspelning för kort (%d samples), ignorerar", n)
-            self.on_status(f"Klar — håll {self.hotkey.upper()}")
-            if self.indicator:
-                self.indicator.hide(delay_ms=0)
-            return
+        n_raw = audio_raw.shape[0] if audio_raw.ndim >= 1 else 0
+        log.info("Audio: %d raw samples, RMS=%.5f", n_raw, rms)
 
         if rms < self.min_rms:
             log.info("Inspelning för tyst (RMS=%.5f < %.5f), ignorerar",
@@ -248,6 +239,16 @@ class DictationMode:
             if self.indicator:
                 self.indicator.show("Inget hördes", state="error")
                 self.indicator.hide(delay_ms=1500)
+            return
+
+        audio = finalize_audio(audio_raw, channels, rate)
+        n = len(audio)
+
+        if n < MIN_AUDIO_SAMPLES:
+            log.info("Inspelning för kort (%d samples), ignorerar", n)
+            self.on_status(f"Klar — håll {self.hotkey.upper()}")
+            if self.indicator:
+                self.indicator.hide(delay_ms=0)
             return
 
         self._transcribe(audio)

@@ -132,11 +132,15 @@ _NOISE_PLACEHOLDERS = re.compile(
     r'|\[SILENCE\]'
     r'|<\|nospeech\|>'
     r'|<\|endoftext\|>'
+    # Music note characters
+    r'|[♪♫]+'
+    # Asterisk-delimited noise labels
+    r'|\*(?:music|musik|noise|ljud|silence|tystnad)\*'
     # Bracketed noise labels (English & Swedish)
     r'|\[(?:'
     r'applause|applåder|background noise|bakgrundsljud|blank audio'
-    r'|breathing|andning|cough|hosta|exhale|inhale'
-    r'|laughter|laughing|skratt|music|musik'
+    r'|breathing|andning|cough|hosta|hostning|exhale|inhale'
+    r'|harkling|laughter|laughing|skratt|music|musik'
     r'|noise|ljud|silence|tystnad|sigh|suckar'
     r'|sniffing|static|brus|unclear speech|otydligt tal'
     r'|unintelligible|wind|vind|wind noise'
@@ -144,8 +148,8 @@ _NOISE_PLACEHOLDERS = re.compile(
     # Same with parentheses
     r'|\((?:'
     r'applause|applåder|background noise|bakgrundsljud|blank audio'
-    r'|breathing|andning|cough|hosta|exhale|inhale'
-    r'|laughter|laughing|skratt|music|musik'
+    r'|breathing|andning|cough|hosta|hostning|exhale|inhale'
+    r'|harkling|laughter|laughing|skratt|music|musik'
     r'|noise|ljud|silence|tystnad|sigh|suckar'
     r'|sniffing|static|brus|unclear speech|otydligt tal'
     r'|unintelligible|wind|vind|wind noise'
@@ -252,6 +256,7 @@ _INITIAL_PROMPTS = {
     "sv": (
         "Hej, det här är en diktering på svenska."
         " Jag dikterar text med korrekt interpunktion och stavning."
+        " Förra mötet gick bra, vi bestämde att träffas igen på fredag."
     ),
     "en": "Hello, this is a dictation in English.",
 }
