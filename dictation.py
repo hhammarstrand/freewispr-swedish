@@ -105,7 +105,7 @@ class DictationMode:
         ]
         self.on_status(f"Ready — hold {self.hotkey.upper()} to speak")
 
-    def stop(self):
+    def stop(self, wait: bool = True):
         self._active = False
         for handle in self._hook_handles:
             try:
@@ -115,14 +115,22 @@ class DictationMode:
         self._hook_handles = []
         # Signal worker to exit after it drains current job. Sentinel = None.
         self._worker_stop.set()
+        # Drop stale queued recordings and guarantee the sentinel is delivered
+        # even when the bounded queue is full.
+        while True:
+            try:
+                self._jobs.get_nowait()
+            except queue.Empty:
+                break
         try:
             self._jobs.put_nowait(None)
         except queue.Full:
-            pass
+            # Should not happen after draining, but do not block shutdown.
+            log.debug("Kunde inte lägga stoppsentinel i transkriberingskö")
         worker = self._worker_thread
-        if worker and worker.is_alive():
+        if wait and worker and worker.is_alive():
             worker.join(timeout=5.0)
-        self._worker_thread = None
+            self._worker_thread = None
 
     # ----------------------------------------------------------------- private
 
@@ -242,12 +250,18 @@ class DictationMode:
 
     def _transcribe(self, audio: np.ndarray):
         try:
+            if self._worker_stop.is_set() or not self._active:
+                log.info("Hoppar över stale transkribering efter stopp")
+                return
             log.info("Transkriberar %d samples...", len(audio))
             text = self.transcriber.transcribe(audio)
             # Apply snippet expansion — if full text is a trigger, replace it
             text = snippet_module.expand(text)
             log.info("Resultat klart (%s)", _text_meta(text))
             if text.strip():
+                if self._worker_stop.is_set() or not self._active:
+                    log.info("Hoppar över paste från stale transkribering")
+                    return
                 paste_text(text, active_modifiers=self._modifier_keys)
                 self.on_status(f"Klistrad — håll {self.hotkey.upper()} igen")
                 if self.indicator:

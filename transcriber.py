@@ -1,5 +1,6 @@
 import re
 import logging
+import threading
 from pathlib import Path
 import numpy as np
 from faster_whisper import WhisperModel
@@ -343,6 +344,7 @@ class Transcriber:
             log.info("GPU: NVIDIA CUDA aktiverad")
 
         self.model_size = model_size
+        self._model_lock = threading.RLock()
         self.model = WhisperModel(
             model_path,
             device=device,
@@ -360,9 +362,8 @@ class Transcriber:
         # Running a silent inference here eats that cost while the tray is
         # still loading.
         self._warmed = False
-        import threading as _threading
-        _threading.Thread(target=self._warmup, name="whisper-warmup",
-                          daemon=True).start()
+        threading.Thread(target=self._warmup, name="whisper-warmup",
+                         daemon=True).start()
 
     def _warmup(self) -> None:
         """Run a single silent inference to pre-allocate inference state."""
@@ -370,18 +371,23 @@ class Transcriber:
             import time as _time
             t0 = _time.monotonic()
             silent = np.zeros(16000, dtype=np.float32)  # 1 s of silence
-            segments, _info = self.model.transcribe(
-                silent,
-                language=self.language,
-                beam_size=1,
-                best_of=1,
-                vad_filter=False,
-                without_timestamps=True,
-                condition_on_previous_text=False,
-            )
-            # Force the lazy generator to actually run the decoder.
-            for _ in segments:
-                pass
+            with self._model_lock:
+                model = self.model
+                if model is None:
+                    return
+                segments, _info = model.transcribe(
+                    silent,
+                    language=self.language,
+                    beam_size=1,
+                    best_of=1,
+                    vad_filter=False,
+                    without_timestamps=True,
+                    condition_on_previous_text=False,
+                )
+                # Force the lazy generator to actually run the decoder while
+                # holding the lock; faster-whisper is lazy here.
+                for _ in segments:
+                    pass
             self._warmed = True
             log.info("Whisper-warmup klar pa %.0f ms", (_time.monotonic() - t0) * 1000)
         except Exception as e:
@@ -394,12 +400,13 @@ class Transcriber:
         can pin 2-3 GB of VRAM and OOM smaller CUDA devices.
         """
         import gc
-        model = getattr(self, "model", None)
-        if model is None:
-            return
         try:
-            self.model = None  # type: ignore[assignment]
-            del model
+            with self._model_lock:
+                model = getattr(self, "model", None)
+                if model is None:
+                    return
+                self.model = None  # type: ignore[assignment]
+                del model
             gc.collect()
             try:
                 import torch
@@ -424,29 +431,33 @@ class Transcriber:
         # iteration, not at the transcribe() call itself.
         for use_vad in (True, False):
             try:
-                segments, info = self.model.transcribe(
-                    audio,
-                    language=self.language,
-                    # Greedy decoding (beam_size=1) — ~2× faster than beam_size=5
-                    # with negligible WER difference on short dictation utterances.
-                    beam_size=1,
-                    best_of=1,
-                    vad_filter=use_vad,
-                    # 500 ms keeps legitimate natural pauses intact;
-                    # 300 ms was cutting words off.
-                    vad_parameters={"min_silence_duration_ms": 500} if use_vad else None,
-                    initial_prompt=prompt or None,
-                    condition_on_previous_text=False,
-                    without_timestamps=True,
-                    # Decoder optimizations — zero latency cost:
-                    # Mild penalty on repeated tokens (prevents "det det det")
-                    repetition_penalty=1.1,
-                    # Forbid repeating 3-word sequences exactly
-                    no_repeat_ngram_size=3,
-                    # Bias toward user's vocabulary (names, terms)
-                    hotwords=hotwords,
-                )
-                raw = " ".join(s.text.strip() for s in segments)
+                with self._model_lock:
+                    model = self.model
+                    if model is None:
+                        raise RuntimeError("Whisper-modellen är stängd")
+                    segments, info = model.transcribe(
+                        audio,
+                        language=self.language,
+                        # Greedy decoding (beam_size=1) — ~2× faster than beam_size=5
+                        # with negligible WER difference on short dictation utterances.
+                        beam_size=1,
+                        best_of=1,
+                        vad_filter=use_vad,
+                        # 500 ms keeps legitimate natural pauses intact;
+                        # 300 ms was cutting words off.
+                        vad_parameters={"min_silence_duration_ms": 500} if use_vad else None,
+                        initial_prompt=prompt or None,
+                        condition_on_previous_text=False,
+                        without_timestamps=True,
+                        # Decoder optimizations — zero latency cost:
+                        # Mild penalty on repeated tokens (prevents "det det det")
+                        repetition_penalty=1.1,
+                        # Forbid repeating 3-word sequences exactly
+                        no_repeat_ngram_size=3,
+                        # Bias toward user's vocabulary (names, terms)
+                        hotwords=hotwords,
+                    )
+                    raw = " ".join(s.text.strip() for s in segments)
                 break
             except RuntimeError as e:
                 if use_vad:

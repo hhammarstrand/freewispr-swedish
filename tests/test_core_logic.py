@@ -129,6 +129,28 @@ def test_llm_polish_falls_back_without_logging_body(monkeypatch, caplog):
     assert "echoed sensitive text" not in caplog.text
 
 
+def test_llm_polish_resolves_github_token_from_environment(monkeypatch):
+    llm_polish = importlib.import_module("llm_polish")
+    monkeypatch.setenv("GITHUB_TOKEN", "env-token")
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+
+    assert llm_polish.resolve_api_key("") == "env-token"
+    assert llm_polish.resolve_api_key("explicit-token") == "explicit-token"
+
+
+def test_llm_polish_resolves_github_token_from_gh_cli(monkeypatch):
+    llm_polish = importlib.import_module("llm_polish")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+
+    def fake_run(*args, **kwargs):
+        assert args[0] == ["gh", "auth", "token"]
+        return SimpleNamespace(returncode=0, stdout="gh-token\n")
+
+    monkeypatch.setattr(llm_polish.subprocess, "run", fake_run)
+    assert llm_polish.resolve_api_key("") == "gh-token"
+
+
 # --------------------------------------------------------------------------- #
 #  New regression tests for refactors landed in this round.
 # --------------------------------------------------------------------------- #
@@ -263,16 +285,42 @@ def test_audio_finalize_handles_empty_input():
     assert result.dtype.name == "float32"
 
 
-def test_audio_finalize_downmixes_stereo_via_first_channel():
-    """Multi-channel input must downmix to mono using the first channel."""
+def test_audio_finalize_selects_loudest_stereo_channel():
+    """Multi-channel input must preserve signal even if it is not on channel 0."""
     import numpy as np
     audio = importlib.import_module("audio")
-    # Stereo buffer: left channel = 1.0, right channel = 0.0
-    stereo = np.array([[1.0, 0.0], [1.0, 0.0], [1.0, 0.0], [1.0, 0.0]],
+    # Stereo buffer: left channel silent, right channel contains the mic.
+    stereo = np.array([[0.0, 1.0], [0.0, 1.0], [0.0, 1.0], [0.0, 1.0]],
                       dtype=np.float32)
     result = audio.finalize_audio(stereo, 2, audio.TARGET_RATE)
     assert result.shape == (4,)
     assert np.allclose(result, 1.0)
+
+
+def test_audio_finalize_averages_balanced_stereo_channels():
+    import numpy as np
+    audio = importlib.import_module("audio")
+    stereo = np.array([[1.0, 0.5], [1.0, 0.5]], dtype=np.float32)
+
+    result = audio.finalize_audio(stereo, 2, audio.TARGET_RATE)
+
+    assert np.allclose(result, 0.75)
+
+
+def test_audio_callback_rms_uses_loudest_channel(monkeypatch):
+    """Silence gate RMS must not miss a mic signal on the right channel."""
+    import numpy as np
+    audio = importlib.import_module("audio")
+
+    recorder = audio.MicRecorder()
+    recorder._ensure_buffer(audio.TARGET_RATE, 2)
+    recorder.recording = True
+    indata = np.array([[0.0, 0.5], [0.0, 0.5]], dtype=np.float32)
+
+    recorder._cb(indata, len(indata), None, None)
+
+    assert recorder.level == pytest.approx(0.5)
+    assert recorder.rms() == pytest.approx(0.5)
 
 
 def test_corrections_apply_master_regex_handles_many_entries(tmp_path):
@@ -371,3 +419,227 @@ def test_main_apply_settings_serialised(monkeypatch):
     main._apply_settings({"hotkey": "ctrl+space"})
     assert holds == [True]
 
+
+def test_config_load_keeps_legacy_secret_when_keyring_migration_fails(tmp_path):
+    config = importlib.import_module("config")
+    config.CONFIG_DIR = tmp_path
+    config.CONFIG_FILE = tmp_path / "config.json"
+    config.CONFIG_FILE.write_text(
+        json.dumps({"model_size": "base", "llm_api_key": "legacy-secret"}),
+        encoding="utf-8",
+    )
+    config.keyring = SimpleNamespace(
+        get_password=lambda service, username: None,
+        set_password=lambda service, username, value: (_ for _ in ()).throw(RuntimeError("no backend")),
+        delete_password=lambda service, username: None,
+    )
+
+    loaded = config.load()
+    saved = json.loads(config.CONFIG_FILE.read_text(encoding="utf-8"))
+
+    assert loaded["llm_api_key"] == "legacy-secret"
+    assert saved["llm_api_key"] == "legacy-secret"
+
+
+def test_config_save_restores_secret_if_json_write_fails(tmp_path, monkeypatch):
+    config = importlib.import_module("config")
+    secrets = {(config._KEYRING_SERVICE, config._KEYRING_USERNAME): "old-secret"}
+    config.CONFIG_DIR = tmp_path
+    config.CONFIG_FILE = tmp_path / "config.json"
+    config.keyring = SimpleNamespace(
+        get_password=lambda service, username: secrets.get((service, username)),
+        set_password=lambda service, username, value: secrets.__setitem__((service, username), value),
+        delete_password=lambda service, username: secrets.pop((service, username), None),
+    )
+    monkeypatch.setattr(config, "save_json_atomic", lambda path, data: (_ for _ in ()).throw(RuntimeError("disk full")))
+
+    with pytest.raises(RuntimeError):
+        config.save({**config.DEFAULTS, "llm_api_key": "new-secret"})
+
+    assert secrets[(config._KEYRING_SERVICE, config._KEYRING_USERNAME)] == "old-secret"
+
+
+def test_config_save_fails_if_secret_delete_fails(tmp_path):
+    config = importlib.import_module("config")
+    secrets = {(config._KEYRING_SERVICE, config._KEYRING_USERNAME): "old-secret"}
+    config.CONFIG_DIR = tmp_path
+    config.CONFIG_FILE = tmp_path / "config.json"
+
+    def delete_fail(service, username):
+        raise RuntimeError("delete failed")
+
+    config.keyring = SimpleNamespace(
+        get_password=lambda service, username: secrets.get((service, username)),
+        set_password=lambda service, username, value: secrets.__setitem__((service, username), value),
+        delete_password=delete_fail,
+    )
+
+    with pytest.raises(RuntimeError):
+        config.save({**config.DEFAULTS, "llm_api_key": ""})
+
+    assert secrets[(config._KEYRING_SERVICE, config._KEYRING_USERNAME)] == "old-secret"
+
+
+def test_llm_only_save_failure_restores_transcriber_state(monkeypatch):
+    pytest.importorskip("PIL")
+    pytest.importorskip("pystray")
+    main = importlib.reload(importlib.import_module("main"))
+    old_state = {
+        "hotkey": "ctrl+space",
+        "model_size": "small",
+        "use_cuda": False,
+        "llm_enabled": False,
+        "llm_privacy_accepted": False,
+        "llm_api_key": "old-key",
+        "llm_model": "old-model",
+    }
+    main._config = old_state.copy()
+    main._transcriber = SimpleNamespace(
+        llm_enabled=False,
+        llm_api_key="old-key",
+        llm_model="old-model",
+    )
+    restarted = []
+    monkeypatch.setattr(main, "_restart_dictation", lambda: restarted.append(True))
+    monkeypatch.setattr(main.cfg_module, "save", lambda cfg: (_ for _ in ()).throw(RuntimeError("disk full")))
+
+    result = main._apply_settings({
+        "llm_enabled": True,
+        "llm_privacy_accepted": True,
+        "llm_api_key": "new-key",
+        "llm_model": "new-model",
+    })
+
+    assert result is False
+    assert main._config == old_state
+    assert main._transcriber.llm_enabled is False
+    assert main._transcriber.llm_api_key == "old-key"
+    assert main._transcriber.llm_model == "old-model"
+    assert len(restarted) >= 2
+
+
+def test_paste_text_serializes_clipboard_workers(monkeypatch):
+    paste = importlib.reload(importlib.import_module("paste"))
+    events = []
+    clipboard = {"value": "orig"}
+
+    def fake_paste():
+        events.append("read")
+        return clipboard["value"]
+
+    def fake_copy(value):
+        events.append(("copy", value))
+        clipboard["value"] = value
+
+    monkeypatch.setattr(paste.pyperclip, "paste", fake_paste)
+    monkeypatch.setattr(paste.pyperclip, "copy", fake_copy)
+    monkeypatch.setattr(paste.keyboard, "send", lambda key: events.append(("send", key)))
+    monkeypatch.setattr(paste, "_release_modifiers", lambda mods=(): None)
+    monkeypatch.setattr(paste.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(paste.threading.Thread, "start", lambda self: self._target(*self._args, **self._kwargs))
+
+    paste.paste_text("first")
+    paste.paste_text("second")
+
+    assert events == [
+        "read", ("copy", "first "), ("send", "ctrl+v"), ("copy", "orig"),
+        "read", ("copy", "second "), ("send", "ctrl+v"), ("copy", "orig"),
+    ]
+
+
+def test_paste_text_uses_shift_insert_for_console_windows(monkeypatch):
+    paste = importlib.reload(importlib.import_module("paste"))
+    sent = []
+    monkeypatch.setattr(paste, "_active_window_class", lambda: "ConsoleWindowClass")
+    monkeypatch.setattr(paste.pyperclip, "paste", lambda: "orig")
+    monkeypatch.setattr(paste.pyperclip, "copy", lambda value: None)
+    monkeypatch.setattr(paste.keyboard, "send", lambda key: sent.append(key))
+    monkeypatch.setattr(paste, "_release_modifiers", lambda mods=(): None)
+    monkeypatch.setattr(paste.time, "sleep", lambda seconds: None)
+    monkeypatch.setattr(paste.threading.Thread, "start", lambda self: self._target(*self._args, **self._kwargs))
+
+    paste.paste_text("hej")
+
+    assert sent == ["shift+insert"]
+
+
+def test_dictation_worker_does_not_paste_after_stop(monkeypatch):
+    import numpy as np
+    dictation = importlib.reload(importlib.import_module("dictation"))
+
+    pasted = []
+    mode = object.__new__(dictation.DictationMode)
+    mode.transcriber = SimpleNamespace(transcribe=lambda audio: "stale text")
+    mode._worker_stop = __import__("threading").Event()
+    mode._worker_stop.set()
+    mode._active = False
+    mode._modifier_keys = ()
+    mode.hotkey = "ctrl+space"
+    mode.indicator = None
+    mode.on_status = lambda msg: None
+    monkeypatch.setattr(dictation, "paste_text", lambda text, active_modifiers=(): pasted.append(text))
+
+    mode._transcribe(np.ones(16000, dtype=np.float32))
+
+    assert pasted == []
+
+
+def test_transcriber_close_waits_for_inflight_transcribe(fake_transcriber_deps):
+    import numpy as np
+    import threading
+    sys.modules["torch"] = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: False, empty_cache=lambda: None)
+    )
+    transcriber = importlib.reload(importlib.import_module("transcriber"))
+
+    entered = threading.Event()
+    release = threading.Event()
+
+    class FakeModel:
+        def __init__(self):
+            self.in_transcribe = False
+            self.closed_during_transcribe = False
+        def transcribe(self, *args, **kwargs):
+            def segments():
+                self.in_transcribe = True
+                entered.set()
+                try:
+                    # close() must not set owner.model to None while this generator runs.
+                    release.wait(timeout=2.0)
+                    yield SimpleNamespace(text="hej")
+                finally:
+                    self.in_transcribe = False
+            return segments(), SimpleNamespace()
+
+    inst = object.__new__(transcriber.Transcriber)
+    inst.model_size = "small"
+    inst.language = "sv"
+    inst.llm_enabled = False
+    inst.llm_api_key = ""
+    inst.llm_model = "gpt-4.1-nano"
+    inst.model = FakeModel()
+    inst._model_lock = __import__("threading").RLock()
+    original_model = inst.model
+
+    result_holder = {}
+    transcribe_thread = threading.Thread(
+        target=lambda: result_holder.setdefault(
+            "result", inst.transcribe(np.ones(16000, dtype=np.float32))
+        )
+    )
+    transcribe_thread.start()
+    assert entered.wait(timeout=1.0)
+
+    close_done = threading.Event()
+    close_thread = threading.Thread(target=lambda: (inst.close(), close_done.set()))
+    close_thread.start()
+
+    assert not close_done.wait(timeout=0.05)
+    release.set()
+    transcribe_thread.join(timeout=1.0)
+    close_thread.join(timeout=1.0)
+
+    assert result_holder["result"] == "Hej"
+    assert close_done.is_set()
+    assert inst.model is None
+    assert original_model.in_transcribe is False

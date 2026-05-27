@@ -23,6 +23,27 @@ _devices_cache: list | None = None
 _hostapis_cache: list | None = None
 
 
+def _select_level_channel(audio: np.ndarray) -> np.ndarray:
+    """Return the channel with highest RMS from mono/stereo callback data."""
+    if audio.ndim <= 1 or audio.shape[1] <= 1:
+        return audio.ravel()
+    # Some Windows/USB devices expose a silent left channel and put the mic on
+    # the right channel. Pick the loudest channel instead of assuming channel 0.
+    sums = np.einsum("ij,ij->j", audio, audio)
+    return audio[:, int(np.argmax(sums))]
+
+
+def _to_mono(audio: np.ndarray) -> np.ndarray:
+    """Convert captured audio to mono without assuming the mic is channel 0."""
+    if audio.ndim <= 1 or audio.shape[1] <= 1:
+        return audio.ravel()
+    sums = np.einsum("ij,ij->j", audio, audio)
+    loudest = int(np.argmax(sums))
+    if sums[loudest] > 0 and float(np.min(sums)) <= float(sums[loudest]) * 0.01:
+        return audio[:, loudest]
+    return audio.mean(axis=1, dtype=np.float32)
+
+
 def _devices() -> list:
     global _devices_cache
     if _devices_cache is None:
@@ -289,8 +310,9 @@ class MicRecorder:
         # Copy directly into the pre-allocated arena — no per-callback
         # np.ndarray allocation, no final concat pass in stop_fast().
         if self._buffer_channels > 1:
-            self._buffer[self._buffer_offset:self._buffer_offset + n] = indata[:n]
-            chunk_for_level = indata[:n, 0]
+            chunk = indata[:n]
+            self._buffer[self._buffer_offset:self._buffer_offset + n] = chunk
+            chunk_for_level = _select_level_channel(chunk)
         else:
             chunk_for_level = indata[:n].ravel() if indata.ndim > 1 else indata[:n]
             self._buffer[self._buffer_offset:self._buffer_offset + n] = chunk_for_level
@@ -367,14 +389,14 @@ def finalize_audio(audio: np.ndarray, channels: int, orig_rate: int) -> np.ndarr
     48 kHz this work takes ~20-80 ms and must not block the hook callback.
 
     Accepts either a 1-D mono buffer or a 2-D ``(samples, channels)`` array;
-    multi-channel input is downmixed by taking the first channel (cheaper
-    than mean() and equivalent for dictation).
+    multi-channel input is converted to mono by selecting a lone active
+    channel (common with USB mics) or averaging balanced stereo channels.
     """
     if audio is None or audio.size == 0:
         return np.array([], dtype=np.float32)
 
     if audio.ndim > 1 and audio.shape[1] > 1:
-        mono = np.ascontiguousarray(audio[:, 0])
+        mono = np.ascontiguousarray(_to_mono(audio))
     else:
         mono = audio.ravel()
 
@@ -382,7 +404,7 @@ def finalize_audio(audio: np.ndarray, channels: int, orig_rate: int) -> np.ndarr
              mono.shape, mono.dtype, orig_rate,
              float(np.abs(mono).max()) if mono.size else 0.0)
     resampled = _resample(mono, orig_rate)
-    log.info("Resamplerad: %d → %d samples (%d→%dHz), peak=%.4f",
+    log.info("Resamplerad: %d -> %d samples (%d->%dHz), peak=%.4f",
              len(mono), len(resampled), orig_rate, TARGET_RATE,
              float(np.abs(resampled).max()) if resampled.size else 0.0)
     return resampled

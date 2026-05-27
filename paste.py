@@ -1,6 +1,7 @@
 import time
 import logging
 import threading
+import ctypes
 
 import pyperclip
 import keyboard
@@ -12,6 +13,29 @@ log = logging.getLogger("freewispr")
 _RESTORE_ATTEMPTS = 3
 _RESTORE_DELAY_SEC = 0.05
 _RESTORE_GRACE_SEC = 0.15
+_PASTE_LOCK = threading.Lock()
+
+
+def _active_window_class() -> str:
+    """Best-effort Win32 class name for the foreground window."""
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetForegroundWindow()
+        if not hwnd:
+            return ""
+        buf = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, buf, len(buf))
+        return buf.value
+    except Exception:
+        return ""
+
+
+def _paste_shortcut() -> str:
+    # Classic console windows often ignore synthetic Ctrl+V; Shift+Insert is
+    # the most compatible paste chord for conhost/cmd/PowerShell prompts.
+    if _active_window_class() == "ConsoleWindowClass":
+        return "shift+insert"
+    return "ctrl+v"
 
 
 def _release_modifiers(active_modifiers: tuple[str, ...] = ()):
@@ -31,8 +55,8 @@ def _release_modifiers(active_modifiers: tuple[str, ...] = ()):
             pass
 
 
-def _paste_and_restore_async(text: str):
-    """Save old clipboard, paste new text, restore old — all on a background thread.
+def _paste_and_restore(text: str):
+    """Save old clipboard, paste new text, restore old.
 
     Moves the slow ``pyperclip.paste()`` Win32 clipboard read off the hot
     keyboard-hook thread. On a contended clipboard this read can stall for
@@ -41,7 +65,7 @@ def _paste_and_restore_async(text: str):
     runs the instant the worker starts — no measurable user-visible delay.
     """
 
-    def _worker():
+    with _PASTE_LOCK:
         try:
             old = pyperclip.paste()
         except Exception:
@@ -51,7 +75,7 @@ def _paste_and_restore_async(text: str):
             # Copy dictated text (trailing space for natural continuation)
             pyperclip.copy(text + " ")
             # keyboard.send has no built-in PAUSE (saves ~200 ms vs pyautogui)
-            keyboard.send("ctrl+v")
+            keyboard.send(_paste_shortcut())
         except Exception as e:
             log.warning("Kunde inte skicka Ctrl+V: %s", e)
             return
@@ -69,8 +93,9 @@ def _paste_and_restore_async(text: str):
                     return
                 time.sleep(_RESTORE_DELAY_SEC)
 
-    threading.Thread(target=_worker, daemon=True).start()
 
+def _paste_and_restore_async(text: str):
+    threading.Thread(target=_paste_and_restore, args=(text,), daemon=True).start()
 
 def paste_text(text: str, active_modifiers: tuple[str, ...] = ()):
     """Paste text at the current cursor position.
@@ -78,7 +103,7 @@ def paste_text(text: str, active_modifiers: tuple[str, ...] = ()):
     Steps:
       1. Release modifier keys that are actually held (only those from the
          dictation hotkey, to avoid triggering Start menu when releasing Win)
-      2. Spawn an async worker that:
+      2. Spawn a serialized async worker so queued dictations can't overlap:
          a) Saves current clipboard content (slow on contended systems)
          b) Copies dictated text to clipboard
          c) Sends Ctrl+V

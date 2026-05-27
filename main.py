@@ -229,6 +229,14 @@ def _apply_settings(new_cfg: dict):
 def _apply_settings_locked(new_cfg: dict):
     global _config, _dictation, _transcriber
 
+    if _reload_lock.locked():
+        log.warning("Modellomladdning pågår redan — avvisar nya inställningar")
+        _set_tray_status("Vänta: modell laddas fortfarande")
+        if _indicator:
+            _indicator.show("Vänta: modell laddas", state="error")
+            _indicator.hide(delay_ms=2000)
+        return False
+
     old_config = dict(_config)  # shallow copy for rollback
     old_model = _config.get("model_size")
     old_cuda = _config.get("use_cuda")
@@ -267,6 +275,11 @@ def _apply_settings_locked(new_cfg: dict):
     # Fast path: LLM-only change. Mutate the existing transcriber in place
     # so we don't pay 5-15 s + extra VRAM for a full model reload.
     if llm_changed and not model_changed and _transcriber is not None:
+        old_transcriber_llm = (
+            _transcriber.llm_enabled,
+            _transcriber.llm_api_key,
+            _transcriber.llm_model,
+        )
         _transcriber.llm_enabled = (
             _config.get("llm_enabled", False)
             and _config.get("llm_privacy_accepted", False)
@@ -278,6 +291,12 @@ def _apply_settings_locked(new_cfg: dict):
         _restart_dictation()
         if not _persist():
             _rollback()
+            (
+                _transcriber.llm_enabled,
+                _transcriber.llm_api_key,
+                _transcriber.llm_model,
+            ) = old_transcriber_llm
+            _restart_dictation()
             return False
         _set_tray_status(
             f"Inställningar sparade — håll {_config.get('hotkey','ctrl+space').upper()}"
@@ -285,18 +304,25 @@ def _apply_settings_locked(new_cfg: dict):
         return True
 
     if model_changed:
+        # Acquire before returning to the event loop so a second Save cannot
+        # mutate _config in the gap before the background thread starts.
+        if not _reload_lock.acquire(blocking=False):
+            log.warning("Modellomladdning pågår redan — avvisar denna")
+            _rollback()
+            _set_tray_status("Vänta: modell laddas fortfarande")
+            if _indicator:
+                _indicator.show("Vänta: modell laddas", state="error")
+                _indicator.hide(delay_ms=2000)
+            return False
         _set_tray_status(f"Laddar modell '{new_model}'...")
         if _indicator:
             _indicator.show(f"Laddar modell '{new_model}'...", state="transcribe")
 
         def _reload():
             global _transcriber, _dictation
-            # Serialize reloads so two quick Saves can't double-load the model.
-            if not _reload_lock.acquire(blocking=False):
-                log.warning("Modellomladdning pågår redan — hoppar över denna")
-                return
             try:
                 old_transcriber = _transcriber
+                old_dictation = _dictation
                 try:
                     new_transcriber = _make_transcriber(new_model, new_cuda)
                 except Exception as e:
@@ -309,17 +335,30 @@ def _apply_settings_locked(new_cfg: dict):
                     # sees the real previous state.
                     _rollback()
                     return
-                _transcriber = new_transcriber
-                # Release the old model's VRAM/RAM BEFORE telling the user
-                # we're done — keeping two WhisperModels alive can OOM
-                # smaller CUDA devices.
-                if old_transcriber is not None:
+                # Unhook old hotkeys before starting the new DictationMode so
+                # two hook sets cannot record/paste concurrently. Do not wait
+                # for the old worker here; close() below will wait on the
+                # model lock if a transcription is still in flight.
+                if old_dictation is not None:
                     try:
-                        old_transcriber.close()
+                        old_dictation.stop(wait=False)
                     except Exception as e:
-                        log.debug("Kunde inte stänga gammal transcriber: %s", e)
+                        log.debug("Kunde inte stoppa gammal dictation rent: %s", e)
+                _transcriber = new_transcriber
+                _dictation = _make_dictation(_transcriber)
+                _dictation.start()
+                # Cleanup old model off the reload path. close() may wait for
+                # an in-flight transcription; don't block settings/UI or keep
+                # _reload_lock held for that duration.
+                def _cleanup_old():
+                    if old_transcriber is not None:
+                        try:
+                            old_transcriber.close()
+                        except Exception as e:
+                            log.debug("Kunde inte stänga gammal transcriber: %s", e)
+
+                threading.Thread(target=_cleanup_old, daemon=True).start()
                 log.info("Modell '%s' laddad!", new_model)
-                _restart_dictation()
                 # Model loaded OK — now it's safe to persist the new config.
                 if not _persist():
                     # Rare: disk write failed after a successful reload.

@@ -886,7 +886,7 @@ class SettingsWindow:
         # API key input
         key_label_row = tk.Frame(card, bg=BG2)
         key_label_row.pack(fill="x", pady=(8, 0))
-        tk.Label(key_label_row, text="GitHub API-nyckel:", bg=BG2, fg=FG2,
+        tk.Label(key_label_row, text="GitHub API-nyckel (valfri):", bg=BG2, fg=FG2,
                  font=("Segoe UI", 9)).pack(side="left")
 
         self._key_var = tk.StringVar(value=self.cfg.get("llm_api_key", ""))
@@ -896,6 +896,10 @@ class SettingsWindow:
                                    highlightthickness=1, highlightbackground=FG2,
                                    highlightcolor=ACC, show="\u2022")
         self._key_entry.pack(fill="x", pady=(4, 0))
+        self._hint(
+            card,
+            "Lämna tomt för att använda GITHUB_TOKEN/GH_TOKEN eller `gh auth token`.",
+        )
 
         # Show/hide key + test button row
         key_btn_row = tk.Frame(card, bg=BG2)
@@ -982,12 +986,9 @@ class SettingsWindow:
         """Test LLM connection in background thread, show result in UI."""
         key = self._key_var.get().strip()
         model = self._llm_model_var.get()
-        if not key:
-            self._test_result.configure(text="Ange en API-nyckel forst", fg="#e74c3c")
-            return
 
         self._test_btn.configure(state="disabled", text="Testar...")
-        self._test_result.configure(text="Ansluter...", fg=FG2)
+        self._test_result.configure(text="Ansluter med sparad nyckel, env eller gh auth...", fg=FG2)
 
         def _run():
             _models, _default, test_conn = _llm()

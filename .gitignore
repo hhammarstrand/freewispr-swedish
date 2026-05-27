@@ -7,4 +7,25 @@ dist/
 build/
 *.egg-info/
 .env
+.venv/
+venv/
 assets/icon.ico
+
+# Test / lint caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# IDE / editor
+.idea/
+.vscode/
+*.swp
+
+# Windows artefacts and stray PyInstaller redirects
+Thumbs.db
+nul
+

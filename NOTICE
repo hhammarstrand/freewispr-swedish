@@ -1,0 +1,33 @@
+freewispr-swedish
+=================
+
+This product bundles or depends on the following third-party software.
+See each project's repository for full license texts.
+
+Runtime dependencies
+--------------------
+
+* faster-whisper        — MIT License
+* PyTorch (torch)       — BSD-3-Clause
+* sounddevice           — MIT License
+* SciPy                 — BSD-3-Clause
+* NumPy                 — BSD-3-Clause
+* keyboard              — MIT License
+* pyperclip             — BSD-3-Clause
+* Pillow (PIL)          — MIT-CMU (HPND)
+* keyring               — MIT License
+* requests              — Apache-2.0
+
+* pystray               — LGPL-3.0-or-later
+    pystray is dynamically linked (imported at runtime) by freewispr-swedish.
+    Per the LGPL-3.0, you may replace the pystray library distributed with
+    this product with a modified version of your own, and freewispr-swedish
+    will continue to function. The pystray source is available at
+    https://github.com/moses-palmer/pystray.
+
+Model
+-----
+
+* KBLab/kb-whisper-{tiny,base,small,medium,large}
+    Released by KBLab (Kungliga Biblioteket) on Hugging Face Hub.
+    See https://huggingface.co/KBLab for license terms (Apache-2.0).

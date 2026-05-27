@@ -1,7 +1,7 @@
 # freewispr-swedish
 
 **Svensk speech-to-text diktering for Windows.**
-Diktera var som helst. 100% lokalt. Ingen molnanslutning. Ingen prenumeration.
+Diktera var som helst. Lokal Whisper-diktering, med valfri onlinelagranskning via LLM.
 
 > **Fork av:** [x26prakhar/freewispr](https://github.com/x26prakhar/freewispr)
 > **Licens:** MIT
@@ -29,7 +29,8 @@ Standardmodellen ar `KBLab/kb-whisper-small` -- battre precision pa svenska an O
 - **Flermodell-stod** -- tiny, base, small, medium, large (alla KBLab)
 - **Starta med Windows** -- enkel toggle i menyn
 - **Systemfack** -- lever diskret i bakgrunden
-- **Helt offline** -- efter forsta nedladdningen av modellen
+- **Offline-lage** -- Whisper-diktering sker lokalt efter forsta modellnedladdningen
+- **Valfri LLM-granskning** -- kan skicka transkriberad text till GitHub Models/Azure for extra textkorrigering
 - **GPU-stod** -- automatisk CUDA-detektion for NVIDIA-grafikkort
 
 ---
@@ -50,7 +51,20 @@ Ladda ner senaste releasen fran [**Releases**](https://github.com/hhammarstrand/
 ```
 
 > Vid forsta starten laddas KB-Whisper-small (~500 MB) ner automatiskt.
-> Darefter fungerar appen helt offline.
+> Darefter fungerar Whisper-diktering offline sa lange LLM-granskning ar avstangd.
+
+---
+
+## Integritet och natverk
+
+Som standard transkriberas ljud lokalt med KBLab Whisper. Appen kan kontakta natverk i foljande fall:
+
+- Forsta modellstarten laddar ner vald KBLab-modell fran Hugging Face om modellen saknas lokalt.
+- LLM-granskning ar avstangd som standard, men nar du aktiverar den skickas transkriberad text till GitHub Models/Azure for korrigering.
+- LLM-granskning skickar texten efter lokal Whisper-transkribering, inte ljudfilen.
+- Dikterad text loggas inte som standard; loggen innehaller metadata som langd, modell, latency och status.
+- Text klistras in via systemets urklipp och appen forsoker aterstalla tidigare urklippsinnehall efter paste.
+- Om LLM-granskning andrar text kan lokala ordkorrigeringar sparas i `learned.json` och `corrections.json` for att forbättra framtida lokal transkribering.
 
 ---
 
@@ -204,6 +218,10 @@ Sparas i `~/.freewispr-swedish/config.json`:
 | `model_size` | string | `"small"` | Whisper-modell: tiny/base/small/medium/large |
 | `use_cuda` | bool | `true` | Anvand GPU om tillganglig |
 | `mic_device` | string/null | `null` | Mikrofonnamn, eller `null` for auto |
+| `llm_enabled` | bool | `false` | Skicka transkriberad text till LLM for granskning |
+| `llm_model` | string | `"gpt-4.1-nano"` | Modell for LLM-granskning |
+
+LLM API-nyckeln sparas i Windows Credential Manager via `keyring` och skrivs inte till `config.json`.
 
 ### Ovriga datafiler
 

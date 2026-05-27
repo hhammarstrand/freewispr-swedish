@@ -9,9 +9,11 @@ echo.
 choice /C JN /M "Vill du installera/uppdatera beroenden?"
 if %errorlevel%==1 (
     echo.
-    echo Aktiverar Windows Long Paths...
-    reg add "HKLM\SYSTEM\CurrentControlSet\Control\FileSystem" /v LongPathsEnabled /t REG_DWORD /d 1 /f >nul 2>&1
-    echo.
+    REM NOTE: Windows Long Paths must be enabled BEFORE running this script.
+    REM We no longer write to HKLM here (requires admin and silently no-ops
+    REM without it). Enable once via an elevated PowerShell:
+    REM   New-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem" ^
+    REM     -Name LongPathsEnabled -Value 1 -PropertyType DWord -Force
     echo Installerar PyTorch med CUDA-stod...
     %PYTHON% -m pip install torch --index-url https://download.pytorch.org/whl/cu124
     echo.

@@ -13,7 +13,7 @@ The converted models are saved to:
 This fixes the vocabulary mismatch crash that affects some KBLab models
 when loaded directly by faster_whisper / CTranslate2.
 """
-import sys
+import argparse
 import logging
 from pathlib import Path
 
@@ -71,13 +71,22 @@ def convert(size: str) -> None:
 
 
 def main():
-    if len(sys.argv) < 2:
-        print(__doc__)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(
+        description="Convert KBLab Whisper models to CTranslate2 format.",
+        epilog="Example: python convert_model.py medium large",
+    )
+    parser.add_argument(
+        "sizes",
+        nargs="+",
+        choices=sorted(KBLAB_MODELS.keys()),
+        metavar="SIZE",
+        help="One or more model sizes to convert "
+             f"({', '.join(sorted(KBLAB_MODELS.keys()))})",
+    )
+    args = parser.parse_args()
 
-    sizes = sys.argv[1:]
-    for size in sizes:
-        convert(size.lower().strip())
+    for size in args.sizes:
+        convert(size)
 
 
 if __name__ == "__main__":

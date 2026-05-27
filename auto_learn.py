@@ -20,11 +20,12 @@ The learned.json format:
     ...
   }
 """
-import json
 import logging
+from difflib import SequenceMatcher
 from pathlib import Path
 
 import corrections as corr_module
+from json_store import load_json, save_json_atomic
 
 log = logging.getLogger("freewispr")
 
@@ -37,11 +38,7 @@ PROMOTE_THRESHOLD = 3
 def _load_learned() -> dict:
     """Load the learned corrections tally."""
     if LEARNED_FILE.exists():
-        try:
-            with open(LEARNED_FILE, encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            log.debug("Kunde inte ladda learned.json: %s", e)
+        return load_json(LEARNED_FILE, {})
     return {}
 
 
@@ -49,8 +46,7 @@ def _save_learned(data: dict) -> None:
     """Save the learned corrections tally."""
     LEARNED_FILE.parent.mkdir(parents=True, exist_ok=True)
     try:
-        with open(LEARNED_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=2, ensure_ascii=False)
+        save_json_atomic(LEARNED_FILE, data)
     except Exception as e:
         log.warning("Kunde inte spara learned.json: %s", e)
 
@@ -58,28 +54,38 @@ def _save_learned(data: dict) -> None:
 def _extract_word_diffs(before: str, after: str) -> list[tuple[str, str]]:
     """Extract single-word replacements between before and after text.
 
-    Only returns diffs where exactly one word changed in a position —
-    this avoids learning phrase-level rewrites which are less reliable.
+    Uses ``difflib.SequenceMatcher`` opcodes so we still recover word
+    swaps when the LLM also added or removed words elsewhere in the
+    sentence (the previous same-length zip check rejected those entirely).
+
+    Only ``replace`` opcodes that swap exactly one word for one word are
+    learned — multi-word rewrites are too noisy to promote automatically.
 
     Returns list of (wrong_word, correct_word) tuples.
     """
     before_words = before.split()
     after_words = after.split()
-
-    # Only handle same-length sequences (word-for-word replacement)
-    if len(before_words) != len(after_words):
+    if not before_words or not after_words:
         return []
 
-    diffs = []
-    for bw, aw in zip(before_words, after_words):
-        # Strip punctuation for comparison but keep original for the mapping
-        bw_clean = bw.strip(".,;:!?\"'()[]")
-        aw_clean = aw.strip(".,;:!?\"'()[]")
-
-        if bw_clean.lower() != aw_clean.lower() and bw_clean and aw_clean:
-            # Only learn single-word changes, not very short words (risk of noise)
-            if len(bw_clean) >= 2 and len(aw_clean) >= 2:
-                diffs.append((bw_clean.lower(), aw_clean))
+    diffs: list[tuple[str, str]] = []
+    matcher = SequenceMatcher(a=before_words, b=after_words, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag != "replace":
+            continue
+        # Only single-word -> single-word swaps are safe to learn.
+        if (i2 - i1) != 1 or (j2 - j1) != 1:
+            continue
+        bw = before_words[i1].strip(".,;:!?\"'()[]")
+        aw = after_words[j1].strip(".,;:!?\"'()[]")
+        if not (bw and aw):
+            continue
+        if bw.lower() == aw.lower():
+            continue
+        # Skip very short words — high false-positive rate.
+        if len(bw) < 2 or len(aw) < 2:
+            continue
+        diffs.append((bw.lower(), aw))
 
     return diffs
 
@@ -95,6 +101,7 @@ def record_correction(before: str, after: str) -> None:
 
     learned = _load_learned()
     promoted_any = False
+    recorded: list[tuple[str, int]] = []
 
     for wrong, correct in diffs:
         entry = learned.get(wrong)
@@ -110,14 +117,20 @@ def record_correction(before: str, after: str) -> None:
             entry = {"correct": correct, "count": 1, "promoted": False}
             learned[wrong] = entry
 
-        log.info("Auto-lärning: '%s' -> '%s' (antal: %d/%d)",
-                 wrong, correct, entry["count"], PROMOTE_THRESHOLD)
+        recorded.append((wrong, entry["count"]))
 
         # Promote if threshold reached
         if entry["count"] >= PROMOTE_THRESHOLD and not entry["promoted"]:
             _promote(wrong, correct)
             entry["promoted"] = True
             promoted_any = True
+
+    if recorded:
+        # One aggregated log line instead of one per diff — keeps the log
+        # readable when the LLM rewrites a long sentence with many fixes.
+        summary = ", ".join(f"{w}={c}/{PROMOTE_THRESHOLD}" for w, c in recorded)
+        log.info("Auto-lärning: registrerade %d korrigering(ar) [%s]",
+                 len(recorded), summary)
 
     _save_learned(learned)
 
@@ -137,9 +150,9 @@ def _promote(wrong: str, correct: str) -> None:
     if wrong not in corrs:
         corrs[wrong] = correct
         corr_module.save(corrs)
-        log.info("Befordrad till ordlistan: '%s' -> '%s'", wrong, correct)
+        log.info("Befordrad till ordlistan")
     else:
-        log.debug("Redan i ordlistan: '%s' -> '%s'", wrong, corrs[wrong])
+        log.debug("Korrigering finns redan i ordlistan")
 
 
 def get_stats() -> dict:

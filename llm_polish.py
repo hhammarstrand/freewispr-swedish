@@ -9,6 +9,8 @@ WITHOUT changing factual content, names, numbers, or meaning.
 """
 import json
 import logging
+import os
+import subprocess
 import urllib.request
 import urllib.error
 from typing import NamedTuple
@@ -26,6 +28,41 @@ AVAILABLE_MODELS = {
 }
 
 DEFAULT_MODEL = "gpt-4.1-nano"
+
+
+def resolve_api_key(api_key: str = "") -> str:
+    """Return explicit key, env token, or GitHub CLI auth token.
+
+    This lets the desktop app use the same machine-level GitHub auth that
+    developer tools such as opencode/gh already use, without forcing the user
+    to find and paste a separate token into settings.
+    """
+    explicit = (api_key or "").strip()
+    if explicit:
+        return explicit
+    for name in ("GITHUB_TOKEN", "GH_TOKEN"):
+        token = os.environ.get(name, "").strip()
+        if token:
+            return token
+    try:
+        result = subprocess.run(
+            ["gh", "auth", "token"],
+            capture_output=True,
+            text=True,
+            timeout=3.0,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        if result.returncode == 0:
+            return result.stdout.strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _text_meta(text: str) -> str:
+    words = len(text.split())
+    return f"chars={len(text)}, words={words}"
 
 _SYSTEM_PROMPT = (
     "Du ar en svensk textkorrigerare for dikterad text (speech-to-text). "
@@ -79,12 +116,13 @@ def polish(text: str, api_key: str, model: str = DEFAULT_MODEL) -> PolishResult:
     import time
 
     text = text.strip()
-    if not text or not api_key:
+    resolved_key = resolve_api_key(api_key)
+    if not text or not resolved_key:
         return PolishResult(text=text, model=model, latency_ms=0, changed=False)
 
     t0 = time.perf_counter()
     try:
-        data = _call_api(api_key, model, text)
+        data = _call_api(resolved_key, model, text)
         result = data["choices"][0]["message"]["content"].strip()
         latency = int((time.perf_counter() - t0) * 1000)
 
@@ -98,8 +136,8 @@ def polish(text: str, api_key: str, model: str = DEFAULT_MODEL) -> PolishResult:
 
         changed = result != text
         if changed:
-            log.info("LLM-polerad (%s, %dms): '%s' -> '%s'",
-                     model, latency, text, result)
+            log.info("LLM-polerad (%s, %dms, in=%s, out=%s)",
+                     model, latency, _text_meta(text), _text_meta(result))
         else:
             log.info("LLM: ingen andring behoves (%s, %dms)", model, latency)
 
@@ -108,12 +146,11 @@ def polish(text: str, api_key: str, model: str = DEFAULT_MODEL) -> PolishResult:
 
     except urllib.error.HTTPError as e:
         latency = int((time.perf_counter() - t0) * 1000)
-        body = ""
         try:
-            body = e.read().decode("utf-8", errors="replace")[:300]
+            e.read()
         except Exception:
             pass
-        log.warning("LLM HTTP %d (%dms): %s", e.code, latency, body)
+        log.warning("LLM HTTP %d (%dms, model=%s)", e.code, latency, model)
         return PolishResult(text=text, model=model, latency_ms=latency,
                             changed=False)
 
@@ -131,14 +168,15 @@ def test_connection(api_key: str, model: str = DEFAULT_MODEL) -> tuple[bool, str
     """
     import time
 
-    if not api_key or not api_key.strip():
-        return False, "Ingen API-nyckel angiven"
+    resolved_key = resolve_api_key(api_key)
+    if not resolved_key:
+        return False, "Ingen GitHub-auth hittades (ange nyckel, GITHUB_TOKEN/GH_TOKEN eller logga in med gh auth login)"
 
     test_input = "Det har ar ett test av dikteringsfunktionen."
 
     t0 = time.perf_counter()
     try:
-        data = _call_api(api_key.strip(), model, test_input, timeout_sec=10.0)
+        data = _call_api(resolved_key, model, test_input, timeout_sec=10.0)
         latency = int((time.perf_counter() - t0) * 1000)
 
         result = data["choices"][0]["message"]["content"].strip()

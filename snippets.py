@@ -2,8 +2,9 @@
 Snippet library — trigger words that expand to longer phrases.
 Stored at ~/.freewispr-swedish/snippets.json as {"trigger": "expansion", ...}
 """
-import json
 from pathlib import Path
+
+from json_store import load_json, save_json_atomic
 
 _FILE = Path.home() / ".freewispr-swedish" / "snippets.json"
 
@@ -19,13 +20,9 @@ def load() -> dict[str, str]:
     if _cache is not None and current_mt == _cache_mtime:
         return _cache
     if _FILE.exists():
-        try:
-            with open(_FILE, encoding="utf-8") as f:
-                _cache = json.load(f)
-                _cache_mtime = current_mt
-                return _cache
-        except Exception:
-            pass
+        _cache = dict(load_json(_FILE, {}))
+        _cache_mtime = _FILE.stat().st_mtime if _FILE.exists() else 0.0
+        return _cache
     _cache = {}
     _cache_mtime = current_mt
     return _cache
@@ -33,9 +30,7 @@ def load() -> dict[str, str]:
 
 def save(snippets: dict[str, str]):
     global _cache, _cache_mtime
-    _FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(_FILE, "w", encoding="utf-8") as f:
-        json.dump(snippets, f, indent=2, ensure_ascii=False)
+    save_json_atomic(_FILE, snippets)
     _cache = snippets
     _cache_mtime = _FILE.stat().st_mtime
 
