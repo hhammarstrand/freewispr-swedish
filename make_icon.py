@@ -105,8 +105,8 @@ def make_og_image() -> Image.Image:
     icon = make_icon(126)
     img.paste(icon, (106, 106), icon)
 
-    draw.rounded_rectangle([932, 116, 1058, 190], radius=24, fill="#f8fafc", outline=LINE, width=2)
-    draw.text((959, 135), "åäö", font=_font(34, True), fill=BLUE)
+    draw.rounded_rectangle([910, 116, 1058, 190], radius=24, fill="#f8fafc", outline=LINE, width=2)
+    draw.text((946, 135), "sv", font=_font(34, True), fill=BLUE)
 
     draw.text((106, 284), "freewispr-swedish", font=_font(72, True), fill=INK)
     draw.text((110, 372), "Svensk diktering för Windows", font=_font(38, False), fill=MUTED)
