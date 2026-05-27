@@ -867,7 +867,7 @@ class _HotkeyCapture(tk.Frame):
         val = self._var.get()
         self._display.configure(text=val if val else "...")
         if not self._capturing:
-            self._hint.configure(text="klicka for att andra")
+            self._hint.configure(text="klicka för att ändra")
 
     def _start_capture(self, _=None):
         self._capturing = True

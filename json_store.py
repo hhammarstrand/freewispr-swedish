@@ -23,10 +23,10 @@ def load_json(path: Path, default):
             log.warning("Korrupt JSON i %s; backup sparad som %s", path, backup)
         except Exception as backup_error:
             log.warning("Korrupt JSON i %s; kunde inte skapa backup: %s", path, backup_error)
-        log.warning("Anvander standarddata efter JSON-fel i %s: %s", path, e)
+        log.warning("Använder standarddata efter JSON-fel i %s: %s", path, e)
         return default.copy() if isinstance(default, dict) else default
     except Exception as e:
-        log.warning("Kunde inte lasa JSON fran %s: %s", path, e)
+        log.warning("Kunde inte läsa JSON från %s: %s", path, e)
         return default.copy() if isinstance(default, dict) else default
 
 

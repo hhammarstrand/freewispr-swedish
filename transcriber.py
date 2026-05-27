@@ -418,7 +418,7 @@ class Transcriber:
                 for _ in segments:
                     pass
             self._warmed = True
-            log.info("Whisper-warmup klar pa %.0f ms", (_time.monotonic() - t0) * 1000)
+            log.info("Whisper-warmup klar på %.0f ms", (_time.monotonic() - t0) * 1000)
         except Exception as e:
             log.debug("Whisper-warmup misslyckades (ignoreras): %s", e)
 
@@ -444,7 +444,7 @@ class Transcriber:
             except Exception:
                 pass
         except Exception as e:
-            log.debug("Kunde inte frigora modell rent: %s", e)
+            log.debug("Kunde inte frigöra modell rent: %s", e)
 
     def transcribe(self, audio: np.ndarray) -> str:
         """Transcribe audio to text (local or remote) with postprocessing.

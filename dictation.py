@@ -112,7 +112,7 @@ class DictationMode:
             keyboard.on_press_key(self._trigger_key, self._on_press, suppress=False),
             keyboard.on_release_key(self._trigger_key, self._on_release, suppress=False),
         ]
-        self.on_status(f"Ready — hold {self.hotkey.upper()} to speak")
+        self.on_status(f"Klar — håll {self.hotkey.upper()} för att prata")
 
     def stop(self, wait: bool = True):
         self._active = False
