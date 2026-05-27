@@ -39,11 +39,39 @@
   --mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
 }
 
+/* ---- Keyframes ---- */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes barPulse1 {
+  0%, 100% { height: 6px; }
+  50%      { height: 16px; }
+}
+@keyframes barPulse2 {
+  0%, 100% { height: 15px; }
+  50%      { height: 5px; }
+}
+@keyframes barPulse3 {
+  0%, 100% { height: 10px; }
+  50%      { height: 18px; }
+}
+@keyframes barPulse4 {
+  0%, 100% { height: 18px; }
+  50%      { height: 7px; }
+}
+@keyframes barPulse5 {
+  0%, 100% { height: 8px; }
+  50%      { height: 17px; }
+}
+
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body {
   margin: 0;
   background: var(--bg);
+  background-image: radial-gradient(circle at 20% 50%, rgba(0,106,167,0.04) 0%, transparent 50%);
   color: var(--ink);
   font-family: var(--sans);
   -webkit-font-smoothing: antialiased;
@@ -52,11 +80,29 @@ body {
 a { color: inherit; }
 .page { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
 
+/* ---- Nav with frosted glass ---- */
 .nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 28px 0;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: rgba(251, 250, 247, 0.82);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  margin: 0 auto;
+}
+/* Gradient border-bottom on nav */
+header.nav::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: -20px;
+  right: -20px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--line) 30%, var(--line) 70%, transparent);
 }
 
 .brand {
@@ -77,8 +123,37 @@ a { color: inherit; }
 }
 
 .links { display: flex; align-items: center; gap: 22px; }
-.links a { color: var(--muted); font-size: 0.94rem; text-decoration: none; }
+.links a { color: var(--muted); font-size: 0.94rem; text-decoration: none; transition: color 0.2s ease; }
 .links a:hover { color: var(--ink); }
+
+/* ---- Fade-in-up on sections ---- */
+.hero > * {
+  opacity: 0;
+  transform: translateY(24px);
+  animation: fadeUp 0.7s ease forwards;
+}
+.hero > *:nth-child(1) { animation-delay: 0s; }
+.hero > *:nth-child(2) { animation-delay: 0.15s; }
+
+section:not(.hero):not(.download) > .section-head,
+section:not(.hero):not(.download) > .grid,
+section:not(.hero):not(.download) > .privacy-panel,
+section:not(.hero):not(.download) > .steps {
+  opacity: 0;
+  transform: translateY(24px);
+  animation: fadeUp 0.7s ease forwards;
+}
+section:not(.hero):not(.download) > .section-head { animation-delay: 0.05s; }
+section:not(.hero):not(.download) > .grid,
+section:not(.hero):not(.download) > .privacy-panel,
+section:not(.hero):not(.download) > .steps { animation-delay: 0.2s; }
+
+.download {
+  opacity: 0;
+  transform: translateY(24px);
+  animation: fadeUp 0.7s ease forwards;
+  animation-delay: 0.1s;
+}
 
 .hero {
   display: grid;
@@ -113,6 +188,7 @@ h1 {
   line-height: 0.94;
   letter-spacing: -0.075em;
   font-weight: 760;
+  text-shadow: 0 2px 30px rgba(0,106,167,0.08);
 }
 
 .lead {
@@ -134,9 +210,10 @@ h1 {
   border: 1px solid var(--line);
   text-decoration: none;
   font-weight: 700;
+  transition: all 0.25s ease;
 }
 .btn.primary { background: var(--ink); border-color: var(--ink); color: white; }
-.btn.primary:hover { background: #000; }
+.btn.primary:hover { background: #000; box-shadow: 0 4px 14px rgba(0,0,0,0.15); }
 .btn.secondary { background: transparent; color: var(--ink); }
 .btn.secondary:hover { border-color: var(--ink); }
 
@@ -150,6 +227,11 @@ h1 {
   background: var(--panel);
   box-shadow: var(--shadow);
   overflow: hidden;
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+.product-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 24px 60px rgba(17, 24, 39, 0.13);
 }
 
 .card-head {
@@ -177,13 +259,14 @@ h1 {
   font-weight: 700;
 }
 
+/* ---- Animated equalizer bars ---- */
 .levels { height: 20px; display: inline-flex; align-items: end; gap: 3px; }
 .levels span { width: 4px; border-radius: 999px; background: #5aa7d6; }
-.levels span:nth-child(1) { height: 6px; }
-.levels span:nth-child(2) { height: 15px; }
-.levels span:nth-child(3) { height: 10px; }
-.levels span:nth-child(4) { height: 18px; }
-.levels span:nth-child(5) { height: 8px; }
+.levels span:nth-child(1) { height: 6px;  animation: barPulse1 0.6s ease-in-out infinite; }
+.levels span:nth-child(2) { height: 15px; animation: barPulse2 0.8s ease-in-out infinite; }
+.levels span:nth-child(3) { height: 10px; animation: barPulse3 0.5s ease-in-out infinite; }
+.levels span:nth-child(4) { height: 18px; animation: barPulse4 0.9s ease-in-out infinite; }
+.levels span:nth-child(5) { height: 8px;  animation: barPulse5 0.7s ease-in-out infinite; }
 
 .result {
   margin-top: 36px;
@@ -201,7 +284,16 @@ h1 {
   gap: 10px;
   margin-top: 20px;
 }
-.meta { padding: 13px; border-radius: 14px; border: 1px solid var(--line); }
+.meta {
+  padding: 13px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  transition: all 0.25s ease;
+}
+.meta:hover {
+  border-color: var(--accent);
+  box-shadow: 0 4px 12px rgba(0,106,167,0.08);
+}
 .meta b { display: block; font-size: 1.1rem; }
 .meta span { color: var(--muted); font-size: 0.82rem; }
 
@@ -218,7 +310,25 @@ h2 { margin: 10px 0 0; font-size: clamp(2.1rem, 4vw, 3.7rem); line-height: 1; le
   border: 1px solid var(--line);
   border-radius: 22px;
   background: rgba(255,255,255,0.62);
+  transition: all 0.25s ease;
 }
+.feature:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(17, 24, 39, 0.10);
+  border-color: rgba(0,106,167,0.18);
+}
+/* ---- Feature icon container ---- */
+.feature .icon-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(0,106,167,0.08);
+  color: var(--accent);
+}
+.feature .icon-wrap svg { display: block; }
 .feature .num { color: var(--accent); font: 800 0.78rem/1 var(--mono); }
 .feature h3 { margin: 34px 0 10px; font-size: 1.18rem; letter-spacing: -0.025em; }
 .feature p { margin: 0; color: var(--muted); line-height: 1.62; }
@@ -228,7 +338,17 @@ h2 { margin: 10px 0 0; font-size: clamp(2.1rem, 4vw, 3.7rem); line-height: 1; le
   grid-template-columns: minmax(0, 1fr) minmax(320px, .85fr);
   gap: 14px;
 }
-.panel { padding: 24px; border: 1px solid var(--line); border-radius: 24px; background: var(--panel); }
+.panel {
+  padding: 24px;
+  border: 1px solid var(--line);
+  border-radius: 24px;
+  background: var(--panel);
+  transition: all 0.25s ease;
+}
+.panel:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.07);
+}
 .panel h3 { margin: 0 0 10px; font-size: 1.35rem; }
 .panel p { margin: 0; color: var(--muted); line-height: 1.7; }
 .log {
@@ -242,7 +362,18 @@ h2 { margin: 10px 0 0; font-size: clamp(2.1rem, 4vw, 3.7rem); line-height: 1; le
 .log .warn { color: #fde68a; }
 
 .steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
-.step { padding: 22px; border: 1px solid var(--line); border-radius: 22px; background: rgba(255,255,255,0.62); }
+.step {
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: rgba(255,255,255,0.62);
+  transition: all 0.25s ease;
+}
+.step:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 32px rgba(17, 24, 39, 0.10);
+  border-color: rgba(0,106,167,0.18);
+}
 .step b { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: var(--ink); color: white; font-family: var(--mono); }
 .step h3 { margin: 18px 0 8px; }
 .step p { margin: 0; color: var(--muted); line-height: 1.6; }
@@ -255,12 +386,13 @@ h2 { margin: 10px 0 0; font-size: clamp(2.1rem, 4vw, 3.7rem); line-height: 1; le
   gap: 20px;
   align-items: center;
   border-radius: 26px;
-  background: var(--ink);
+  background: linear-gradient(135deg, #111827 0%, #1e293b 100%);
   color: white;
 }
 .download h2 { color: white; margin: 0 0 8px; }
 .download p { margin: 0; color: #cbd5e1; line-height: 1.6; }
 .download .btn { color: var(--ink); background: white; }
+.download .btn:hover { box-shadow: 0 4px 14px rgba(0,0,0,0.2); transform: translateY(-1px); }
 .download small { display: block; margin-top: 8px; color: #94a3b8; }
 
 footer { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 30px 0 44px; color: var(--muted); border-top: 1px solid var(--line); }
@@ -324,14 +456,14 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
           <p class="section-copy">Appen är liten nog att leva i systemfacket men robust nog för mail, editorer, webbläsare, terminaler och interna verktyg.</p>
         </div>
         <div class="grid">
-          <article class="feature"><span class="num">01</span><h3>KBLab Whisper</h3><p>Svenska Whisper-modeller från Kungliga biblioteket, med CUDA-stöd för snabbare lokal transkribering.</p></article>
-          <article class="feature"><span class="num">02</span><h3>Tydlig indikator</h3><p>Lyssnarrutan kan följa muspekaren över flera skärmar eller ligga fast på huvudskärmen.</p></article>
-          <article class="feature"><span class="num">03</span><h3>CLI-vänlig clipboard</h3><p>Texten stannar i urklipp även om automatisk paste inte fungerar i en terminal.</p></article>
-          <article class="feature"><span class="num">04</span><h3>Personlig ordlista</h3><p>Rätta vanliga felhörningar, namn och facktermer en gång och återanvänd lokalt.</p></article>
-          <article class="feature"><span class="num">05</span><h3>Valfri LLM</h3><p>Eftergranska text via GitHub Models och se direkt om den är lokal, LLM-granskad eller LLM-polerad.</p></article>
-          <article class="feature"><span class="num">06</span><h3>Egen identitet</h3><p>Ny ikon, favicon och social preview som hör till den svenska forken, inte originalprojektet.</p></article>
-          <article class="feature"><span class="num">07</span><h3>Remote-transkribering</h3><p>Valfri molnbaserad transkribering via staik.se eller Berget AI med KB-Whisper Large — bättre svenska utan lokal GPU.</p></article>
-          <article class="feature"><span class="num">08</span><h3>Auto-lärning</h3><p>Appen lär sig från LLM-korrigeringar och befordrar frekventa rättningar till den lokala ordlistan automatiskt.</p></article>
+          <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></span><h3>KBLab Whisper</h3><p>Svenska Whisper-modeller från Kungliga biblioteket, med CUDA-stöd för snabbare lokal transkribering.</p></article>
+          <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span><h3>Tydlig indikator</h3><p>Lyssnarrutan kan följa muspekaren över flera skärmar eller ligga fast på huvudskärmen.</p></article>
+          <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg></span><h3>CLI-vänlig clipboard</h3><p>Texten stannar i urklipp även om automatisk paste inte fungerar i en terminal.</p></article>
+          <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span><h3>Personlig ordlista</h3><p>Rätta vanliga felhörningar, namn och facktermer en gång och återanvänd lokalt.</p></article>
+          <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.09 6.26L20.18 9l-5 4.09L16.64 20 12 16.52 7.36 20l1.46-6.91-5-4.09 6.09-.74z"/></svg></span><h3>Valfri LLM</h3><p>Eftergranska text via GitHub Models och se direkt om den är lokal, LLM-granskad eller LLM-polerad.</p></article>
+          <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="13.5" cy="6.5" r="2.5"/><circle cx="19" cy="17" r="2"/><circle cx="6" cy="12" r="3"/><path d="M9 12h4.5l3 5"/><path d="M13.5 9v3"/></svg></span><h3>Egen identitet</h3><p>Ny ikon, favicon och social preview som hör till den svenska forken, inte originalprojektet.</p></article>
+          <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></span><h3>Remote-transkribering</h3><p>Valfri molnbaserad transkribering via staik.se eller Berget AI med KB-Whisper Large — bättre svenska utan lokal GPU.</p></article>
+          <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/><circle cx="12" cy="5" r="1" fill="currentColor" stroke="none"/></svg></span><h3>Auto-lärning</h3><p>Appen lär sig från LLM-korrigeringar och befordrar frekventa rättningar till den lokala ordlistan automatiskt.</p></article>
         </div>
       </section>
 
@@ -365,7 +497,7 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
     </main>
 
     <footer>
-      <span>freewispr-swedish - svensk fork av <a href="https://github.com/x26prakhar/freewispr">freewispr</a></span>
+      <span>&copy; 2025&ndash;2026 freewispr-swedish &mdash; svensk fork av <a href="https://github.com/x26prakhar/freewispr">freewispr</a></span>
       <span><a href="https://github.com/hhammarstrand/freewispr-swedish">GitHub</a> · <a href="https://github.com/hhammarstrand/freewispr-swedish/blob/master/LICENSE">MIT License</a> · <a href="https://huggingface.co/KBLab">KBLab</a></span>
     </footer>
   </div>
