@@ -309,12 +309,13 @@ class Transcriber:
     def __init__(self, model_size: str = "small", language: str = "sv",
                  use_cuda: bool = True,
                  llm_enabled: bool = False, llm_api_key: str = "",
-                 llm_model: str = "gpt-4.1-nano"):
+                 llm_model: str = "openai/gpt-4.1-nano"):
         MODEL_DIR.mkdir(parents=True, exist_ok=True)
         self.language = language
         self.llm_enabled = llm_enabled
         self.llm_api_key = llm_api_key
         self.llm_model = llm_model
+        self.on_stage = None
         
         # Get the KBLab model name
         model_name = KBLAB_MODELS.get(model_size, model_size)
@@ -353,8 +354,10 @@ class Transcriber:
             local_files_only=True,  # belt-and-braces: never hit the network
         )
         log.info("Whisper '%s' (%s) laddad OK [%s, %s]", model_size, model_name, device, compute_type)
-        if self.llm_enabled and self.llm_api_key:
+        if self.llm_enabled:
             log.info("LLM-granskning aktiverad: %s", self.llm_model)
+
+        self.last_polish_state = "local"
 
         # Warm up CTranslate2 kernels / CUDA workspaces on a background thread.
         # faster-whisper allocates these lazily on the first real transcribe()
@@ -418,6 +421,7 @@ class Transcriber:
             log.debug("Kunde inte frigora modell rent: %s", e)
 
     def transcribe(self, audio: np.ndarray) -> str:
+        self.last_polish_state = "local"
         log.info("Transkriberar: %d samples, peak=%.4f, modell=%s, lang=%s",
                  len(audio), float(np.max(np.abs(audio))) if audio.size else 0.0,
                  self.model_size, self.language)
@@ -474,16 +478,26 @@ class Transcriber:
         log.info("Resultat (lokal) klart (%s)", _text_meta(text))
 
         # LLM polishing — optional, never blocks on failure
-        if self.llm_enabled and self.llm_api_key and text:
+        if self.llm_enabled and text:
             from llm_polish import polish
             from auto_learn import record_correction
 
+            self.last_polish_state = "llm_reviewing"
+            on_stage = getattr(self, "on_stage", None)
+            if on_stage is not None:
+                try:
+                    on_stage("llm_reviewing")
+                except Exception:
+                    pass
             result = polish(text, self.llm_api_key, self.llm_model)
             if result.changed:
                 # Feed the before/after to auto-learning
                 record_correction(text, result.text)
                 text = result.text
+                self.last_polish_state = "llm_changed"
                 log.info("Resultat (LLM) klart (%dms, %s)",
                          result.latency_ms, _text_meta(text))
+            else:
+                self.last_polish_state = "llm_unchanged"
 
         return text

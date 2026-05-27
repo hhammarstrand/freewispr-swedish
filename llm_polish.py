@@ -1,8 +1,7 @@
 """
 LLM text polishing — post-process Whisper output via GitHub Models API.
 
-Uses the OpenAI-compatible chat completions endpoint at
-https://models.inference.ai.azure.com with a GitHub token.
+Uses the GitHub Models REST chat completions endpoint with a GitHub token.
 
 The LLM fixes transcription artefacts (wrong words, grammar, punctuation)
 WITHOUT changing factual content, names, numbers, or meaning.
@@ -17,17 +16,32 @@ from typing import NamedTuple
 
 log = logging.getLogger("freewispr")
 
-API_URL = "https://models.inference.ai.azure.com/chat/completions"
+API_URL = "https://models.github.ai/inference/chat/completions"
+API_VERSION = "2026-03-10"
 
-# Models available via GitHub Models (tested and working)
+# Models available via GitHub Models REST API (tested with current auth).
 AVAILABLE_MODELS = {
-    "gpt-4.1-nano":  "GPT-4.1 Nano — snabbast (~1s)",
-    "gpt-4.1-mini":  "GPT-4.1 Mini — bra balans (~1.3s)",
-    "gpt-4o":        "GPT-4o — hogst kvalitet (~1.6s)",
-    "gpt-4o-mini":   "GPT-4o Mini — aldre, snabb (~1.5s)",
+    "openai/gpt-4.1-nano": "GPT-4.1 Nano — snabbast (~1s)",
+    "openai/gpt-4.1-mini": "GPT-4.1 Mini — bra balans (~1.3s)",
+    "openai/gpt-4.1":      "GPT-4.1 — högre kvalitet",
+    "openai/gpt-4o-mini":  "GPT-4o Mini — snabb",
+    "openai/gpt-4o":       "GPT-4o — hög kvalitet",
 }
 
-DEFAULT_MODEL = "gpt-4.1-nano"
+DEFAULT_MODEL = "openai/gpt-4.1-nano"
+
+_MODEL_ALIASES = {
+    "gpt-4.1-nano": "openai/gpt-4.1-nano",
+    "gpt-4.1-mini": "openai/gpt-4.1-mini",
+    "gpt-4.1": "openai/gpt-4.1",
+    "gpt-4o-mini": "openai/gpt-4o-mini",
+    "gpt-4o": "openai/gpt-4o",
+}
+
+
+def normalize_model(model: str = DEFAULT_MODEL) -> str:
+    model = (model or DEFAULT_MODEL).strip()
+    return _MODEL_ALIASES.get(model, model)
 
 
 def resolve_api_key(api_key: str = "") -> str:
@@ -85,6 +99,7 @@ class PolishResult(NamedTuple):
 def _call_api(api_key: str, model: str, user_text: str,
               timeout_sec: float = 8.0) -> dict:
     """Make a raw API call. Returns the parsed JSON response."""
+    model = normalize_model(model)
     payload = json.dumps({
         "model": model,
         "messages": [
@@ -100,7 +115,9 @@ def _call_api(api_key: str, model: str, user_text: str,
         data=payload,
         headers={
             "Authorization": f"Bearer {api_key}",
+            "Accept": "application/vnd.github+json",
             "Content-Type": "application/json",
+            "X-GitHub-Api-Version": API_VERSION,
         },
         method="POST",
     )

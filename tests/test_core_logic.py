@@ -523,39 +523,32 @@ def test_paste_text_serializes_clipboard_workers(monkeypatch):
     events = []
     clipboard = {"value": "orig"}
 
-    def fake_paste():
-        events.append("read")
-        return clipboard["value"]
-
     def fake_copy(value):
         events.append(("copy", value))
         clipboard["value"] = value
 
-    monkeypatch.setattr(paste.pyperclip, "paste", fake_paste)
     monkeypatch.setattr(paste.pyperclip, "copy", fake_copy)
     monkeypatch.setattr(paste.keyboard, "send", lambda key: events.append(("send", key)))
     monkeypatch.setattr(paste, "_release_modifiers", lambda mods=(): None)
-    monkeypatch.setattr(paste.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(paste.threading.Thread, "start", lambda self: self._target(*self._args, **self._kwargs))
 
     paste.paste_text("first")
     paste.paste_text("second")
 
     assert events == [
-        "read", ("copy", "first "), ("send", "ctrl+v"), ("copy", "orig"),
-        "read", ("copy", "second "), ("send", "ctrl+v"), ("copy", "orig"),
+        ("copy", "first "), ("send", "ctrl+v"),
+        ("copy", "second "), ("send", "ctrl+v"),
     ]
+    assert clipboard["value"] == "second "
 
 
 def test_paste_text_uses_shift_insert_for_console_windows(monkeypatch):
     paste = importlib.reload(importlib.import_module("paste"))
     sent = []
     monkeypatch.setattr(paste, "_active_window_class", lambda: "ConsoleWindowClass")
-    monkeypatch.setattr(paste.pyperclip, "paste", lambda: "orig")
     monkeypatch.setattr(paste.pyperclip, "copy", lambda value: None)
     monkeypatch.setattr(paste.keyboard, "send", lambda key: sent.append(key))
     monkeypatch.setattr(paste, "_release_modifiers", lambda mods=(): None)
-    monkeypatch.setattr(paste.time, "sleep", lambda seconds: None)
     monkeypatch.setattr(paste.threading.Thread, "start", lambda self: self._target(*self._args, **self._kwargs))
 
     paste.paste_text("hej")
@@ -643,3 +636,32 @@ def test_transcriber_close_waits_for_inflight_transcribe(fake_transcriber_deps):
     assert close_done.is_set()
     assert inst.model is None
     assert original_model.in_transcribe is False
+
+
+def test_transcriber_runs_llm_when_enabled_without_saved_api_key(monkeypatch, fake_transcriber_deps):
+    import numpy as np
+    transcriber = importlib.reload(importlib.import_module("transcriber"))
+
+    class FakeModel:
+        def transcribe(self, *args, **kwargs):
+            return iter([SimpleNamespace(text="hej")]), SimpleNamespace()
+
+    inst = object.__new__(transcriber.Transcriber)
+    inst.model_size = "small"
+    inst.language = "sv"
+    inst.llm_enabled = True
+    inst.llm_api_key = ""
+    inst.llm_model = "gpt-4.1-nano"
+    inst.model = FakeModel()
+    inst._model_lock = __import__("threading").RLock()
+
+    fake_llm = SimpleNamespace(
+        polish=lambda text, key, model: SimpleNamespace(
+            text="hej!", changed=True, latency_ms=1
+        )
+    )
+    fake_auto = SimpleNamespace(record_correction=lambda before, after: None)
+    monkeypatch.setitem(sys.modules, "llm_polish", fake_llm)
+    monkeypatch.setitem(sys.modules, "auto_learn", fake_auto)
+
+    assert inst.transcribe(np.ones(16000, dtype=np.float32)) == "hej!"

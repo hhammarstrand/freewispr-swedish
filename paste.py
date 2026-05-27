@@ -1,4 +1,3 @@
-import time
 import logging
 import threading
 import ctypes
@@ -10,9 +9,6 @@ from modifiers import CANONICAL_MODIFIERS, normalize_all
 
 log = logging.getLogger("freewispr")
 
-_RESTORE_ATTEMPTS = 3
-_RESTORE_DELAY_SEC = 0.05
-_RESTORE_GRACE_SEC = 0.15
 _PASTE_LOCK = threading.Lock()
 
 
@@ -55,22 +51,15 @@ def _release_modifiers(active_modifiers: tuple[str, ...] = ()):
             pass
 
 
-def _paste_and_restore(text: str):
-    """Save old clipboard, paste new text, restore old.
+def _paste_and_keep_clipboard(text: str):
+    """Copy dictated text to clipboard and try to paste it.
 
-    Moves the slow ``pyperclip.paste()`` Win32 clipboard read off the hot
-    keyboard-hook thread. On a contended clipboard this read can stall for
-    hundreds of milliseconds (Office, password managers, etc. holding the
-    clipboard open). The paste itself still happens in the worker, but it
-    runs the instant the worker starts — no measurable user-visible delay.
+    The dictated text intentionally stays in the clipboard. This makes CLI
+    workflows reliable even when synthetic Ctrl+V/Shift+Insert is ignored by
+    the terminal: the user can paste manually and still gets the right text.
     """
 
     with _PASTE_LOCK:
-        try:
-            old = pyperclip.paste()
-        except Exception:
-            old = ""
-
         try:
             # Copy dictated text (trailing space for natural continuation)
             pyperclip.copy(text + " ")
@@ -80,22 +69,9 @@ def _paste_and_restore(text: str):
             log.warning("Kunde inte skicka Ctrl+V: %s", e)
             return
 
-        # Grace period so the target app finishes its paste before we
-        # overwrite the clipboard.
-        time.sleep(_RESTORE_GRACE_SEC)
-        for attempt in range(1, _RESTORE_ATTEMPTS + 1):
-            try:
-                pyperclip.copy(old)
-                return
-            except Exception as e:
-                if attempt == _RESTORE_ATTEMPTS:
-                    log.warning("Kunde inte aterstalla urklipp efter paste: %s", e)
-                    return
-                time.sleep(_RESTORE_DELAY_SEC)
 
-
-def _paste_and_restore_async(text: str):
-    threading.Thread(target=_paste_and_restore, args=(text,), daemon=True).start()
+def _paste_and_keep_clipboard_async(text: str):
+    threading.Thread(target=_paste_and_keep_clipboard, args=(text,), daemon=True).start()
 
 def paste_text(text: str, active_modifiers: tuple[str, ...] = ()):
     """Paste text at the current cursor position.
@@ -103,11 +79,9 @@ def paste_text(text: str, active_modifiers: tuple[str, ...] = ()):
     Steps:
       1. Release modifier keys that are actually held (only those from the
          dictation hotkey, to avoid triggering Start menu when releasing Win)
-      2. Spawn a serialized async worker so queued dictations can't overlap:
-         a) Saves current clipboard content (slow on contended systems)
-         b) Copies dictated text to clipboard
-         c) Sends Ctrl+V
-         d) Restores original clipboard
+      2. Spawn a serialized async worker that copies dictated text to the
+         clipboard and sends the best paste shortcut for the active window.
+         The text stays in clipboard as a fallback for CLI terminals.
     """
     text = text.strip()
     if not text:
@@ -115,4 +89,4 @@ def paste_text(text: str, active_modifiers: tuple[str, ...] = ()):
 
     # Release modifiers synchronously — must happen before Ctrl+V is sent.
     _release_modifiers(active_modifiers)
-    _paste_and_restore_async(text)
+    _paste_and_keep_clipboard_async(text)

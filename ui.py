@@ -11,6 +11,7 @@ import math
 import random
 import threading
 import time as time_module
+import ctypes
 
 import snippets as snippet_module
 import corrections as corr_module
@@ -23,9 +24,29 @@ import config as cfg_module
 
 
 def _llm():
-    """Lazy import shim — returns (AVAILABLE_MODELS, DEFAULT_MODEL, test_connection)."""
-    from llm_polish import AVAILABLE_MODELS, DEFAULT_MODEL, test_connection
-    return AVAILABLE_MODELS, DEFAULT_MODEL, test_connection
+    """Lazy import shim for LLM settings helpers."""
+    from llm_polish import AVAILABLE_MODELS, DEFAULT_MODEL, normalize_model, test_connection
+    return AVAILABLE_MODELS, DEFAULT_MODEL, normalize_model, test_connection
+
+
+def _virtual_screen_bounds(root) -> tuple[int, int, int, int]:
+    """Return (left, top, right, bottom) for the whole desktop.
+
+    Tk's ``winfo_screenwidth`` usually reports only the primary monitor on
+    Windows. Multi-monitor desktops can have negative X/Y coordinates, so the
+    floating indicator must clamp to the virtual screen instead.
+    """
+    try:
+        user32 = ctypes.windll.user32
+        left = int(user32.GetSystemMetrics(76))   # SM_XVIRTUALSCREEN
+        top = int(user32.GetSystemMetrics(77))    # SM_YVIRTUALSCREEN
+        width = int(user32.GetSystemMetrics(78))  # SM_CXVIRTUALSCREEN
+        height = int(user32.GetSystemMetrics(79)) # SM_CYVIRTUALSCREEN
+        if width > 0 and height > 0:
+            return left, top, left + width, top + height
+    except Exception:
+        pass
+    return 0, 0, int(root.winfo_screenwidth()), int(root.winfo_screenheight())
 
 
 BG = "#0f0f0f"
@@ -113,9 +134,14 @@ class FloatingIndicator:
     _BAR_MIN = 3.0
     _BAR_MAX = 18.0
     _CANVAS_H = 22
+    _FOLLOW_MS = 16  # ~60 FPS cursor follow; cheap because unchanged geometry is skipped
+    _CURSOR_OFFSET_X = 18
+    _CURSOR_OFFSET_Y = 18
+    _SCREEN_MARGIN = 8
 
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: tk.Tk, follow_mouse: bool = True):
         self._root = root
+        self._follow_mouse = bool(follow_mouse)
         self._win: tk.Toplevel | None = None
         self._label: tk.Label | None = None
         self._canvas: tk.Canvas | None = None
@@ -124,6 +150,9 @@ class FloatingIndicator:
         self._level_source = None  # callable -> float (mic RMS) [legacy pull]
         self._anim_job = None
         self._hide_job = None
+        self._follow_job = None
+        self._last_geometry: str | None = None
+        self._screen_bounds: tuple[int, int, int, int] | None = None
         self._state: str = "listen"
         self._phase: int = 0
         # Push-driven listen state — audio callback writes _pushed_level and
@@ -139,6 +168,15 @@ class FloatingIndicator:
         return self._NUM_BARS * self._BAR_W + (self._NUM_BARS - 1) * self._BAR_GAP
 
     # -- public API --------------------------------------------------------- #
+
+    def set_follow_mouse(self, enabled: bool):
+        self._follow_mouse = bool(enabled)
+        if not self._follow_mouse and self._follow_job:
+            self._root.after_cancel(self._follow_job)
+            self._follow_job = None
+        if self._win is not None:
+            self._win.update_idletasks()
+            self._position_indicator()
 
     def show(self, message: str, state: str = "listen", level_source=None):
         """Show the indicator. *level_source* is an optional callable returning
@@ -214,13 +252,16 @@ class FloatingIndicator:
             self._label.pack(side="left")
 
             self._win.update_idletasks()
-            sw = self._win.winfo_screenwidth()
-            w = self._win.winfo_reqwidth()
-            self._win.geometry(f"+{(sw - w) // 2}+18")
+            self._position_indicator()
         else:
             if self._label:
                 self._label.configure(text=message)
             self._recolor_bars(color)
+            self._win.update_idletasks()
+            self._position_indicator()
+
+        if self._follow_mouse and self._follow_job is None:
+            self._follow_cursor()
 
         # Cancel any previous animation
         if self._anim_job:
@@ -260,6 +301,64 @@ class FloatingIndicator:
                 self._canvas.coords(
                     self._bars[i], x, y_top, x + self._BAR_W, self._CANVAS_H,
                 )
+
+    def _position_indicator(self):
+        if self._follow_mouse:
+            self._position_near_cursor()
+        else:
+            self._position_fixed_primary()
+
+    def _position_fixed_primary(self):
+        if self._win is None:
+            return
+        try:
+            w = self._win.winfo_reqwidth()
+            sw = self._root.winfo_screenwidth()
+            geometry = f"+{max(self._SCREEN_MARGIN, (sw - w) // 2)}+18"
+            if geometry != self._last_geometry:
+                self._win.geometry(geometry)
+                self._last_geometry = geometry
+        except Exception:
+            pass
+
+    def _position_near_cursor(self):
+        """Place the pill beside the cursor, clamped to the visible screen."""
+        if self._win is None:
+            return
+        try:
+            px = self._root.winfo_pointerx()
+            py = self._root.winfo_pointery()
+            w = self._win.winfo_reqwidth()
+            h = self._win.winfo_reqheight()
+            if self._screen_bounds is None:
+                self._screen_bounds = _virtual_screen_bounds(self._root)
+            left, top, right, bottom = self._screen_bounds
+            x = px + self._CURSOR_OFFSET_X
+            y = py + self._CURSOR_OFFSET_Y
+            if x + w + self._SCREEN_MARGIN > right:
+                x = px - w - self._CURSOR_OFFSET_X
+            if y + h + self._SCREEN_MARGIN > bottom:
+                y = py - h - self._CURSOR_OFFSET_Y
+            x = max(left + self._SCREEN_MARGIN,
+                    min(x, right - w - self._SCREEN_MARGIN))
+            y = max(top + self._SCREEN_MARGIN,
+                    min(y, bottom - h - self._SCREEN_MARGIN))
+            geometry = f"+{int(x)}+{int(y)}"
+            if geometry != self._last_geometry:
+                self._win.geometry(geometry)
+                self._last_geometry = geometry
+        except Exception:
+            pass
+
+    def _follow_cursor(self):
+        if self._win is None:
+            self._follow_job = None
+            return
+        if not self._follow_mouse:
+            self._follow_job = None
+            return
+        self._position_near_cursor()
+        self._follow_job = self._root.after(self._FOLLOW_MS, self._follow_cursor)
 
     # -- animation loop ----------------------------------------------------- #
 
@@ -327,7 +426,12 @@ class FloatingIndicator:
         if self._anim_job:
             self._root.after_cancel(self._anim_job)
             self._anim_job = None
+        if self._follow_job:
+            self._root.after_cancel(self._follow_job)
+            self._follow_job = None
         self._level_source = None
+        self._last_geometry = None
+        self._screen_bounds = None
         if self._win:
             self._win.destroy()
             self._win = None
@@ -799,6 +903,18 @@ class SettingsWindow:
         hk = _HotkeyCapture(card, self._hotkey_var)
         hk.pack(fill="x", pady=(8, 0))
 
+        # -- Card: Lyssnarindikator ---------------------------------------- #
+        card = self._card(outer)
+        self._section_label(card, "Lyssnarindikator")
+        self._indicator_follow_var = tk.BooleanVar(
+            value=self.cfg.get("indicator_follow_mouse", True)
+        )
+        self._toggle(card, "Följ muspekaren", self._indicator_follow_var)
+        self._hint(
+            card,
+            "Av = fast position överst på huvudskärmen.",
+        )
+
         # -- Card: Mikrofon ------------------------------------------------- #
         card = self._card(outer)
         self._section_label(card, "Mikrofon")
@@ -870,8 +986,8 @@ class SettingsWindow:
         llm_model_row.pack(fill="x", pady=(8, 0))
         tk.Label(llm_model_row, text="Modell:", bg=BG2, fg=FG2,
                  font=("Segoe UI", 9)).pack(side="left")
-        llm_models, llm_default, _ = _llm()
-        saved_llm = self.cfg.get("llm_model", llm_default)
+        llm_models, llm_default, normalize_model, _ = _llm()
+        saved_llm = normalize_model(self.cfg.get("llm_model", llm_default))
         self._llm_model_var = tk.StringVar(value=saved_llm)
         llm_combo = ttk.Combobox(llm_model_row, textvariable=self._llm_model_var,
                                  values=list(llm_models.keys()),
@@ -969,7 +1085,7 @@ class SettingsWindow:
 
     def _on_llm_model_change(self, _=None):
         model = self._llm_model_var.get()
-        llm_models, _default, _test = _llm()
+        llm_models, _default, _normalize, _test = _llm()
         desc = llm_models.get(model, "")
         self._llm_model_desc.configure(text=desc)
 
@@ -991,7 +1107,7 @@ class SettingsWindow:
         self._test_result.configure(text="Ansluter med sparad nyckel, env eller gh auth...", fg=FG2)
 
         def _run():
-            _models, _default, test_conn = _llm()
+            _models, _default, _normalize, test_conn = _llm()
             ok, msg = test_conn(key, model)
             self.root.after(0, lambda: self._show_test_result(ok, msg))
 
@@ -1057,6 +1173,7 @@ class SettingsWindow:
         new_cfg["llm_privacy_accepted"] = bool(
             llm_enabled and (llm_privacy_accepted or needs_llm_consent)
         )
+        new_cfg["indicator_follow_mouse"] = self._indicator_follow_var.get()
         # Clean out removed keys from old configs
         new_cfg.pop("filter_fillers", None)
         new_cfg.pop("auto_punctuate", None)

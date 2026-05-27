@@ -19,8 +19,9 @@ DEFAULTS = {
     "mic_device": None,       # None = auto-detect, or device name string
     "llm_enabled": False,     # LLM post-processing of transcribed text
     "llm_api_key": "",        # Runtime only; saved in Windows Credential Manager when available
-    "llm_model": "gpt-4.1-nano",  # Which LLM model to use
+    "llm_model": "openai/gpt-4.1-nano",  # Which LLM model to use
     "llm_privacy_accepted": False,
+    "indicator_follow_mouse": True,
     # Lägsta RMS-nivå (0.0-1.0) som räknas som tal. Se DEFAULT_MIN_RMS i dictation.py.
     "min_rms": 0.003,
 }

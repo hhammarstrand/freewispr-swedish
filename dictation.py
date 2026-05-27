@@ -85,6 +85,14 @@ class DictationMode:
         # an unheld Win key opens the Start menu on Windows).
         self._modifier_keys: tuple[str, ...] = self._modifiers
 
+    def _finish_message(self) -> str:
+        state = getattr(self.transcriber, "last_polish_state", "local")
+        if state == "llm_changed":
+            return "Klistrad (LLM-polerad)"
+        if state == "llm_unchanged":
+            return "Klistrad (LLM-granskad)"
+        return "Klistrad (lokal)"
+
     # ------------------------------------------------------------------ public
 
     def start(self):
@@ -254,7 +262,21 @@ class DictationMode:
                 log.info("Hoppar över stale transkribering efter stopp")
                 return
             log.info("Transkriberar %d samples...", len(audio))
-            text = self.transcriber.transcribe(audio)
+            if getattr(self.transcriber, "llm_enabled", False):
+                self.on_status("Transkriberar lokalt...")
+                if self.indicator:
+                    self.indicator.show("Transkriberar lokalt...", state="transcribe")
+            old_stage = getattr(self.transcriber, "on_stage", None)
+            def _on_stage(stage: str):
+                if stage == "llm_reviewing":
+                    self.on_status("LLM-granskar...")
+                    if self.indicator:
+                        self.indicator.show("LLM-granskar...", state="transcribe")
+            try:
+                self.transcriber.on_stage = _on_stage
+                text = self.transcriber.transcribe(audio)
+            finally:
+                self.transcriber.on_stage = old_stage
             # Apply snippet expansion — if full text is a trigger, replace it
             text = snippet_module.expand(text)
             log.info("Resultat klart (%s)", _text_meta(text))
@@ -263,9 +285,10 @@ class DictationMode:
                     log.info("Hoppar över paste från stale transkribering")
                     return
                 paste_text(text, active_modifiers=self._modifier_keys)
-                self.on_status(f"Klistrad — håll {self.hotkey.upper()} igen")
+                message = self._finish_message()
+                self.on_status(f"{message} — håll {self.hotkey.upper()} igen")
                 if self.indicator:
-                    self.indicator.show("Klistrad", state="done")
+                    self.indicator.show(message, state="done")
                     self.indicator.hide(delay_ms=1800)
             else:
                 self.on_status(f"Inget hördes — håll {self.hotkey.upper()}")

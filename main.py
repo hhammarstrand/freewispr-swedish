@@ -98,7 +98,7 @@ def _make_transcriber(model_size: str, use_cuda: bool):
             and _config.get("llm_privacy_accepted", False)
         ),
         llm_api_key=_config.get("llm_api_key", ""),
-        llm_model=_config.get("llm_model", "gpt-4.1-nano"),
+        llm_model=_config.get("llm_model", "openai/gpt-4.1-nano"),
     )
 
 
@@ -163,6 +163,8 @@ def _load_app():
 
     model_size = _config.get("model_size", "small")
     _set_tray_status("Laddar modell...")
+    if _indicator:
+        _indicator.set_follow_mouse(_config.get("indicator_follow_mouse", True))
     try:
         _transcriber = _make_transcriber(model_size, _config.get("use_cuda", True))
     except Exception as e:
@@ -285,7 +287,7 @@ def _apply_settings_locked(new_cfg: dict):
             and _config.get("llm_privacy_accepted", False)
         )
         _transcriber.llm_api_key = _config.get("llm_api_key", "")
-        _transcriber.llm_model = _config.get("llm_model", "gpt-4.1-nano")
+        _transcriber.llm_model = _config.get("llm_model", "openai/gpt-4.1-nano")
         log.info("LLM-inställningar uppdaterade i befintlig transcriber")
         # Hotkey/mic may still have changed; rebuild dictation cheaply.
         _restart_dictation()
@@ -304,6 +306,8 @@ def _apply_settings_locked(new_cfg: dict):
         return True
 
     if model_changed:
+        if _indicator:
+            _indicator.set_follow_mouse(_config.get("indicator_follow_mouse", True))
         # Acquire before returning to the event loop so a second Save cannot
         # mutate _config in the gap before the background thread starts.
         if not _reload_lock.acquire(blocking=False):
@@ -378,6 +382,8 @@ def _apply_settings_locked(new_cfg: dict):
         return True
 
     # No model/LLM change — just hotkey/mic. Restart dictation cheaply.
+    if _indicator:
+        _indicator.set_follow_mouse(_config.get("indicator_follow_mouse", True))
     _restart_dictation()
     if not _persist():
         _rollback()
@@ -509,7 +515,7 @@ def main():
     _style(_tk_root)
 
     _status_var = tk.StringVar(value="Startar...")
-    _indicator = FloatingIndicator(_tk_root)
+    _indicator = FloatingIndicator(_tk_root, follow_mouse=True)
 
     # Build tray icon
     menu = _build_menu()
