@@ -3,857 +3,362 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>freewispr-swedish &mdash; Svensk speech-to-text for Windows</title>
-<meta name="description" content="freewispr-swedish ar en gratis, open-source dikteringsapp for Windows. Lokal svensk Whisper-transkribering med valfri LLM-granskning via GitHub Models.">
+<title>freewispr-swedish - svensk diktering for Windows</title>
+<meta name="description" content="freewispr-swedish ar en open-source dikteringsapp for Windows med lokal svensk Whisper-transkribering, smart clipboard-fallback och valfri LLM-granskning.">
 <meta name="robots" content="index,follow">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
-<meta property="og:title" content="freewispr-swedish &mdash; Svensk speech-to-text for Windows">
-<meta property="og:description" content="Gratis, open-source diktering for Windows. Lokal svensk Whisper-transkribering med valfri LLM-granskning via GitHub Models.">
+<meta property="og:title" content="freewispr-swedish - svensk diktering for Windows">
+<meta property="og:description" content="Lokal svensk Whisper-diktering for Windows. Valfri LLM-granskning via GitHub Models.">
 <meta property="og:image" content="https://hhammarstrand.github.io/freewispr-swedish/og-image.png">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:image" content="https://hhammarstrand.github.io/freewispr-swedish/og-image.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=DM+Sans:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
 :root {
-  --bg:      #0c0c0f;
-  --bg2:     #131318;
-  --border:  #1e1e26;
-  --acc:     #7c5cfc;
-  --acc-dim: #5a3fd4;
-  --acc-glow:rgba(124,92,252,0.3);
-  --fg:      rgba(232,232,240,0.92);
-  --fg2:     rgba(232,232,240,0.45);
-  --fg3:     rgba(232,232,240,0.2);
-  --serif:   'Cormorant Garamond', Georgia, serif;
-  --sans:    'DM Sans', system-ui, sans-serif;
-  --mono:    'JetBrains Mono', monospace;
+  --bg: #fbfaf7;
+  --panel: #ffffff;
+  --ink: #111827;
+  --muted: #5f6878;
+  --line: #e6e1d8;
+  --soft: #f2efe8;
+  --accent: #4f46e5;
+  --accent-dark: #3730a3;
+  --ok: #11845b;
+  --shadow: 0 18px 50px rgba(17, 24, 39, 0.08);
+  --sans: "Segoe UI", Inter, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --mono: "Cascadia Mono", "SFMono-Regular", Consolas, monospace;
 }
 
+* { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
-
 body {
-  font-family: var(--sans);
+  margin: 0;
   background: var(--bg);
-  color: var(--fg);
+  color: var(--ink);
+  font-family: var(--sans);
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
-  min-height: 100vh;
 }
 
-/* Floating quote canvas */
-#quote-canvas {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: 0;
-  overflow: hidden;
-}
+a { color: inherit; }
+.page { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
 
-.q {
-  position: absolute;
-  font-family: var(--serif);
-  font-style: italic;
-  font-size: clamp(0.75rem, 1.4vw, 1rem);
-  font-weight: 300;
-  color: var(--fg);
-  opacity: 0;
-  white-space: nowrap;
-  transition: opacity 0.6s ease;
-  user-select: none;
-  pointer-events: none;
-}
-
-/* Layout */
-.wrap {
-  position: relative;
-  z-index: 1;
-  max-width: 680px;
-  margin: 0 auto;
-  padding: 0 28px;
-}
-
-/* Header nav */
-header {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  z-index: 100;
-  padding: 20px 36px;
+.nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 28px 0;
 }
 
-.logo {
-  font-family: var(--mono);
-  font-size: 0.85rem;
-  font-weight: 500;
-  color: var(--fg);
-  text-decoration: none;
-  letter-spacing: 0.02em;
-}
-
-.logo em { color: var(--acc); font-style: normal; }
-
-.header-links {
-  display: flex;
-  gap: 28px;
-  list-style: none;
-}
-
-.header-links a {
-  font-size: 0.82rem;
-  font-weight: 400;
-  color: var(--fg2);
-  text-decoration: none;
-  transition: color 0.2s;
-}
-
-.header-links a:hover { color: var(--fg); }
-
-/* Hero */
-.hero {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 120px 28px 80px;
-  position: relative;
-  z-index: 1;
-}
-
-.hero::before {
-  content: '';
-  position: absolute;
-  top: 30%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 700px;
-  height: 500px;
-  background: radial-gradient(ellipse at center, rgba(124,92,252,0.08) 0%, transparent 65%);
-  pointer-events: none;
-}
-
-.app-icon {
-  width: 72px;
-  height: 72px;
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto 36px;
-  box-shadow: 0 0 0 1px rgba(124,92,252,0.15), 0 0 40px rgba(124,92,252,0.07);
-}
-
-.hero-title {
-  font-family: var(--serif);
-  font-size: clamp(3.5rem, 12vw, 6.5rem);
-  font-weight: 300;
-  letter-spacing: -0.02em;
-  line-height: 0.9;
-  color: var(--fg);
-  margin-bottom: 28px;
-}
-
-.hero-title span { color: var(--acc); font-style: italic; }
-
-.hero-sub {
-  font-size: 1.05rem;
-  font-weight: 300;
-  color: var(--fg2);
-  line-height: 1.6;
-  max-width: 460px;
-  margin: 0 auto 44px;
-}
-
-.hero-sub strong {
-  color: var(--fg);
-  font-weight: 400;
-}
-
-.dl-btn {
+.brand {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  background: var(--acc);
-  color: #fff;
-  font-family: var(--sans);
-  font-size: 0.95rem;
-  font-weight: 500;
-  padding: 13px 32px;
-  border-radius: 8px;
+  color: var(--ink);
   text-decoration: none;
-  letter-spacing: 0.01em;
-  transition: background 0.2s, box-shadow 0.25s, transform 0.15s;
-  box-shadow: 0 0 0 0 var(--acc-glow);
+  font-weight: 700;
+  letter-spacing: -0.03em;
 }
 
-.dl-btn:hover {
-  background: var(--acc-dim);
-  box-shadow: 0 0 30px 8px var(--acc-glow);
-  transform: translateY(-1px);
+.mark {
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--ink);
+  color: white;
+  display: grid;
+  place-items: center;
+  font: 700 14px/1 var(--mono);
 }
 
-.hero-badges {
-  display: flex;
+.links { display: flex; align-items: center; gap: 22px; }
+.links a { color: var(--muted); font-size: 0.94rem; text-decoration: none; }
+.links a:hover { color: var(--ink); }
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(340px, 0.85fr);
+  gap: 64px;
+  align-items: center;
+  padding: 92px 0 86px;
+}
+
+.kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ok);
+  font: 700 0.78rem/1 var(--mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.kicker::before {
+  content: "";
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: var(--ok);
+}
+
+h1 {
+  margin: 22px 0 22px;
+  max-width: 760px;
+  font-size: clamp(3.4rem, 7vw, 6.6rem);
+  line-height: 0.94;
+  letter-spacing: -0.075em;
+  font-weight: 760;
+}
+
+.lead {
+  max-width: 650px;
+  margin: 0;
+  color: var(--muted);
+  font-size: clamp(1.08rem, 1.7vw, 1.28rem);
+  line-height: 1.65;
+}
+
+.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+.btn {
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  margin-top: 28px;
-  flex-wrap: wrap;
+  min-height: 48px;
+  padding: 0 18px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  text-decoration: none;
+  font-weight: 700;
+}
+.btn.primary { background: var(--ink); border-color: var(--ink); color: white; }
+.btn.primary:hover { background: #000; }
+.btn.secondary { background: transparent; color: var(--ink); }
+.btn.secondary:hover { border-color: var(--ink); }
+
+.note { margin-top: 14px; color: var(--muted); font-size: 0.94rem; }
+
+.product-card {
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  overflow: hidden;
 }
 
-.hero-badges span {
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  color: var(--fg3);
-  letter-spacing: 0.08em;
+.card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font: 600 0.82rem/1 var(--mono);
 }
 
-.hero-badges .dot {
-  width: 2px; height: 2px;
-  border-radius: 50%;
-  background: var(--fg3);
-  flex-shrink: 0;
+.dots { display: flex; gap: 6px; }
+.dots i { width: 8px; height: 8px; display: block; border-radius: 999px; background: #d4d0c7; }
+
+.card-body { padding: 26px; }
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 15px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: white;
+  font-weight: 700;
 }
 
-/* Sections */
-section {
-  position: relative;
-  z-index: 1;
-  padding: 90px 0;
-}
+.levels { height: 20px; display: inline-flex; align-items: end; gap: 3px; }
+.levels span { width: 4px; border-radius: 999px; background: #9ca3ff; }
+.levels span:nth-child(1) { height: 6px; }
+.levels span:nth-child(2) { height: 15px; }
+.levels span:nth-child(3) { height: 10px; }
+.levels span:nth-child(4) { height: 18px; }
+.levels span:nth-child(5) { height: 8px; }
 
-.divider {
-  border: none;
-  border-top: 1px solid var(--border);
-  position: relative;
-  z-index: 1;
+.result {
+  margin-top: 36px;
+  padding: 20px;
+  border-radius: 18px;
+  background: var(--soft);
+  border: 1px solid var(--line);
 }
+.result small { display: block; color: var(--muted); font: 700 0.76rem/1 var(--mono); text-transform: uppercase; letter-spacing: 0.08em; }
+.result p { margin: 10px 0 0; line-height: 1.55; }
 
-.section-eyebrow {
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  color: var(--acc);
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  margin-bottom: 14px;
-}
-
-.section-title {
-  font-family: var(--serif);
-  font-size: clamp(2rem, 5vw, 2.8rem);
-  font-weight: 300;
-  letter-spacing: -0.01em;
-  line-height: 1.15;
-  margin-bottom: 52px;
-  color: var(--fg);
-}
-
-/* Features */
-.features {
+.meta-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 1px;
-  background: var(--border);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  overflow: hidden;
-}
-
-@media (max-width: 700px) {
-  .features { grid-template-columns: repeat(2, 1fr); }
-}
-@media (max-width: 480px) {
-  .features { grid-template-columns: 1fr; }
-}
-
-.feat {
-  background: var(--bg);
-  padding: 32px 28px;
-  transition: background 0.2s;
-}
-
-.feat:hover { background: var(--bg2); }
-
-.feat-icon {
-  width: 34px; height: 34px;
-  border-radius: 8px;
-  background: rgba(124,92,252,0.1);
-  display: flex; align-items: center; justify-content: center;
-  color: var(--acc);
-  margin-bottom: 18px;
-}
-
-.feat h3 {
-  font-family: var(--serif);
-  font-size: 1.2rem;
-  font-weight: 400;
-  margin-bottom: 10px;
-}
-
-.feat p {
-  font-size: 0.88rem;
-  color: var(--fg2);
-  line-height: 1.6;
-}
-
-/* How it works */
-.steps { display: flex; flex-direction: column; gap: 0; }
-
-.step {
-  display: flex;
-  gap: 28px;
-  align-items: flex-start;
-  padding: 28px 0;
-  border-bottom: 1px solid var(--border);
-}
-
-.step:last-child { border-bottom: none; }
-
-.step-n {
-  font-family: var(--serif);
-  font-size: 2.5rem;
-  font-weight: 300;
-  color: var(--acc);
-  opacity: 0.5;
-  line-height: 1;
-  min-width: 40px;
-  padding-top: 2px;
-}
-
-.step h3 {
-  font-family: var(--serif);
-  font-size: 1.3rem;
-  font-weight: 400;
-  margin-bottom: 6px;
-}
-
-.step p {
-  font-size: 0.88rem;
-  color: var(--fg2);
-  line-height: 1.6;
-}
-
-.step code {
-  font-family: var(--mono);
-  font-size: 0.8rem;
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 1px 6px;
-  color: var(--acc);
-}
-
-/* Models table */
-.models-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.88rem;
-}
-
-.models-table th {
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  color: var(--acc);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  text-align: left;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-}
-
-.models-table td {
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border);
-  color: var(--fg2);
-}
-
-.models-table tr.default td {
-  color: var(--fg);
-  font-weight: 500;
-}
-
-.models-table .wer-compare {
-  font-size: 0.78rem;
-  color: var(--fg3);
-}
-
-/* Download */
-.dl-card {
-  background: var(--bg2);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 56px 40px;
-  text-align: center;
-  position: relative;
-  overflow: hidden;
-}
-
-.dl-card::before {
-  content: '';
-  position: absolute;
-  top: -80px; left: 50%;
-  transform: translateX(-50%);
-  width: 500px; height: 300px;
-  background: radial-gradient(ellipse, rgba(124,92,252,0.09) 0%, transparent 65%);
-  pointer-events: none;
-}
-
-.dl-tag {
-  font-family: var(--mono);
-  font-size: 0.68rem;
-  color: var(--fg3);
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  margin-bottom: 10px;
-}
-
-.dl-card h2 {
-  font-family: var(--serif);
-  font-size: clamp(2rem, 5vw, 3rem);
-  font-weight: 300;
-  letter-spacing: -0.01em;
-  margin-bottom: 6px;
-}
-
-.dl-card .platform {
-  font-size: 0.85rem;
-  color: var(--fg2);
-  margin-bottom: 40px;
-}
-
-.dl-card .dl-btn {
-  font-size: 1rem;
-  padding: 15px 44px;
-}
-
-.dl-note {
-  margin-top: 22px;
-  font-family: var(--mono);
-  font-size: 0.72rem;
-  color: var(--fg3);
-  line-height: 1.7;
-}
-
-/* Footer */
-footer {
-  position: relative;
-  z-index: 1;
-  padding: 36px 28px;
-  border-top: 1px solid var(--border);
-  text-align: center;
-}
-
-.footer-links {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   gap: 10px;
-  flex-wrap: wrap;
-  margin-bottom: 14px;
+  margin-top: 20px;
 }
+.meta { padding: 13px; border-radius: 14px; border: 1px solid var(--line); }
+.meta b { display: block; font-size: 1.1rem; }
+.meta span { color: var(--muted); font-size: 0.82rem; }
 
-.footer-links a {
-  font-size: 0.82rem;
-  color: var(--fg2);
-  text-decoration: none;
-  transition: color 0.2s;
+section { padding: 70px 0; border-top: 1px solid var(--line); }
+.section-head { display: grid; grid-template-columns: minmax(0, 0.75fr) minmax(280px, 0.55fr); gap: 34px; align-items: end; margin-bottom: 28px; }
+.eyebrow { color: var(--accent); font: 700 0.78rem/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; }
+h2 { margin: 10px 0 0; font-size: clamp(2.1rem, 4vw, 3.7rem); line-height: 1; letter-spacing: -0.055em; }
+.section-copy { margin: 0; color: var(--muted); line-height: 1.7; }
+
+.grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.feature {
+  min-height: 214px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: rgba(255,255,255,0.62);
 }
+.feature .num { color: var(--accent); font: 800 0.78rem/1 var(--mono); }
+.feature h3 { margin: 34px 0 10px; font-size: 1.18rem; letter-spacing: -0.025em; }
+.feature p { margin: 0; color: var(--muted); line-height: 1.62; }
 
-.footer-links a:hover { color: var(--acc); }
-
-.footer-links .dot {
-  color: var(--fg3);
-  font-size: 0.7rem;
+.privacy-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, .85fr);
+  gap: 14px;
 }
-
-.footer-by {
-  font-size: 0.78rem;
-  color: var(--fg3);
-  margin-top: 6px;
+.panel { padding: 24px; border: 1px solid var(--line); border-radius: 24px; background: var(--panel); }
+.panel h3 { margin: 0 0 10px; font-size: 1.35rem; }
+.panel p { margin: 0; color: var(--muted); line-height: 1.7; }
+.log {
+  background: #111827;
+  color: #dbeafe;
+  font-family: var(--mono);
+  font-size: 0.88rem;
 }
+.log span { display: block; margin: 9px 0; color: #c7d2fe; }
+.log .ok { color: #86efac; }
+.log .warn { color: #fde68a; }
 
-.footer-by a {
-  color: var(--fg2);
-  text-decoration: none;
-  transition: color 0.2s;
+.steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.step { padding: 22px; border: 1px solid var(--line); border-radius: 22px; background: rgba(255,255,255,0.62); }
+.step b { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 10px; background: var(--ink); color: white; font-family: var(--mono); }
+.step h3 { margin: 18px 0 8px; }
+.step p { margin: 0; color: var(--muted); line-height: 1.6; }
+
+.download {
+  margin: 74px 0 44px;
+  padding: 30px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 20px;
+  align-items: center;
+  border-radius: 26px;
+  background: var(--ink);
+  color: white;
 }
+.download h2 { color: white; margin: 0 0 8px; }
+.download p { margin: 0; color: #cbd5e1; line-height: 1.6; }
+.download .btn { color: var(--ink); background: white; }
 
-.footer-by a:hover { color: var(--acc); }
+footer { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 30px 0 44px; color: var(--muted); border-top: 1px solid var(--line); }
+footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
 
-/* Scrollbar */
-::-webkit-scrollbar { width: 5px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+@media (max-width: 860px) {
+  .links a:not(:last-child) { display: none; }
+  .hero, .section-head, .privacy-panel, .download { grid-template-columns: 1fr; }
+  .grid, .steps { grid-template-columns: 1fr; }
+  .meta-grid { grid-template-columns: 1fr; }
+  h1 { font-size: clamp(3rem, 16vw, 5rem); }
+}
 </style>
 </head>
 <body>
+  <div class="page">
+    <header class="nav">
+      <a class="brand" href="./"><span class="mark">fw</span><span>freewispr-swedish</span></a>
+      <nav class="links" aria-label="Huvudnavigation">
+        <a href="#funktioner">Funktioner</a>
+        <a href="#integritet">Integritet</a>
+        <a href="#kom-igang">Kom igang</a>
+        <a href="https://github.com/hhammarstrand/freewispr-swedish">GitHub</a>
+      </nav>
+    </header>
 
-<!-- Floating quote particles -->
-<div id="quote-canvas"></div>
-
-<!-- Header -->
-<header>
-  <a href="./" class="logo">free<em>wispr</em>-swedish</a>
-  <ul class="header-links">
-    <li><a href="#features">Funktioner</a></li>
-    <li><a href="#models">Modeller</a></li>
-    <li><a href="#download">Ladda ner</a></li>
-    <li><a href="https://github.com/hhammarstrand/freewispr-swedish" target="_blank" rel="noopener">GitHub &#8599;</a></li>
-  </ul>
-</header>
-
-<!-- Hero -->
-<div class="hero">
-  <div class="app-icon">
-    <svg width="34" height="34" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <rect x="13" y="3" width="8" height="16" rx="4" fill="#7c5cfc"/>
-      <path d="M7 17a10 10 0 0 0 20 0" stroke="#7c5cfc" stroke-width="2.2" stroke-linecap="round" fill="none"/>
-      <line x1="17" y1="27" x2="17" y2="31" stroke="#7c5cfc" stroke-width="2.2" stroke-linecap="round"/>
-      <line x1="12" y1="31" x2="22" y2="31" stroke="#7c5cfc" stroke-width="2.2" stroke-linecap="round"/>
-    </svg>
-  </div>
-
-  <h1 class="hero-title">free<span>wispr</span><br>swedish</h1>
-
-  <p class="hero-sub">
-    Svensk speech-to-text for Windows.<br>
-    <strong>Lokal som standard. Valfri LLM-granskning nar du vill.</strong>
-  </p>
-
-  <a href="https://github.com/hhammarstrand/freewispr-swedish/releases" id="download-btn" class="dl-btn">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-      <polyline points="7 10 12 15 17 10"/>
-      <line x1="12" y1="15" x2="12" y2="3"/>
-    </svg>
-    Ladda ner for Windows
-  </a>
-
-  <div class="hero-badges">
-    <span>open source</span>
-    <span class="dot"></span>
-    <span>lokal standard</span>
-    <span class="dot"></span>
-    <span>Windows 10 / 11</span>
-    <span class="dot"></span>
-    <span>KBLab Whisper</span>
-    <span class="dot"></span>
-    <span>GPU-stod</span>
-  </div>
-</div>
-
-<hr class="divider">
-
-<!-- Features -->
-<section id="features">
-  <div class="wrap">
-    <p class="section-eyebrow">Funktioner</p>
-    <h2 class="section-title">Allt du behover for att<br><em>prata istallet for att skriva.</em></h2>
-    <p style="font-size:0.9rem;color:var(--fg2);margin-top:-36px;margin-bottom:48px;line-height:1.6;">Diktering, snippets, personlig ordlista, clipboard-fallback och tydlig status for lokal/LLM-granskad text.</p>
-    <div class="features">
-
-      <div class="feat">
-        <div class="feat-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-            <line x1="12" y1="19" x2="12" y2="23"/>
-            <line x1="8" y1="23" x2="16" y2="23"/>
-          </svg>
-        </div>
-        <h3>Diktering</h3>
-        <p>Hall Ctrl+Space, prata, slapp. Texten klistras in vid markoren och ligger kvar i urklipp om en CLI-terminal inte accepterar auto-paste.</p>
-      </div>
-
-      <div class="feat">
-        <div class="feat-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M13 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/>
-            <polyline points="13 2 13 9 20 9"/>
-          </svg>
-        </div>
-        <h3>Snippets</h3>
-        <p>Sag ett triggerord for att klistra in en fras direkt. &ldquo;min adress&rdquo; &#8594; din fulla adress. &ldquo;sig&rdquo; &#8594; din e-postsignatur. Lagg till sa manga du vill.</p>
-      </div>
-
-      <div class="feat">
-        <div class="feat-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 20h9"/>
-            <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-          </svg>
-        </div>
-        <h3>Personlig ordlista</h3>
-        <p>Whisper horselfel pa namn och facktermer? Lagg till rattningar en gang och de fixas for alltid.</p>
-      </div>
-
-      <div class="feat">
-        <div class="feat-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="4 7 4 4 20 4 20 7"/>
-            <line x1="9" y1="20" x2="15" y2="20"/>
-            <line x1="12" y1="4" x2="12" y2="20"/>
-          </svg>
-        </div>
-        <h3>Flytande indikator</h3>
-        <p>Lyssnarrutan kan folja muspekaren over flera skarmar eller ligga fast pa huvudskarmen. Den visar lokal transkribering och LLM-granskning separat.</p>
-      </div>
-
-      <div class="feat">
-        <div class="feat-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"/>
-            <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
-          </svg>
-        </div>
-        <h3>Lokal som standard</h3>
-        <p>Whisper kor pa din dator med GPU (float16) eller CPU (int8). LLM-granskning ar valfri och skickar bara transkriberad text, aldrig ljud.</p>
-      </div>
-
-      <div class="feat">
-        <div class="feat-icon">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
-            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
-          </svg>
-        </div>
-        <h3>Mikrofonval</h3>
-        <p>Valj specifik mikrofon i installningar. Stodjer WASAPI, DirectSound och MME med automatisk samplerate-hantering.</p>
-      </div>
-
-    </div>
-  </div>
-</section>
-
-<hr class="divider">
-
-<!-- Models -->
-<section id="models">
-  <div class="wrap">
-    <p class="section-eyebrow">Modeller</p>
-    <h2 class="section-title">KBLab:s svenska<br><em>Whisper-modeller.</em></h2>
-    <p style="font-size:0.9rem;color:var(--fg2);margin-top:-36px;margin-bottom:48px;line-height:1.6;">Tranade pa over 50 000 timmar svenskt tal av Kungliga biblioteket. Upp till 47% lagre felfrekvens jamfort med OpenAI:s modeller.</p>
-    <table class="models-table">
-      <thead>
-        <tr>
-          <th>Modell</th>
-          <th>WER (sv)</th>
-          <th>Storlek</th>
-          <th class="wer-compare">OpenAI WER</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>tiny</td>
-          <td>13.2</td>
-          <td>~40 MB</td>
-          <td class="wer-compare">59.2</td>
-        </tr>
-        <tr>
-          <td>base</td>
-          <td>9.1</td>
-          <td>~150 MB</td>
-          <td class="wer-compare">39.6</td>
-        </tr>
-        <tr class="default">
-          <td>small (standard)</td>
-          <td>7.3</td>
-          <td>~500 MB</td>
-          <td class="wer-compare">20.6</td>
-        </tr>
-        <tr>
-          <td>medium</td>
-          <td>6.6</td>
-          <td>~1.5 GB</td>
-          <td class="wer-compare">15.8</td>
-        </tr>
-        <tr>
-          <td>large</td>
-          <td>&mdash;</td>
-          <td>~3 GB</td>
-          <td class="wer-compare">&mdash;</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-</section>
-
-<hr class="divider">
-
-<!-- How it works -->
-<section id="how-it-works">
-  <div class="wrap">
-    <p class="section-eyebrow">Kom igang</p>
-    <h2 class="section-title">Redo pa<br><em>under en minut.</em></h2>
-    <div class="steps">
-
-      <div class="step">
-        <div class="step-n">1</div>
+    <main>
+      <section class="hero">
         <div>
-          <h3>Ladda ner</h3>
-          <p>Ladda ner och packa upp senaste Windows-artifact eller release fran GitHub. Ingen installation kravs.</p>
+          <span class="kicker">Open source for Windows</span>
+          <h1>Svensk diktering utan omvagar.</h1>
+          <p class="lead">Hall en tangent, prata och fa texten dar markoren redan star. freewispr-swedish kor KBLab Whisper lokalt och kan, om du vill, granska texten med GitHub Models efterat.</p>
+          <div class="actions">
+            <a class="btn primary" href="https://github.com/hhammarstrand/freewispr-swedish/releases">Ladda ner</a>
+            <a class="btn secondary" href="https://github.com/hhammarstrand/freewispr-swedish/actions/workflows/build-windows.yml">Senaste Windows-build</a>
+          </div>
+          <p class="note">Lokal som standard. Clipboard-fallback for terminaler. Valfri LLM-granskning.</p>
         </div>
-      </div>
 
-      <div class="step">
-        <div class="step-n">2</div>
-        <div>
-          <h3>Kor</h3>
-          <p>Dubbelklicka <code>freewispr-swedish.exe</code>. Vald KB-Whisper-modell laddas/konverteras lokalt enligt installningarna. Darefter lever appen i systemfacket.</p>
+        <aside class="product-card" aria-label="Produktstatus">
+          <div class="card-head"><span>dictation session</span><span class="dots"><i></i><i></i><i></i></span></div>
+          <div class="card-body">
+            <div class="status-pill"><span class="levels"><span></span><span></span><span></span><span></span><span></span></span><span>LLM-granskar...</span></div>
+            <div class="result">
+              <small>Urklipp</small>
+              <p>"Skicka sammanfattningen till projektgruppen innan lunch."</p>
+            </div>
+            <div class="meta-grid">
+              <div class="meta"><b>sv</b><span>optimerad for svenska</span></div>
+              <div class="meta"><b>lokal</b><span>Whisper pa datorn</span></div>
+              <div class="meta"><b>valfri</b><span>LLM eftergranskning</span></div>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section id="funktioner">
+        <div class="section-head">
+          <div><p class="eyebrow">Funktioner</p><h2>Gjort for verkligt skrivarbete.</h2></div>
+          <p class="section-copy">Appen ar liten nog att leva i systemfacket men robust nog for mail, editorer, webblasare, terminaler och interna verktyg.</p>
         </div>
-      </div>
-
-      <div class="step">
-        <div class="step-n">3</div>
-        <div>
-          <h3>Hall <code>Ctrl+Space</code> och prata</h3>
-          <p>Hall tangenten nedtryckt, sag vad du vill skriva, slapp. Klart. Andra snabbtangent, indikatorlage, mikrofon, modell och LLM-granskning i installningarna.</p>
+        <div class="grid">
+          <article class="feature"><span class="num">01</span><h3>KBLab Whisper</h3><p>Svenska Whisper-modeller fran Kungliga biblioteket, med CUDA-stod for snabbare lokal transkribering.</p></article>
+          <article class="feature"><span class="num">02</span><h3>Tydlig indikator</h3><p>Lyssnarrutan kan folja muspekaren over flera skarmar eller ligga fast pa huvudskarmen.</p></article>
+          <article class="feature"><span class="num">03</span><h3>CLI-vänlig clipboard</h3><p>Texten stannar i urklipp aven om automatisk paste inte fungerar i en terminal.</p></article>
+          <article class="feature"><span class="num">04</span><h3>Personlig ordlista</h3><p>Ratta vanliga felhorningar, namn och facktermer en gang och ateranvand lokalt.</p></article>
+          <article class="feature"><span class="num">05</span><h3>Valfri LLM</h3><p>Eftergranska text via GitHub Models och se direkt om den ar lokal, LLM-granskad eller LLM-polerad.</p></article>
+          <article class="feature"><span class="num">06</span><h3>Automatiska builds</h3><p>Windows-exe byggs med GitHub Actions och publiceras som artifact for enkel testning.</p></article>
         </div>
-      </div>
+      </section>
 
-    </div>
+      <section id="integritet">
+        <div class="section-head">
+          <div><p class="eyebrow">Integritet</p><h2>Lokalt forst. Moln bara nar du valjer det.</h2></div>
+          <p class="section-copy">Standardlaget skickar inte ljud eller transkriberad text till en LLM. LLM-granskning ar separat och tydligt markerad i indikatorn.</p>
+        </div>
+        <div class="privacy-panel">
+          <div class="panel"><h3>Whisper kor lokalt</h3><p>Ljud spelas in, resamplas och transkriberas pa din Windows-dator. Modeller och ordlistor ligger i anvandarmappen.</p></div>
+          <div class="panel log"><span class="ok">status: Transkriberar lokalt</span><span class="warn">status: LLM-granskar (om aktiverat)</span><span class="ok">resultat: Klistrad (lokal / LLM-granskad / LLM-polerad)</span></div>
+        </div>
+      </section>
+
+      <section id="kom-igang">
+        <div class="section-head">
+          <div><p class="eyebrow">Kom igang</p><h2>Tre steg.</h2></div>
+          <p class="section-copy">Ingen tung installation kravs for att testa en build. Packa upp, starta och diktera.</p>
+        </div>
+        <div class="steps">
+          <div class="step"><b>1</b><h3>Ladda ner</h3><p>Hamta senaste release eller Actions-artifact fran GitHub.</p></div>
+          <div class="step"><b>2</b><h3>Starta</h3><p>Kor <code>freewispr-swedish.exe</code> och valj mikrofon, modell och indikatorlage.</p></div>
+          <div class="step"><b>3</b><h3>Diktera</h3><p>Hall <code>Ctrl+Space</code>, prata, slapp. Texten hamnar dar du arbetar.</p></div>
+        </div>
+      </section>
+
+      <section class="download">
+        <div><h2>Testa freewispr-swedish.</h2><p>Byggen skapas automatiskt pa GitHub. Releaser kan publiceras nar versionerna stabiliseras.</p></div>
+        <a class="btn" href="https://github.com/hhammarstrand/freewispr-swedish">Oppna GitHub</a>
+      </section>
+    </main>
+
+    <footer>
+      <span>freewispr-swedish - svensk fork av freewispr</span>
+      <span><a href="https://github.com/hhammarstrand/freewispr-swedish">GitHub</a> · <a href="https://github.com/hhammarstrand/freewispr-swedish/blob/master/LICENSE">MIT License</a> · <a href="https://huggingface.co/KBLab">KBLab</a></span>
+    </footer>
   </div>
-</section>
-
-<hr class="divider">
-
-<!-- Download -->
-<section id="download">
-  <div class="wrap">
-    <div class="dl-card">
-      <p class="dl-tag">GitHub Actions / Releases</p>
-      <h2>freewispr-swedish</h2>
-      <p class="platform">For Windows 10 och Windows 11</p>
-      <a href="https://github.com/hhammarstrand/freewispr-swedish/releases" class="dl-btn">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-          <polyline points="7 10 12 15 17 10"/>
-          <line x1="12" y1="15" x2="12" y2="3"/>
-        </svg>
-        Ladda ner fran GitHub
-      </a>
-      <p class="dl-note">
-        Kraver Windows 10 / 11<br>
-        GitHub Actions bygger Windows-exe automatiskt<br>
-        Valfritt: NVIDIA GPU och GitHub Models for LLM-granskning
-      </p>
-    </div>
-  </div>
-</section>
-
-<!-- Footer -->
-<footer>
-  <div class="footer-links">
-    <a href="https://github.com/hhammarstrand/freewispr-swedish" target="_blank" rel="noopener">GitHub &#8599;</a>
-    <span class="dot">&bull;</span>
-    <a href="https://github.com/hhammarstrand/freewispr-swedish/blob/master/LICENSE" target="_blank" rel="noopener">MIT License</a>
-    <span class="dot">&bull;</span>
-    <a href="#features">Funktioner</a>
-    <span class="dot">&bull;</span>
-    <a href="#download">Ladda ner</a>
-  </div>
-  <p class="footer-by">
-    Fork av <a href="https://github.com/x26prakhar/freewispr" target="_blank" rel="noopener">freewispr</a>
-    av <a href="https://www.linkedin.com/in/prakharsingh96/" target="_blank" rel="noopener">Prakhar Singh</a>
-    &nbsp;&middot;&nbsp;
-    Svenska modeller av <a href="https://huggingface.co/KBLab" target="_blank" rel="noopener">KBLab</a>
-  </p>
-</footer>
-
-<script>
-// Floating speech quotes (Swedish)
-const QUOTES = [
-  "Din rost, din dator.",
-  "Inget moln. Ingen kompromiss.",
-  "Tal ar det mest naturliga granssnittet.",
-  "Dina ord stannar hos dig.",
-  "Fri som i frihet.",
-  "Integritet som standard.",
-  "Diktera var som helst.",
-  "KBLab Whisper, pa dina villkor.",
-  "Dina ord lamnar aldrig din dator.",
-  "Open source, for alltid.",
-  "Prata fritt.",
-  "Kor lokalt. Arbeta privat.",
-  "Ingen server. Ingen latens.",
-  "Intelligens utan prenumeration.",
-  "Byggt for Windows.",
-  "Transkribera allt.",
-  "Hall och prata.",
-  "Din rost. Dina regler.",
-];
-
-const canvas = document.getElementById('quote-canvas');
-const PROXIMITY = 130;
-const COUNT = 18;
-
-const particles = QUOTES.slice(0, COUNT).map((text, i) => {
-  const el = document.createElement('span');
-  el.className = 'q';
-  el.textContent = text;
-  canvas.appendChild(el);
-
-  const x = 5 + Math.random() * 85;
-  const y = 5 + Math.random() * 90;
-  const vx = (Math.random() - 0.5) * 0.018;
-  const vy = (Math.random() - 0.5) * 0.012;
-
-  return { el, x, y, vx, vy };
-});
-
-let mx = -9999, my = -9999;
-
-document.addEventListener('mousemove', e => {
-  mx = e.clientX;
-  my = e.clientY;
-});
-
-function tick() {
-  const W = window.innerWidth;
-  const H = window.innerHeight;
-
-  particles.forEach(p => {
-    p.x += p.vx;
-    p.y += p.vy;
-    if (p.x < 3 || p.x > 92) p.vx *= -1;
-    if (p.y < 3 || p.y > 92) p.vy *= -1;
-    p.x = Math.max(3, Math.min(92, p.x));
-    p.y = Math.max(3, Math.min(92, p.y));
-
-    const px = (p.x / 100) * W;
-    const py = (p.y / 100) * H;
-    p.el.style.left = px + 'px';
-    p.el.style.top  = py + 'px';
-
-    const dx = px - mx;
-    const dy = py - my;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const t = Math.max(0, 1 - dist / PROXIMITY);
-    p.el.style.opacity = (t * 0.55).toFixed(3);
-  });
-
-  requestAnimationFrame(tick);
-}
-
-if (!window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-  tick();
-}
-</script>
-
 </body>
 </html>
