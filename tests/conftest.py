@@ -1,0 +1,56 @@
+"""Shared test fixtures — stubs for native modules unavailable in CI."""
+import sys
+from types import SimpleNamespace
+
+# sounddevice requires PortAudio (C library) which is unavailable on Linux CI.
+# Stub it before any test imports audio.py → sounddevice.
+if "sounddevice" not in sys.modules:
+    _sd = SimpleNamespace(
+        query_devices=lambda: [],
+        query_hostapis=lambda: [],
+        InputStream=type("InputStream", (), {
+            "__init__": lambda self, **kw: None,
+            "start": lambda self: None,
+            "stop": lambda self: None,
+            "abort": lambda self: None,
+            "close": lambda self: None,
+        }),
+    )
+    sys.modules["sounddevice"] = _sd
+
+# keyboard requires a low-level hook driver on Windows.
+if "keyboard" not in sys.modules:
+    sys.modules["keyboard"] = SimpleNamespace(
+        parse_hotkey=lambda s: ((1,), (2,)),
+        is_pressed=lambda key: False,
+        add_hotkey=lambda *a, **kw: None,
+        on_press_key=lambda *a, **kw: None,
+        on_release_key=lambda *a, **kw: None,
+        unhook=lambda h: None,
+        send=lambda *a, **kw: None,
+        release=lambda k: None,
+    )
+
+# pyperclip needs a clipboard backend (xclip/xsel on Linux).
+if "pyperclip" not in sys.modules:
+    _clipboard = {"value": ""}
+    sys.modules["pyperclip"] = SimpleNamespace(
+        copy=lambda text: _clipboard.__setitem__("value", text),
+        paste=lambda: _clipboard["value"],
+    )
+
+# pystray is Windows-only.
+if "pystray" not in sys.modules:
+    sys.modules["pystray"] = SimpleNamespace(
+        Icon=lambda *a, **kw: None,
+        Menu=SimpleNamespace(SEPARATOR=None),
+        MenuItem=lambda *a, **kw: None,
+    )
+
+# winsound is Windows-only.
+if "winsound" not in sys.modules:
+    sys.modules["winsound"] = SimpleNamespace(
+        PlaySound=lambda *a, **kw: None,
+        SND_MEMORY=0,
+        SND_ASYNC=0,
+    )
