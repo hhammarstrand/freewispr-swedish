@@ -1222,28 +1222,6 @@ class SettingsWindow:
         self._mic_info.pack(anchor="w", padx=6, pady=(2, 8))
         self._update_mic_info()
 
-        # Whisper-modell
-        self._label(parent, "Whisper-modell",
-                    font=ctk.CTkFont(weight="bold") if _CTK_AVAILABLE else None
-                    ).pack(anchor="w", **pad)
-        self._combobox(parent, self._model_var,
-                       ["tiny", "base", "small", "medium", "large"],
-                       width=180,
-                       command=lambda _v: self._update_model_desc()).pack(
-            anchor="w", padx=6, pady=(4, 0)
-        )
-        self._model_desc = self._hint(parent, "")
-        self._model_desc.pack(anchor="w", padx=6, pady=(2, 4))
-        self._update_model_desc()
-
-        self._switch(parent, "Använd GPU/CUDA (snabbare med NVIDIA)",
-                     self._cuda_var).pack(anchor="w", padx=6, pady=(8, 4))
-        self._hint(parent,
-                   "Används endast för lokal Whisper-modell. "
-                   "Slås av automatiskt vid remote-transkribering.").pack(
-            anchor="w", padx=6, pady=(0, 8)
-        )
-
     def _update_mic_info(self):
         name = self._mic_var.get()
         if name == "Auto":
@@ -1485,6 +1463,30 @@ class SettingsWindow:
                        command=lambda _v: self._on_tr_provider_change()
                        ).pack(anchor="w", padx=6, pady=(4, 8), fill="x")
 
+        # Local-only fields (Whisper model + CUDA). Shown only in "local" mode.
+        self._tr_local_frame = self._frame(parent)
+        self._tr_local_frame.pack(fill="x", padx=0, pady=0)
+
+        self._label(self._tr_local_frame, "Whisper-modell",
+                    font=ctk.CTkFont(weight="bold") if _CTK_AVAILABLE else None
+                    ).pack(anchor="w", padx=6, pady=(0, 2))
+        self._combobox(self._tr_local_frame, self._model_var,
+                       ["tiny", "base", "small", "medium", "large"],
+                       width=180,
+                       command=lambda _v: self._update_model_desc()).pack(
+            anchor="w", padx=6, pady=(4, 0)
+        )
+        self._model_desc = self._hint(self._tr_local_frame, "")
+        self._model_desc.pack(anchor="w", padx=6, pady=(2, 4))
+        self._update_model_desc()
+
+        self._switch(self._tr_local_frame,
+                     "Använd GPU/CUDA (snabbare med NVIDIA)",
+                     self._cuda_var).pack(anchor="w", padx=6, pady=(8, 4))
+        self._hint(self._tr_local_frame,
+                   "Kräver NVIDIA-GPU med CUDA. Saknas GPU används CPU "
+                   "automatiskt.").pack(anchor="w", padx=6, pady=(0, 8))
+
         # Remote-only fields go in a sub-frame so we can hide them in "local" mode.
         self._tr_remote_frame = self._frame(parent)
         self._tr_remote_frame.pack(fill="x", padx=0, pady=0)
@@ -1552,7 +1554,17 @@ class SettingsWindow:
                 self._tr_remote_frame.pack_forget()
             except Exception:
                 pass
+            try:
+                self._tr_local_frame.pack(fill="x", padx=0, pady=0)
+            except Exception:
+                pass
             return
+
+        # Remote provider selected — hide local-only fields, show remote.
+        try:
+            self._tr_local_frame.pack_forget()
+        except Exception:
+            pass
 
         # Show remote-only fields.
         try:
