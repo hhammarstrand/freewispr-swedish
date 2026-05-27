@@ -238,6 +238,61 @@ def transcribe(
     return text
 
 
+def test_connection(
+    provider: str,
+    api_key: str = "",
+    base_url_override: str = "",
+    timeout_sec: float = 8.0,
+) -> tuple[bool, str]:
+    """Snabb anslutningsverifiering. Returnerar ``(ok, message)``.
+
+    Pingar ``{base}/models`` (OpenAI-kompatibelt) och tolkar svaret. Försöker
+    *inte* lista transkriberings-modeller specifikt — leverantörer som Berget
+    blandar in LLM-modeller i samma katalog och vi bryr oss bara om att
+    autentiseringen fungerar.
+
+    Inga ljud-bytes skickas. Säker att anropa på UI-tråden men kan blockera
+    upp till ``timeout_sec`` sekunder — kallaren bör köra i bakgrundstråd.
+    """
+    try:
+        p = _get_provider(provider)
+    except RemoteTranscribeError as e:
+        return False, str(e)
+
+    try:
+        base = _resolve_base_url(provider, base_url_override)
+    except RemoteTranscribeError as e:
+        return False, str(e)
+
+    resolved_key = _resolve_api_key(api_key, provider)
+    if not resolved_key and provider != "custom":
+        return False, f"Ingen {p.label}-nyckel hittades"
+
+    headers = {"Accept": "application/json"}
+    if resolved_key:
+        headers["Authorization"] = f"Bearer {resolved_key}"
+
+    url = f"{base}/models"
+    req = urllib.request.Request(url, headers=headers, method="GET")
+
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
+            resp.read(1024)  # förbruka lite av kroppen för att stänga TLS rent
+    except urllib.error.HTTPError as e:
+        body_snippet = ""
+        try:
+            body_snippet = e.read().decode("utf-8", errors="replace")[:200]
+        except Exception:
+            pass
+        return False, _http_message(e.code, body_snippet)
+    except urllib.error.URLError as e:
+        return False, f"Nätverksfel: {e.reason}"
+    except Exception as e:
+        return False, f"Fel: {e}"
+
+    return True, f"Ansluten till {p.label}"
+
+
 def _http_message(code: int, body: str) -> str:
     if code == 401:
         return "Ogiltig API-nyckel (HTTP 401)"

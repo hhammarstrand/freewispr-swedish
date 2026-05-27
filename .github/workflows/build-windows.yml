@@ -42,6 +42,13 @@ jobs:
       - name: Run tests
         run: python -m pytest tests/ -q
 
+      - name: Locate customtkinter assets
+        id: ctk
+        shell: pwsh
+        run: |
+          $path = python -c "import customtkinter, os, sys; print(os.path.dirname(customtkinter.__file__))"
+          "pkg=$path" >> $env:GITHUB_OUTPUT
+
       - name: Build PyInstaller app
         shell: pwsh
         run: |
@@ -55,7 +62,9 @@ jobs:
             --hidden-import=keyboard `
             --hidden-import=pystray._win32 `
             --hidden-import=keyring.backends.Windows `
+            --hidden-import=customtkinter `
             --add-data "${{ steps.fw.outputs.assets }}\assets;faster_whisper\assets" `
+            --add-data "${{ steps.ctk.outputs.pkg }};customtkinter" `
             main.py
 
       - name: Upload app artifact

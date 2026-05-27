@@ -16,11 +16,22 @@ _LEGACY_KEYRING_USERNAME = "llm_api_key"
 
 # Provider-IDn som matchar PROVIDERS i llm_polish.py.
 _LLM_PROVIDERS: tuple[str, ...] = ("github", "staik", "berget", "openai", "custom")
+# Remote-transkriberingsleverantörer (utan "local").
+_TR_PROVIDERS: tuple[str, ...] = ("staik", "berget", "custom")
 
 
 def _keyring_user(provider: str) -> str:
-    """Per-provider entry: ``llm_api_key_github`` osv."""
+    """Per-provider LLM-entry: ``llm_api_key_github`` osv."""
     return f"{_LEGACY_KEYRING_USERNAME}_{provider}"
+
+
+def _tr_keyring_user(provider: str) -> str:
+    """Per-provider transkriberings-entry: ``transcription_api_key_staik`` osv.
+
+    Separat från LLM-nyckeln så att användaren kan ha t.ex. ett gratiskonto för
+    transkribering och ett betalkonto för LLM hos samma leverantör.
+    """
+    return f"transcription_api_key_{provider}"
 
 
 DEFAULTS = {
@@ -59,6 +70,10 @@ DEFAULTS = {
     "transcription_model_custom": "",
     # Custom-leverantörens base_url (delas inte med LLM-custom).
     "transcription_custom_base_url": "",
+    # Egen API-nyckel per remote-leverantör (delas inte med LLM-nyckeln).
+    "transcription_api_key_staik":  "",
+    "transcription_api_key_berget": "",
+    "transcription_api_key_custom": "",
     # Explicit consent: ljudet skickas över nätet vid remote-transkribering.
     "transcription_privacy_accepted": False,
 
@@ -68,9 +83,23 @@ DEFAULTS = {
 }
 
 # Fältnamn som ALDRIG får sparas till disk (nycklar lagras separat i keyring).
-_SECRET_FIELDS: tuple[str, ...] = tuple(f"llm_api_key_{p}" for p in _LLM_PROVIDERS)
+_LLM_SECRET_FIELDS: tuple[str, ...] = tuple(f"llm_api_key_{p}" for p in _LLM_PROVIDERS)
+_TR_SECRET_FIELDS: tuple[str, ...] = tuple(f"transcription_api_key_{p}" for p in _TR_PROVIDERS)
+_SECRET_FIELDS: tuple[str, ...] = _LLM_SECRET_FIELDS + _TR_SECRET_FIELDS
 # Plus legacy-fältet, för bakåtkompatibilitet.
 _ALL_STRIPPED_FIELDS: tuple[str, ...] = (_LEGACY_KEYRING_USERNAME,) + _SECRET_FIELDS
+
+
+# Mappning från config-fältnamn → keyring-username. En enda sanning som både
+# load() och save() konsulterar; håller koden ifrån att glömma bort att lägga
+# till nya hemligheter på fel ställen.
+def _secret_field_map() -> dict[str, str]:
+    mapping: dict[str, str] = {}
+    for p in _LLM_PROVIDERS:
+        mapping[f"llm_api_key_{p}"] = _keyring_user(p)
+    for p in _TR_PROVIDERS:
+        mapping[f"transcription_api_key_{p}"] = _tr_keyring_user(p)
+    return mapping
 
 
 def _get_secret(username: str) -> str:
@@ -150,9 +179,9 @@ def load():
                 _set_secret(_LEGACY_KEYRING_USERNAME, "")
                 migrated = True
 
-    # Lös in en hemlighet per provider till runtime-cfg.
-    for provider in _LLM_PROVIDERS:
-        cfg[f"llm_api_key_{provider}"] = _get_secret(_keyring_user(provider))
+    # Lös in en hemlighet per provider till runtime-cfg (LLM + transkribering).
+    for field, user in _secret_field_map().items():
+        cfg[field] = _get_secret(user)
 
     if migrated:
         save_json_atomic(CONFIG_FILE, data)
@@ -161,7 +190,8 @@ def load():
 
 
 def _read_existing_secrets() -> dict[str, str]:
-    return {p: _get_secret(_keyring_user(p)) for p in _LLM_PROVIDERS}
+    """Nuvarande värde i keyring per config-fält. Används för rollback i save()."""
+    return {field: _get_secret(user) for field, user in _secret_field_map().items()}
 
 
 def save(cfg):
@@ -181,41 +211,39 @@ def save(cfg):
         data.setdefault(f"llm_model_{active_provider}", legacy_model)
 
     # Plocka bort alla hemligheter — de hör hemma i Credential Manager.
-    new_secrets = {p: (data.pop(f"llm_api_key_{p}", "") or "") for p in _LLM_PROVIDERS}
+    field_map = _secret_field_map()
+    new_secrets = {field: (data.pop(field, "") or "") for field in field_map}
     data.pop(_LEGACY_KEYRING_USERNAME, None)
 
     old_secrets = _read_existing_secrets()
 
-    written_secrets: list[str] = []
+    written_fields: list[str] = []
     try:
-        for provider, value in new_secrets.items():
-            user = _keyring_user(provider)
+        for field, value in new_secrets.items():
+            user = field_map[field]
             if value:
                 if not _set_secret(user, value):
                     raise RuntimeError(
-                        f"Kunde inte spara API-nyckeln för {provider} i "
-                        "Windows Credential Manager"
+                        f"Kunde inte spara {field} i Windows Credential Manager"
                     )
-                written_secrets.append(provider)
-            elif old_secrets.get(provider) and not _set_secret(user, ""):
+                written_fields.append(field)
+            elif old_secrets.get(field) and not _set_secret(user, ""):
                 raise RuntimeError(
-                    f"Kunde inte ta bort API-nyckeln för {provider} från "
-                    "Windows Credential Manager"
+                    f"Kunde inte ta bort {field} från Windows Credential Manager"
                 )
             else:
-                written_secrets.append(provider)
+                written_fields.append(field)
 
         save_json_atomic(CONFIG_FILE, data)
 
     except Exception:
         # Återställ Credential Manager till samma tillstånd som JSON-filen.
-        for provider in _LLM_PROVIDERS:
-            old = old_secrets.get(provider, "")
-            user = _keyring_user(provider)
+        for field, user in field_map.items():
+            old = old_secrets.get(field, "")
             try:
                 if old:
                     _set_secret(user, old)
-                elif provider in written_secrets and new_secrets[provider]:
+                elif field in written_fields and new_secrets[field]:
                     _set_secret(user, "")
             except Exception:
                 pass

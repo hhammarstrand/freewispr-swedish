@@ -109,8 +109,8 @@ def _active_transcription_settings() -> tuple[str, str, str, str]:
     if not _config.get("transcription_privacy_accepted", False):
         log.warning("transcription_provider=%s utan consent — använder lokal", provider)
         return "local", "", "", ""
-    # Återanvänd LLM-nyckeln för samma leverantör (samma konto/API).
-    api_key = _config.get(f"llm_api_key_{provider}", "")
+    # Egen nyckel per remote-leverantör (separat från LLM-nyckeln).
+    api_key = _config.get(f"transcription_api_key_{provider}", "")
     model = _config.get(f"transcription_model_{provider}", "")
     base_url = (
         _config.get("transcription_custom_base_url", "")
