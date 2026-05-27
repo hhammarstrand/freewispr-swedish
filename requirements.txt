@@ -13,5 +13,8 @@ keyring>=25.0.0,<26.0
 # Modern Windows-look UI på topp av Tk. ~1 MB. Inga bilder/native deps.
 customtkinter>=5.2.2,<6.0
 
+# Snabbare resampling (valfritt, 3-4x snabbare än scipy):
+# pip install soxr
+
 # GPU/CUDA-stod (valfritt, stor nedladdning ~2.5GB):
 # pip install torch --index-url https://download.pytorch.org/whl/cu124

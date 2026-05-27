@@ -3,11 +3,52 @@ import logging
 import time as time_module
 import numpy as np
 import sounddevice as sd
-from scipy.signal import resample_poly
+from scipy.signal import resample_poly, firwin
 
 log = logging.getLogger("freewispr")
 
 TARGET_RATE = 16000  # Whisper expects 16 kHz
+
+# --- Resampler selection -------------------------------------------------
+# Prefer soxr (C library, 3-4x faster than scipy polyphase) when available.
+# Fall back to scipy resample_poly with a cached FIR filter so the filter
+# design cost (firwin) is paid only once per (up, down) ratio.
+try:
+    import soxr as _soxr
+
+    def _resample(audio: np.ndarray, orig_rate: int) -> np.ndarray:
+        """Resample *audio* from *orig_rate* to 16 kHz using libsoxr."""
+        if orig_rate == TARGET_RATE:
+            return audio
+        return _soxr.resample(audio, orig_rate, TARGET_RATE, quality="HQ")
+
+    log.debug("Using soxr for resampling")
+except ImportError:
+    # Cache FIR filter coefficients keyed by (up, down) so firwin only runs
+    # once per sample-rate ratio.  Dictation always resamples from the same
+    # mic rate to 16 kHz, so this cache has a 100 % hit rate after the first
+    # call.
+    _resample_filter_cache: dict[tuple[int, int], np.ndarray] = {}
+
+    def _resample(audio: np.ndarray, orig_rate: int) -> np.ndarray:  # type: ignore[no-redef]
+        """Resample using scipy polyphase filter with a cached FIR."""
+        if orig_rate == TARGET_RATE:
+            return audio
+        g = math.gcd(TARGET_RATE, orig_rate)
+        up = TARGET_RATE // g
+        down = orig_rate // g
+        key = (up, down)
+        h = _resample_filter_cache.get(key)
+        if h is None:
+            # Replicate the filter that resample_poly builds internally:
+            # Kaiser-windowed sinc, length 20*max(up,down)+1.
+            max_rate = max(up, down)
+            f_c = 1.0 / max_rate
+            half_len = 10 * max_rate
+            h = firwin(2 * half_len + 1, f_c, window=("kaiser", 5.0))
+            _resample_filter_cache[key] = h
+        return resample_poly(audio, up, down, window=h).astype(np.float32)
+    log.debug("soxr not available; using scipy resample_poly with cached FIR")
 
 # Hard cap on a single recording. At 48 kHz mono float32 this is ~23 MB,
 # at 48 kHz stereo ~46 MB. Prevents a stuck hotkey from filling RAM.
@@ -121,22 +162,6 @@ def _find_device_by_name(name: str) -> list[dict]:
             })
     matches.sort(key=lambda d: d["_rank"])
     return matches
-
-
-def _resample(audio: np.ndarray, orig_rate: int) -> np.ndarray:
-    """Resample audio from orig_rate to 16 kHz using polyphase filter.
-
-    Uses scipy.signal.resample_poly which applies a proper anti-alias
-    FIR filter before decimation — critical for Whisper accuracy.
-    Linear interpolation causes aliasing artefacts that ruin transcription.
-    """
-    if orig_rate == TARGET_RATE:
-        return audio
-    # Find the simplest up/down ratio
-    g = math.gcd(TARGET_RATE, orig_rate)
-    up = TARGET_RATE // g
-    down = orig_rate // g
-    return resample_poly(audio, up, down).astype(np.float32)
 
 
 def _try_start(device: int, rate: int, channels: int, callback) -> sd.InputStream:
