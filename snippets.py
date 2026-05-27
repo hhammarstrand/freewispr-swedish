@@ -21,7 +21,7 @@ def load() -> dict[str, str]:
         return _cache
     if _FILE.exists():
         _cache = dict(load_json(_FILE, {}))
-        _cache_mtime = _FILE.stat().st_mtime if _FILE.exists() else 0.0
+        _cache_mtime = current_mt
         return _cache
     _cache = {}
     _cache_mtime = current_mt
@@ -32,7 +32,10 @@ def save(snippets: dict[str, str]):
     global _cache, _cache_mtime
     save_json_atomic(_FILE, snippets)
     _cache = snippets
-    _cache_mtime = _FILE.stat().st_mtime
+    try:
+        _cache_mtime = _FILE.stat().st_mtime
+    except OSError:
+        _cache_mtime = 0.0
 
 
 def expand(text: str) -> str:

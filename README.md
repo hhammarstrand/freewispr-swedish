@@ -58,6 +58,8 @@ Appen pratar bara med nätverket i två fall:
 
 GitHub-token för LLM hämtas i tur och ordning från sparad nyckel, `GITHUB_TOKEN`, `GH_TOKEN` eller `gh auth token`. Token loggas aldrig.
 
+- Om du slår på remote-transkribering skickas ljudet – inte bara text – till vald leverantör (staik.se eller Berget AI).
+
 Den dikterade texten ligger kvar i urklipp efter att appen har försökt klistra in. Det är ett medvetet val: gamla urklippets innehåll återställs inte, men du kan alltid klistra in manuellt om paste-försöket inte gick fram.
 
 ## Funktioner
@@ -70,6 +72,7 @@ Den dikterade texten ligger kvar i urklipp efter att appen har försökt klistra
 - Personliga ordkorrigeringar.
 - Hotwords från ordlista och `~/.freewispr-swedish/hotwords.txt`.
 - Snippets och textmallar.
+- Valfri remote-transkribering via staik.se eller Berget AI.
 - Statuslägen i indikatorn: lokal, LLM-granskad eller LLM-polerad.
 
 ## Modeller
@@ -130,6 +133,7 @@ Exempel:
 | `~/.freewispr-swedish/corrections.json` | Personliga ordkorrigeringar |
 | `~/.freewispr-swedish/snippets.json` | Snippets och expansioner |
 | `~/.freewispr-swedish/hotwords.txt` | Egna termer för Whisper |
+| `~/.freewispr-swedish/learned.json` | Auto-lärda korrigeringar från LLM |
 | `~/.freewispr-swedish/freewispr.log` | Logg för felsökning |
 | `~/.freewispr-swedish/models/` | Nedladdade och konverterade modeller |
 

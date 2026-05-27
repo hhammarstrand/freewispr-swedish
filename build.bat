@@ -25,6 +25,9 @@ if %errorlevel%==1 (
 REM Hitta faster_whisper assets-mapp for VAD-modellen
 for /f "delims=" %%P in ('%PYTHON% -c "import faster_whisper,os;print(os.path.dirname(faster_whisper.__file__))"') do set FW_DIR=%%P
 
+REM Hitta customtkinter-paketet
+for /f "delims=" %%P in ('%PYTHON% -c "import customtkinter,os;print(os.path.dirname(customtkinter.__file__))"') do set CTK_DIR=%%P
+
 echo Genererar ikon...
 %PYTHON% make_icon.py
 
@@ -39,7 +42,10 @@ echo Bygger exe...
   --hidden-import=sounddevice ^
   --hidden-import=keyboard ^
   --hidden-import=pystray._win32 ^
+  --hidden-import=keyring.backends.Windows ^
+  --hidden-import=customtkinter ^
   --add-data "%FW_DIR%\assets;faster_whisper\assets" ^
+  --add-data "%CTK_DIR%;customtkinter" ^
   main.py
 
 echo.

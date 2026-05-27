@@ -21,6 +21,7 @@ The learned.json format:
   }
 """
 import logging
+import threading
 from difflib import SequenceMatcher
 from pathlib import Path
 
@@ -33,6 +34,9 @@ LEARNED_FILE = Path.home() / ".freewispr-swedish" / "learned.json"
 
 # How many times the same correction must occur before auto-promoting
 PROMOTE_THRESHOLD = 3
+
+# Serialise concurrent access to learned.json
+_LEARN_LOCK = threading.Lock()
 
 
 def _load_learned() -> dict:
@@ -99,43 +103,44 @@ def record_correction(before: str, after: str) -> None:
     if not diffs:
         return
 
-    learned = _load_learned()
-    promoted_any = False
-    recorded: list[tuple[str, int]] = []
+    with _LEARN_LOCK:
+        learned = _load_learned()
+        promoted_any = False
+        recorded: list[tuple[str, int]] = []
 
-    for wrong, correct in diffs:
-        entry = learned.get(wrong)
-        if entry and entry.get("promoted"):
-            # Already promoted — skip
-            continue
+        for wrong, correct in diffs:
+            entry = learned.get(wrong)
+            if entry and entry.get("promoted"):
+                # Already promoted — skip
+                continue
 
-        if entry:
-            entry["count"] = entry.get("count", 0) + 1
-            # Update correct form (use latest — LLM may improve capitalization)
-            entry["correct"] = correct
-        else:
-            entry = {"correct": correct, "count": 1, "promoted": False}
-            learned[wrong] = entry
+            if entry:
+                entry["count"] = entry.get("count", 0) + 1
+                # Update correct form (use latest — LLM may improve capitalization)
+                entry["correct"] = correct
+            else:
+                entry = {"correct": correct, "count": 1, "promoted": False}
+                learned[wrong] = entry
 
-        recorded.append((wrong, entry["count"]))
+            recorded.append((wrong, entry["count"]))
 
-        # Promote if threshold reached
-        if entry["count"] >= PROMOTE_THRESHOLD and not entry["promoted"]:
-            _promote(wrong, correct)
-            entry["promoted"] = True
-            promoted_any = True
+            # Promote if threshold reached
+            if entry["count"] >= PROMOTE_THRESHOLD and not entry["promoted"]:
+                _promote(wrong, correct)
+                entry["promoted"] = True
+                promoted_any = True
 
-    if recorded:
-        # One aggregated log line instead of one per diff — keeps the log
-        # readable when the LLM rewrites a long sentence with many fixes.
-        summary = ", ".join(f"{w}={c}/{PROMOTE_THRESHOLD}" for w, c in recorded)
-        log.info("Auto-lärning: registrerade %d korrigering(ar) [%s]",
-                 len(recorded), summary)
+        if recorded:
+            # One aggregated log line instead of one per diff — keeps the log
+            # readable when the LLM rewrites a long sentence with many fixes.
+            summary = ", ".join(f"{w}={c}/{PROMOTE_THRESHOLD}" for w, c in recorded)
+            log.info("Auto-lärning: registrerade %d korrigering(ar) [%s]",
+                     len(recorded), summary)
 
-    _save_learned(learned)
+        _save_learned(learned)
 
-    if promoted_any:
-        log.info("Auto-lärning befordrade nya korrigeringar till ordlistan")
+        if promoted_any:
+            log.info("Auto-lärning befordrade nya korrigeringar till ordlistan")
 
 
 def _promote(wrong: str, correct: str) -> None:

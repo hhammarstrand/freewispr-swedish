@@ -13,6 +13,12 @@ import sounds
 
 log = logging.getLogger("freewispr")
 
+
+def _text_meta(text: str) -> str:
+    words = len(text.split())
+    return f"chars={len(text)}, words={words}"
+
+
 MIN_AUDIO_SAMPLES = 3200   # 0.2 s at 16 kHz — ignore accidental taps
 # Default RMS gate. Audio quieter than this is treated as silence and dropped
 # without invoking Whisper (saves ~1 s of CPU per phantom press).
@@ -29,11 +35,6 @@ DEFAULT_MIN_RMS = 0.003
 # transcriptions stall (e.g. LLM-polish round-trip). Beyond this depth we
 # drop new presses and show "Upptagen" instead.
 _QUEUE_MAX = 2
-
-
-def _text_meta(text: str) -> str:
-    words = len(text.split())
-    return f"chars={len(text)}, words={words}"
 
 
 def _parse_hotkey(hotkey: str) -> tuple[str, tuple[str, ...]]:

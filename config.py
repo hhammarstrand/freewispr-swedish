@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 
 from json_store import load_json, save_json_atomic
@@ -7,6 +8,8 @@ try:
 except Exception:
     keyring = None
 
+log = logging.getLogger("freewispr")
+
 CONFIG_DIR = Path.home() / ".freewispr-swedish"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 _KEYRING_SERVICE = "freewispr-swedish"
@@ -14,7 +17,11 @@ _KEYRING_SERVICE = "freewispr-swedish"
 # Legacy single-key entry. Migreras till provider-specifika nycklar vid load().
 _LEGACY_KEYRING_USERNAME = "llm_api_key"
 
-# Provider-IDn som matchar PROVIDERS i llm_polish.py.
+# Provider-IDn som matchar PROVIDERS i llm_polish.py och remote_transcribe.py.
+# Hardkodade här eftersom dessa tupler används vid import-tid för att bygga
+# _SECRET_FIELDS/_ALL_STRIPPED_FIELDS, och de tunga provider-modulerna inte
+# kan importeras vid den tidpunkten.  _validate_providers() (anropas från
+# load()) verifierar vid runtime att värdena stämmer.
 _LLM_PROVIDERS: tuple[str, ...] = ("github", "staik", "berget", "openai", "custom")
 # Remote-transkriberingsleverantörer (utan "local").
 _TR_PROVIDERS: tuple[str, ...] = ("staik", "berget", "custom")
@@ -102,6 +109,44 @@ def _secret_field_map() -> dict[str, str]:
     return mapping
 
 
+_providers_validated = False
+
+
+def _validate_providers() -> None:
+    """Check that hardcoded _LLM_PROVIDERS/_TR_PROVIDERS match the actual modules.
+
+    Called once from load(). Logs a warning if they diverge — this catches the
+    case where someone adds a new provider to llm_polish.py or
+    remote_transcribe.py but forgets to update the tuples here.
+    """
+    global _providers_validated
+    if _providers_validated:
+        return
+    _providers_validated = True
+    try:
+        from llm_polish import PROVIDERS as llm_providers
+        actual_llm = tuple(llm_providers.keys())
+        if set(_LLM_PROVIDERS) != set(actual_llm):
+            log.warning(
+                "config._LLM_PROVIDERS %s != llm_polish.PROVIDERS keys %s — "
+                "update config.py to match!",
+                _LLM_PROVIDERS, actual_llm,
+            )
+    except Exception as e:
+        log.debug("Kunde inte validera LLM-providers: %s", e)
+    try:
+        from remote_transcribe import PROVIDERS as tr_providers
+        actual_tr = tuple(tr_providers.keys())
+        if set(_TR_PROVIDERS) != set(actual_tr):
+            log.warning(
+                "config._TR_PROVIDERS %s != remote_transcribe.PROVIDERS keys %s — "
+                "update config.py to match!",
+                _TR_PROVIDERS, actual_tr,
+            )
+    except Exception as e:
+        log.debug("Kunde inte validera TR-providers: %s", e)
+
+
 def _get_secret(username: str) -> str:
     if not keyring:
         return ""
@@ -155,6 +200,7 @@ def _migrate_legacy_field_names(cfg: dict, data: dict) -> bool:
 
 
 def load():
+    _validate_providers()
     CONFIG_DIR.mkdir(exist_ok=True)
     if CONFIG_FILE.exists():
         data = load_json(CONFIG_FILE, {})

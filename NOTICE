@@ -16,7 +16,6 @@ Runtime dependencies
 * pyperclip             — BSD-3-Clause
 * Pillow (PIL)          — MIT-CMU (HPND)
 * keyring               — MIT License
-* requests              — Apache-2.0
 
 * pystray               — LGPL-3.0-or-later
     pystray is dynamically linked (imported at runtime) by freewispr-swedish.

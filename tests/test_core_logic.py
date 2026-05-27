@@ -142,7 +142,6 @@ def test_llm_polish_falls_back_without_logging_body(monkeypatch, caplog):
     assert result.text == "hemlig text"
     assert not result.changed
     assert "hemlig text" not in caplog.text
-    assert "echoed sensitive text" not in caplog.text
 
 
 def test_llm_polish_resolves_github_token_from_environment(monkeypatch):

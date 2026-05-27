@@ -61,7 +61,7 @@ PROVIDERS: dict[str, _Provider] = {
     "custom": _Provider(
         label="Custom (OpenAI-kompatibel)",
         base_url="",
-        key_env_vars=("LLM_API_KEY",),
+        key_env_vars=("TRANSCRIPTION_API_KEY",),
         default_model="",
         user_configurable_url=True,
     ),
@@ -112,7 +112,10 @@ def _float_to_wav_bytes(audio: np.ndarray, sample_rate: int) -> bytes:
     if audio.dtype != np.float32:
         audio = audio.astype(np.float32, copy=False)
     if audio.ndim != 1:
-        audio = audio.reshape(-1)
+        if audio.shape[1] > 1:
+            audio = audio.mean(axis=1).astype(np.float32)
+        else:
+            audio = audio.reshape(-1)
     # Klampa och konvertera till int16 utan att introducera DC.
     clipped = np.clip(audio, -1.0, 1.0)
     pcm = (clipped * 32767.0).astype(np.int16)
@@ -232,6 +235,11 @@ def transcribe(
         text = (data.get("text") if isinstance(data, dict) else "") or ""
     except Exception:
         text = raw.decode("utf-8", errors="replace")
+
+    # Sanity check: servern kan returnera HTML trots HTTP 200.
+    if '<html' in text.lower() or '<!' in text[:20]:
+        log.warning("Remote transcribe returnerade HTML istället för text")
+        return ""
 
     text = text.strip()
     log.info("Remote transcribe ok (%s, %d chars)", provider, len(text))

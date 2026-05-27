@@ -225,7 +225,7 @@ class MicRecorder:
             except Exception as e:
                 last_err = e
 
-        raise last_err or RuntimeError("Ingen mikrofon kunde oppnas")
+        raise last_err or RuntimeError("Ingen mikrofon kunde öppnas")
 
     def _ensure_buffer(self, rate: int, channels: int) -> None:
         """Allocate or re-allocate the ring buffer for (rate, channels)."""
@@ -254,7 +254,7 @@ class MicRecorder:
                 api_name = apis.get(d["hostapi"], "?")
                 if not self._device_api or api_name == self._device_api:
                     rate = int(d["default_samplerate"])
-                    for ch in [1, d["max_input_channels"]]:
+                    for ch in sorted(set([1, d["max_input_channels"]])):
                         candidates.append((self._device_index, rate, ch,
                                            f"{d['name']} [{api_name}] (saved index)"))
 
@@ -262,7 +262,7 @@ class MicRecorder:
             # Fall back to name substring match across all APIs.
             for m in _find_device_by_name(self._device_name):
                 name = devs[m["index"]]["name"]
-                for ch in [1, m["channels"]]:
+                for ch in sorted(set([1, m["channels"]])):
                     entry = (m["index"], m["rate"], ch,
                              f"{name} [{m['api']}]")
                     if entry not in candidates:
@@ -280,7 +280,7 @@ class MicRecorder:
 
         for _, i, dev in all_devs:
             rate = int(dev["default_samplerate"])
-            for ch in [1, dev["max_input_channels"]]:
+            for ch in sorted(set([1, dev["max_input_channels"]])):
                 label = f"{dev['name']} (auto)"
                 entry = (i, rate, ch, label)
                 if entry not in candidates:
@@ -302,7 +302,7 @@ class MicRecorder:
         remaining = self._buffer_capacity - self._buffer_offset
         if remaining <= 0:
             if not self._buffer_overflow:
-                log.warning("Inspelning naadde %d s max-cap, slutar buffra",
+                log.warning("Inspelning nådde %d s max-cap, slutar buffra",
                             MAX_RECORD_SECONDS)
                 self._buffer_overflow = True
             return

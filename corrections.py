@@ -34,7 +34,7 @@ def load() -> dict[str, str]:
         return _cache
     if _FILE.exists():
         _cache = dict(load_json(_FILE, {}))
-        _cache_mtime = _FILE.stat().st_mtime if _FILE.exists() else 0.0
+        _cache_mtime = current_mt
         return _cache
     _cache = {}
     _cache_mtime = current_mt
@@ -46,7 +46,10 @@ def save(corrections: dict[str, str]):
     save_json_atomic(_FILE, corrections)
     # Invalidate cache so next load() picks up the new data
     _cache = corrections
-    _cache_mtime = _FILE.stat().st_mtime
+    try:
+        _cache_mtime = _FILE.stat().st_mtime
+    except OSError:
+        _cache_mtime = 0.0
 
 
 # Compiled-pattern cache for apply(). A *single* alternation regex with a
@@ -64,7 +67,7 @@ def _build_apply_cache(corr: dict[str, str]) -> tuple[re.Pattern[str] | None, di
     # Sort longest first so multi-word keys match before their prefixes.
     keys = sorted(corr.keys(), key=len, reverse=True)
     alternation = "|".join(re.escape(k) for k in keys)
-    pattern = re.compile(r"\b(?:" + alternation + r")\b", re.IGNORECASE)
+    pattern = re.compile(r"\b(?:" + alternation + r")\b", re.IGNORECASE | re.UNICODE)
     lookup = {k.lower(): v for k, v in corr.items()}
     return pattern, lookup
 

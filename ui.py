@@ -23,12 +23,6 @@ import config as cfg_module
 # never touches LLM polish.
 
 
-def _llm():
-    """Lazy import shim for LLM settings helpers."""
-    from llm_polish import AVAILABLE_MODELS, DEFAULT_MODEL, normalize_model, test_connection
-    return AVAILABLE_MODELS, DEFAULT_MODEL, normalize_model, test_connection
-
-
 def _llm_providers():
     """Lazy shim for the multi-provider LLM helpers (ctk Settings UI)."""
     from llm_polish import (
@@ -1203,8 +1197,11 @@ class SettingsWindow:
                     font=ctk.CTkFont(weight="bold") if _CTK_AVAILABLE else None
                     ).pack(anchor="w", **pad)
 
-        from audio import list_input_devices
-        self._mic_devices = list_input_devices()
+        try:
+            from audio import list_input_devices
+            self._mic_devices = list_input_devices()
+        except Exception:
+            self._mic_devices = []
         mic_names = ["Auto"] + [d["name"] for d in self._mic_devices]
 
         saved_mic_raw = self.cfg.get("mic_device")
@@ -1377,13 +1374,16 @@ class SettingsWindow:
         if not models:
             return
         names = list(models.keys())
-        self.root.after(0, lambda: self._set_llm_model_choices(names))
-        self.root.after(
-            0,
-            lambda: self._llm_models_status.configure(
-                text=f"{len(names)} modeller hittade hos leverantören."
-            ),
-        )
+        try:
+            self.root.after(0, lambda: self._set_llm_model_choices(names))
+            self.root.after(
+                0,
+                lambda: self._llm_models_status.configure(
+                    text=f"{len(names)} modeller hittade hos leverantören."
+                ),
+            )
+        except Exception:
+            return
 
     def _toggle_llm_key_visibility(self):
         self._llm_show_key = not self._llm_show_key
@@ -1413,7 +1413,10 @@ class SettingsWindow:
                 ok, msg = llm["test_connection"](key, model, pid, base_url)
             except Exception as e:
                 ok, msg = False, f"Fel: {e}"
-            self.root.after(0, lambda: self._show_llm_test_result(ok, msg))
+            try:
+                self.root.after(0, lambda: self._show_llm_test_result(ok, msg))
+            except Exception:
+                return
 
         threading.Thread(target=_run, daemon=True).start()
 
@@ -1624,7 +1627,10 @@ class SettingsWindow:
                 ok, msg = tr["test_connection"](pid, key, base_url)
             except Exception as e:
                 ok, msg = False, f"Fel: {e}"
-            self.root.after(0, lambda: self._show_tr_test_result(ok, msg))
+            try:
+                self.root.after(0, lambda: self._show_tr_test_result(ok, msg))
+            except Exception:
+                return
 
         threading.Thread(target=_run, daemon=True).start()
 
