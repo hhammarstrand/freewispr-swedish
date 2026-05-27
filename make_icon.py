@@ -104,43 +104,45 @@ def make_og_image() -> Image.Image:
     draw = ImageDraw.Draw(img)
 
     draw.rectangle([0, 0, 1200, 630], fill=PANEL)
-    draw.rounded_rectangle([72, 72, 1128, 558], radius=46, fill="white", outline=LINE, width=2)
+    draw.rounded_rectangle([78, 80, 1122, 550], radius=44, fill="#f6f3ed")
+    draw.rounded_rectangle([72, 72, 1128, 540], radius=44, fill="white", outline=LINE, width=2)
 
-    icon = make_icon(112)
+    icon = make_icon(104)
     img.paste(icon, (116, 118), icon)
-    draw.text((252, 128), "freewispr-swedish", font=_font(56, True), fill=INK)
-    draw.text((256, 202), "Svensk diktering för Windows", font=_font(31, False), fill=MUTED)
+    draw.text((248, 122), "freewispr-swedish", font=_font(58, True), fill=INK)
+    draw.text((252, 197), "Svensk diktering för Windows", font=_font(31, False), fill=MUTED)
 
-    draw.line([116, 292, 650, 292], fill=LINE, width=2)
-    draw.text((116, 342), "Lokal Whisper-transkribering", font=_font(29, True), fill=INK)
-    draw.text((116, 388), "KBLab-modeller, terminalvänlig paste och valfri LLM.", font=_font(24, False), fill=MUTED)
+    draw.line([116, 286, 662, 286], fill=LINE, width=2)
+    draw.text((116, 335), "Lokal Whisper-transkribering", font=_font(31, True), fill=INK)
+    draw.text((116, 383), "KBLab-modeller, terminalvänlig paste", font=_font(24, False), fill=MUTED)
+    draw.text((116, 418), "och valfri LLM-granskning.", font=_font(24, False), fill=MUTED)
 
     labels = [("lokal först", GREEN), ("svenska modeller", BLUE), ("Windows", INK)]
     x = 116
     for text, color in labels:
-        bbox = draw.textbbox((0, 0), text, font=_font(19, True))
-        width = bbox[2] - bbox[0] + 38
-        draw.rounded_rectangle([x, 468, x + width, 510], radius=21, fill="#f8fafc", outline=LINE, width=1)
-        draw.ellipse([x + 16, 484, x + 26, 494], fill=color)
-        draw.text((x + 36, 477), text, font=_font(19, True), fill=INK)
+        bbox = draw.textbbox((0, 0), text, font=_font(18, True))
+        width = bbox[2] - bbox[0] + 42
+        draw.rounded_rectangle([x, 470, x + width, 512], radius=21, fill="#f8fafc", outline=LINE, width=1)
+        draw.ellipse([x + 16, 486, x + 27, 497], fill=color)
+        draw.text((x + 38, 478), text, font=_font(18, True), fill=INK)
         x += width + 12
 
-    draw.rounded_rectangle([768, 132, 1058, 468], radius=34, fill=SOFT, outline=LINE, width=2)
-    draw.rounded_rectangle([804, 174, 1022, 224], radius=25, fill=INK)
-    draw.ellipse([828, 192, 840, 204], fill=GREEN)
+    draw.rounded_rectangle([756, 126, 1058, 454], radius=38, fill=SOFT, outline=LINE, width=2)
+    draw.rounded_rectangle([802, 174, 1012, 224], radius=25, fill=INK)
+    draw.ellipse([827, 192, 840, 205], fill=GREEN)
     draw.text((858, 187), "Lyssnar", font=_font(22, True), fill="white")
 
-    bars = [16, 34, 22, 46, 26, 38, 18]
+    bars = [18, 38, 28, 56, 34, 46, 22]
     bx = 828
     for height in bars:
-        draw.rounded_rectangle([bx, 300 - height, bx + 12, 300], radius=6, fill=BLUE)
+        draw.rounded_rectangle([bx, 308 - height, bx + 13, 308], radius=7, fill=BLUE)
         bx += 22
 
-    draw.rounded_rectangle([804, 338, 1022, 410], radius=20, fill="white", outline=LINE, width=1)
-    draw.text((828, 355), "Transkriberar lokalt", font=_font(20, True), fill=INK)
-    draw.text((828, 382), "Klistrad", font=_font(18, False), fill=MUTED)
+    draw.rounded_rectangle([804, 346, 1010, 408], radius=20, fill="white", outline=LINE, width=1)
+    draw.text((828, 361), "Transkriberar lokalt", font=_font(19, True), fill=INK)
+    draw.text((828, 387), "Texten klistras in", font=_font(16, False), fill=MUTED)
 
-    draw.text((816, 502), "hhammarstrand.github.io/freewispr-swedish", font=_font(18, False), fill=MUTED)
+    draw.text((792, 498), "hhammarstrand.github.io/freewispr-swedish", font=_font(18, False), fill=MUTED)
     return img
 
 
