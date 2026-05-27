@@ -204,22 +204,6 @@ def test_auto_learn_extracts_single_word_replacements_only():
 
 def test_dictation_parse_hotkey_splits_modifiers_and_trigger():
     """_parse_hotkey must return ("space", ("ctrl", "shift")) for chorded hotkeys."""
-    import sys as _sys
-    from types import SimpleNamespace as _NS
-    # Stub out the `keyboard` module so dictation imports cleanly in CI envs
-    # without the real C extension installed.
-    _sys.modules.setdefault(
-        "keyboard",
-        _NS(
-            parse_hotkey=lambda s: ((1,), (2,)),  # tuple shape only matters
-            is_pressed=lambda key: False,
-            add_hotkey=lambda *a, **kw: None,
-            on_release_key=lambda *a, **kw: None,
-            unhook=lambda h: None,
-            send=lambda *a, **kw: None,
-        ),
-    )
-    _sys.modules.setdefault("sounds", _NS(play_start=lambda: None, play_stop=lambda: None))
     dictation = importlib.import_module("dictation")
 
     trigger, modifiers = dictation._parse_hotkey("ctrl+shift+space")
@@ -263,24 +247,6 @@ def test_modifiers_is_modifier():
 
 def test_dictation_parse_hotkey_normalises_cmd_to_windows():
     """A hotkey with 'cmd' must yield canonical 'windows' so paste releases it."""
-    import sys as _sys
-    from types import SimpleNamespace as _NS
-    _sys.modules.setdefault(
-        "keyboard",
-        _NS(
-            parse_hotkey=lambda s: ((1,), (2,)),
-            is_pressed=lambda key: False,
-            add_hotkey=lambda *a, **kw: None,
-            on_press_key=lambda *a, **kw: None,
-            on_release_key=lambda *a, **kw: None,
-            unhook=lambda h: None,
-            send=lambda *a, **kw: None,
-            release=lambda k: None,
-        ),
-    )
-    _sys.modules.setdefault("sounds", _NS(play_start=lambda: None,
-                                          play_stop=lambda: None,
-                                          play_error=lambda: None))
     dictation = importlib.import_module("dictation")
 
     trigger, modifiers = dictation._parse_hotkey("cmd+shift+space")
