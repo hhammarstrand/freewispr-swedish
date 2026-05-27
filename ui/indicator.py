@@ -33,6 +33,10 @@ def _virtual_screen_bounds(root) -> tuple[int, int, int, int]:
 class FloatingIndicator:
     """Compact always-on-top pill with animated equalizer bars.
 
+    Audio level is driven primarily by ``push_level()``, called from
+    the recording callback; ``level_source`` serves as a fallback when
+    no explicit pushes arrive.
+
     States:
       listen     — blue bars driven by live microphone level
       transcribe — orange bars pulsing as a traveling sine wave

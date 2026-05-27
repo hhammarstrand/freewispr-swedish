@@ -1,3 +1,4 @@
+"""Clipboard-based paste with terminal detection and modifier release."""
 import logging
 import queue
 import threading

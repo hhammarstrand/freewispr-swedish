@@ -1,3 +1,4 @@
+"""KBLab Whisper transcription with optional LLM polishing."""
 from __future__ import annotations
 
 import re

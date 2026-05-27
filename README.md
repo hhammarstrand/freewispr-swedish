@@ -40,8 +40,11 @@ Kräver Windows 10/11 och Python 3.10+.
 git clone https://github.com/hhammarstrand/freewispr-swedish.git
 cd freewispr-swedish
 pip install -r requirements.txt
+python convert_model.py small
 python main.py
 ```
+
+Modellen (~500 MB) laddas ner och konverteras första gången.
 
 Om du har en NVIDIA-GPU och vill använda CUDA:
 
@@ -53,7 +56,7 @@ pip install torch --index-url https://download.pytorch.org/whl/cu124
 
 Appen pratar bara med nätverket när du uttryckligen slår på det:
 
-- Första gången du använder en modell laddas den ner från Hugging Face om den inte redan finns lokalt.
+- Modeller laddas ner via `python convert_model.py` — appen kontaktar inte Hugging Face automatiskt.
 - Om du slår på **LLM-granskning** skickas den transkriberade texten – inte ljudet – till vald leverantör. Leverantörer: GitHub Models, staik.se, Berget AI, OpenAI eller valfri OpenAI-kompatibel server.
 - Om du slår på **remote-transkribering** skickas ljudet – inte bara text – till vald leverantör (staik.se, Berget AI eller custom).
 
@@ -167,7 +170,7 @@ Tester som behöver `sounddevice`, `keyboard` eller `pyperclip` kräver att dess
 
 ### Lint och format
 
-Projektet har ingen formell linter-konfiguration ännu, men koden följer PEP 8 med 100-teckensbredd.
+CI kör `ruff check . --select E,F,W --ignore E501` vid varje push.
 
 ### Modellkonvertering
 
@@ -195,10 +198,14 @@ freewispr-swedish/
 +-- audio.py             # mikrofoninspelning, resampling och kanalhantering
 +-- paste.py             # urklipp och terminalvänlig paste
 +-- ui/                  # Tkinter/CustomTkinter UI (paket)
+|   +-- __init__.py
+|   +-- _ctk.py          #   lazy-import av customtkinter
 |   +-- indicator.py     #   flytande indikator
 |   +-- settings_window.py # inställningsfönster med tabs
 |   +-- snippets_window.py # snippet-hantering
 |   +-- dictionary_window.py # personlig ordlista
+|   +-- hotkey_capture.py #  tangentfångst-dialog
+|   +-- pair_dialog.py   #   nyckel-värde-dialog
 |   +-- styles.py        #   färger och ttk-tema
 +-- config.py            # config, nyckelhantering och keyring-integration
 +-- corrections.py       # personlig ordlista med cachad regex
@@ -211,6 +218,8 @@ freewispr-swedish/
 +-- sounds.py            # syntetiserade ljudeffekter
 +-- make_icon.py         # genererar appikon, favicon och OG-bild
 +-- convert_model.py     # konverterar Whisper-modeller till CTranslate2
++-- run.bat              # startar appen utan konsolfönster
++-- NOTICE               # tredjepartslicenser
 +-- docs/                # GitHub Pages-site
 +-- tests/               # pytest-tester
 ```

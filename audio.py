@@ -1,3 +1,4 @@
+"""Microphone recording, channel handling and resampling to 16 kHz."""
 import math
 import logging
 import time as time_module
@@ -173,7 +174,7 @@ def _try_start(device: int, rate: int, channels: int, callback) -> sd.InputStrea
 
 
 class MicRecorder:
-    """Records from mic while a hotkey is held."""
+    """Start/stop microphone recording with pre-allocated ring buffer."""
 
     def __init__(self, device: str | dict | None = None):
         """``device`` accepts:
@@ -221,7 +222,7 @@ class MicRecorder:
         # in the caller), close the leaked stream before opening a new one.
         if self._stream is not None:
             try:
-                self._stream.stop()
+                self._stream.abort()
                 self._stream.close()
             except Exception:
                 pass
@@ -382,7 +383,7 @@ class MicRecorder:
         self.recording = False
         if self._stream:
             try:
-                self._stream.stop()
+                self._stream.abort()
                 self._stream.close()
             except Exception:
                 pass

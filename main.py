@@ -24,7 +24,7 @@ _LOG_FILE = _LOG_DIR / "freewispr.log"
 
 
 def _attach_file_logging() -> None:
-    """Create the log dir and attach the rotating file handler.
+    """Create the log dir and attach the file handler.
 
     Done from main() (not at import) so unit tests can ``import main`` /
     transitively pull config without writing to disk.
@@ -47,8 +47,8 @@ try:
     import pystray
 
     import config as cfg_module
-    # Heavy modules (torch, faster_whisper, scipy) are imported lazily
-    # inside _load_app() so the tray icon appears in <1 second.
+    # Heavy modules are imported lazily via _make_transcriber/_make_dictation
+    # so the tray icon appears in <1 second.
     from ui import SettingsWindow, SnippetsWindow, DictionaryWindow, FloatingIndicator, _style
     log.info("Snabb-imports OK")
 except Exception:
@@ -195,10 +195,7 @@ def _make_icon() -> Image.Image:
 def _load_app():
     global _config, _transcriber, _dictation
 
-    # Lazy-import heavy modules here (runs in background thread)
-    # so the tray icon appears instantly.
-    log.info("Laddar tunga moduler (torch, whisper, scipy)...")
-    log.info("Alla imports OK")
+    log.info("Laddar config och modell...")
 
     _config = cfg_module.load()
 
