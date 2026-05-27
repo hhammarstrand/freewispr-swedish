@@ -5,7 +5,7 @@ Svensk diktering för Windows. Håll en tangent, prata, släpp – texten hamnar
 [![Windows build](https://github.com/hhammarstrand/freewispr-swedish/actions/workflows/build-windows.yml/badge.svg)](https://github.com/hhammarstrand/freewispr-swedish/actions/workflows/build-windows.yml)
 [![GitHub Pages](https://github.com/hhammarstrand/freewispr-swedish/actions/workflows/pages.yml/badge.svg)](https://hhammarstrand.github.io/freewispr-swedish/)
 
-![freewispr-swedish preview](docs/og-image.png)
+![freewispr-swedish preview](docs/og-image.png?v=20260527)
 
 Det här är en svensk fork av [x26prakhar/freewispr](https://github.com/x26prakhar/freewispr). Den använder KBLab:s svenska Whisper-modeller och är trimmad för att fungera även i terminaler och CLI-verktyg där vanlig syntetisk paste brukar misslyckas.
 
