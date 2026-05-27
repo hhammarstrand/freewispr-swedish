@@ -6,6 +6,8 @@
 <title>freewispr-swedish - svensk diktering för Windows</title>
 <meta name="description" content="freewispr-swedish är en open-source dikteringsapp för Windows med lokal svensk Whisper-transkribering, smart clipboard-fallback och valfri LLM-granskning.">
 <meta name="robots" content="index,follow">
+<meta name="theme-color" content="#111827">
+<link rel="canonical" href="https://hhammarstrand.github.io/freewispr-swedish/">
 <link rel="icon" type="image/x-icon" href="favicon.ico">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
@@ -13,8 +15,11 @@
 <meta property="og:title" content="freewispr-swedish - svensk diktering för Windows">
 <meta property="og:description" content="Lokal svensk Whisper-diktering för Windows. Valfri LLM-granskning via GitHub Models.">
 <meta property="og:image" content="https://hhammarstrand.github.io/freewispr-swedish/og-image.png">
+<meta property="og:url" content="https://hhammarstrand.github.io/freewispr-swedish/">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="freewispr-swedish - svensk diktering för Windows">
+<meta name="twitter:description" content="Lokal svensk Whisper-diktering, clipboard-fallback och valfri LLM-granskning.">
 <meta name="twitter:image" content="https://hhammarstrand.github.io/freewispr-swedish/og-image.png">
 <style>
 :root {
@@ -62,15 +67,11 @@ a { color: inherit; }
   letter-spacing: -0.03em;
 }
 
-.mark {
+.brand-icon {
   width: 30px;
   height: 30px;
   border-radius: 9px;
-  background: var(--ink);
-  color: white;
-  display: grid;
-  place-items: center;
-  font: 700 14px/1 var(--mono);
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.12);
 }
 
 .links { display: flex; align-items: center; gap: 22px; }
@@ -138,6 +139,8 @@ h1 {
 .btn.secondary:hover { border-color: var(--ink); }
 
 .note { margin-top: 14px; color: var(--muted); font-size: 0.94rem; }
+.trust { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+.trust span { padding: 7px 10px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font: 700 0.78rem/1 var(--mono); background: rgba(255,255,255,0.56); }
 
 .product-card {
   border: 1px solid var(--line);
@@ -256,6 +259,7 @@ h2 { margin: 10px 0 0; font-size: clamp(2.1rem, 4vw, 3.7rem); line-height: 1; le
 .download h2 { color: white; margin: 0 0 8px; }
 .download p { margin: 0; color: #cbd5e1; line-height: 1.6; }
 .download .btn { color: var(--ink); background: white; }
+.download small { display: block; margin-top: 8px; color: #94a3b8; }
 
 footer { display: flex; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 30px 0 44px; color: var(--muted); border-top: 1px solid var(--line); }
 footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
@@ -272,7 +276,7 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
 <body>
   <div class="page">
     <header class="nav">
-      <a class="brand" href="./"><span class="mark">fw</span><span>freewispr-swedish</span></a>
+      <a class="brand" href="./"><img class="brand-icon" src="favicon-64.png" alt="" width="30" height="30"><span>freewispr-swedish</span></a>
       <nav class="links" aria-label="Huvudnavigation">
         <a href="#funktioner">Funktioner</a>
         <a href="#integritet">Integritet</a>
@@ -288,10 +292,11 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
           <h1>Svensk diktering utan omvägar.</h1>
           <p class="lead">Håll en tangent, prata och få texten där markören redan står. freewispr-swedish kör KBLab Whisper lokalt och kan, om du vill, granska texten med GitHub Models efteråt.</p>
           <div class="actions">
-            <a class="btn primary" href="https://github.com/hhammarstrand/freewispr-swedish/releases">Ladda ner</a>
-            <a class="btn secondary" href="https://github.com/hhammarstrand/freewispr-swedish/actions/workflows/build-windows.yml">Senaste Windows-build</a>
+            <a class="btn primary" href="https://github.com/hhammarstrand/freewispr-swedish/actions/workflows/build-windows.yml">Hämta senaste build</a>
+            <a class="btn secondary" href="https://github.com/hhammarstrand/freewispr-swedish">Visa källkod</a>
           </div>
-          <p class="note">Lokal som standard. Clipboard-fallback för terminaler. Valfri LLM-granskning.</p>
+          <p class="note">Windows-buildar publiceras som GitHub Actions-artifacts tills första stabila release finns.</p>
+          <div class="trust" aria-label="Nyckelfunktioner"><span>lokal först</span><span>åäö-optimerad</span><span>terminalvänlig</span></div>
         </div>
 
         <aside class="product-card" aria-label="Produktstatus">
@@ -305,7 +310,7 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
             <div class="meta-grid">
               <div class="meta"><b>sv</b><span>optimerad för svenska</span></div>
               <div class="meta"><b>lokal</b><span>Whisper på datorn</span></div>
-              <div class="meta"><b>valfri</b><span>LLM eftergranskning</span></div>
+              <div class="meta"><b>åäö</b><span>svensk text</span></div>
             </div>
           </div>
         </aside>
@@ -322,7 +327,7 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
           <article class="feature"><span class="num">03</span><h3>CLI-vänlig clipboard</h3><p>Texten stannar i urklipp även om automatisk paste inte fungerar i en terminal.</p></article>
           <article class="feature"><span class="num">04</span><h3>Personlig ordlista</h3><p>Rätta vanliga felhörningar, namn och facktermer en gång och återanvänd lokalt.</p></article>
           <article class="feature"><span class="num">05</span><h3>Valfri LLM</h3><p>Eftergranska text via GitHub Models och se direkt om den är lokal, LLM-granskad eller LLM-polerad.</p></article>
-          <article class="feature"><span class="num">06</span><h3>Automatiska builds</h3><p>Windows-exe byggs med GitHub Actions och publiceras som artifact för enkel testning.</p></article>
+          <article class="feature"><span class="num">06</span><h3>Egen identitet</h3><p>Ny ikon, favicon och social preview som hör till den svenska forken, inte originalprojektet.</p></article>
         </div>
       </section>
 
@@ -343,15 +348,15 @@ footer a { text-decoration: none; color: var(--ink); font-weight: 700; }
           <p class="section-copy">Ingen tung installation krävs för att testa en build. Packa upp, starta och diktera.</p>
         </div>
         <div class="steps">
-          <div class="step"><b>1</b><h3>Ladda ner</h3><p>Hämta senaste release eller Actions-artifact från GitHub.</p></div>
+          <div class="step"><b>1</b><h3>Ladda ner</h3><p>Hämta senaste Actions-artifact från GitHub. Stabil release publiceras när versionen är redo.</p></div>
           <div class="step"><b>2</b><h3>Starta</h3><p>Kör <code>freewispr-swedish.exe</code> och välj mikrofon, modell och indikatorläge.</p></div>
           <div class="step"><b>3</b><h3>Diktera</h3><p>Håll <code>Ctrl+Space</code>, prata, släpp. Texten hamnar där du arbetar.</p></div>
         </div>
       </section>
 
       <section class="download">
-        <div><h2>Testa freewispr-swedish.</h2><p>Byggen skapas automatiskt på GitHub. Releaser kan publiceras när versionerna stabiliseras.</p></div>
-        <a class="btn" href="https://github.com/hhammarstrand/freewispr-swedish">Öppna GitHub</a>
+        <div><h2>Testa freewispr-swedish.</h2><p>Byggen skapas automatiskt på GitHub och innehåller en körbar Windows-mapp.</p><small>Actions-artifacts kan kräva att du är inloggad på GitHub.</small></div>
+        <a class="btn" href="https://github.com/hhammarstrand/freewispr-swedish/actions/workflows/build-windows.yml">Senaste build</a>
       </section>
     </main>
 
