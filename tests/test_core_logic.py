@@ -61,7 +61,7 @@ def test_auto_learn_extracts_same_length_word_diffs():
 
 
 def test_config_save_uses_keyring_and_excludes_secret(tmp_path, monkeypatch):
-    config = importlib.import_module("config")
+    config = importlib.reload(importlib.import_module("config"))
     secrets = {}
 
     config.CONFIG_DIR = tmp_path
@@ -72,26 +72,36 @@ def test_config_save_uses_keyring_and_excludes_secret(tmp_path, monkeypatch):
         delete_password=lambda service, username: secrets.pop((service, username), None),
     )
 
-    config.save({**config.DEFAULTS, "llm_api_key": "secret-token", "model_size": "tiny"})
+    config.save({
+        **config.DEFAULTS,
+        "llm_api_key_github": "secret-token",
+        "model_size": "tiny",
+    })
 
     saved = json.loads(config.CONFIG_FILE.read_text(encoding="utf-8"))
     loaded = config.load()
 
-    assert "llm_api_key" not in saved
-    assert loaded["llm_api_key"] == "secret-token"
+    # Inga av nyckelfälten får ligga på disk.
+    for provider in ("github", "staik", "berget", "openai", "custom"):
+        assert f"llm_api_key_{provider}" not in saved
+    assert "llm_api_key" not in saved  # legacy
+    assert loaded["llm_api_key_github"] == "secret-token"
+    assert loaded["llm_api_key_staik"] == ""
     assert loaded["model_size"] == "tiny"
 
 
 def test_config_load_migrates_legacy_secret_off_disk(tmp_path):
-    config = importlib.import_module("config")
+    config = importlib.reload(importlib.import_module("config"))
     secrets = {}
 
     config.CONFIG_DIR = tmp_path
     config.CONFIG_FILE = tmp_path / "config.json"
+    # Gammal config: legacy fältnamn på disk + legacy nyckel i keyring.
     config.CONFIG_FILE.write_text(
-        json.dumps({"model_size": "base", "llm_api_key": "legacy-secret"}),
+        json.dumps({"model_size": "base", "llm_model": "openai/gpt-4.1"}),
         encoding="utf-8",
     )
+    secrets[(config._KEYRING_SERVICE, config._LEGACY_KEYRING_USERNAME)] = "legacy-secret"
     config.keyring = SimpleNamespace(
         get_password=lambda service, username: secrets.get((service, username)),
         set_password=lambda service, username, value: secrets.__setitem__((service, username), value),
@@ -101,8 +111,14 @@ def test_config_load_migrates_legacy_secret_off_disk(tmp_path):
     loaded = config.load()
     saved = json.loads(config.CONFIG_FILE.read_text(encoding="utf-8"))
 
-    assert loaded["llm_api_key"] == "legacy-secret"
+    # Legacy-nyckeln har migrerats till github-entryt.
+    assert loaded["llm_api_key_github"] == "legacy-secret"
+    assert (config._KEYRING_SERVICE, config._keyring_user("github")) in secrets
+    assert (config._KEYRING_SERVICE, config._LEGACY_KEYRING_USERNAME) not in secrets
+    # llm_model migrerat till llm_model_github.
+    assert loaded["llm_model_github"] == "openai/gpt-4.1"
     assert "llm_api_key" not in saved
+    assert "llm_model" not in saved
     assert saved["model_size"] == "base"
 
 
@@ -421,15 +437,18 @@ def test_main_apply_settings_serialised(monkeypatch):
 
 
 def test_config_load_keeps_legacy_secret_when_keyring_migration_fails(tmp_path):
-    config = importlib.import_module("config")
+    config = importlib.reload(importlib.import_module("config"))
     config.CONFIG_DIR = tmp_path
     config.CONFIG_FILE = tmp_path / "config.json"
     config.CONFIG_FILE.write_text(
-        json.dumps({"model_size": "base", "llm_api_key": "legacy-secret"}),
+        json.dumps({"model_size": "base"}),
         encoding="utf-8",
     )
+    # set_password kraschar -> migrering till per-provider entry misslyckas.
     config.keyring = SimpleNamespace(
-        get_password=lambda service, username: None,
+        get_password=lambda service, username: (
+            "legacy-secret" if username == config._LEGACY_KEYRING_USERNAME else None
+        ),
         set_password=lambda service, username, value: (_ for _ in ()).throw(RuntimeError("no backend")),
         delete_password=lambda service, username: None,
     )
@@ -437,13 +456,15 @@ def test_config_load_keeps_legacy_secret_when_keyring_migration_fails(tmp_path):
     loaded = config.load()
     saved = json.loads(config.CONFIG_FILE.read_text(encoding="utf-8"))
 
-    assert loaded["llm_api_key"] == "legacy-secret"
-    assert saved["llm_api_key"] == "legacy-secret"
+    # Migrering misslyckades -> nyckeln finns inte i någon provider-slot, men
+    # appen ska inte krascha och inte heller skriva nyckeln till disk.
+    assert loaded["llm_api_key_github"] == ""
+    assert "llm_api_key" not in saved
 
 
 def test_config_save_restores_secret_if_json_write_fails(tmp_path, monkeypatch):
-    config = importlib.import_module("config")
-    secrets = {(config._KEYRING_SERVICE, config._KEYRING_USERNAME): "old-secret"}
+    config = importlib.reload(importlib.import_module("config"))
+    secrets = {(config._KEYRING_SERVICE, config._keyring_user("github")): "old-secret"}
     config.CONFIG_DIR = tmp_path
     config.CONFIG_FILE = tmp_path / "config.json"
     config.keyring = SimpleNamespace(
@@ -451,17 +472,18 @@ def test_config_save_restores_secret_if_json_write_fails(tmp_path, monkeypatch):
         set_password=lambda service, username, value: secrets.__setitem__((service, username), value),
         delete_password=lambda service, username: secrets.pop((service, username), None),
     )
-    monkeypatch.setattr(config, "save_json_atomic", lambda path, data: (_ for _ in ()).throw(RuntimeError("disk full")))
+    monkeypatch.setattr(config, "save_json_atomic",
+                        lambda path, data: (_ for _ in ()).throw(RuntimeError("disk full")))
 
     with pytest.raises(RuntimeError):
-        config.save({**config.DEFAULTS, "llm_api_key": "new-secret"})
+        config.save({**config.DEFAULTS, "llm_api_key_github": "new-secret"})
 
-    assert secrets[(config._KEYRING_SERVICE, config._KEYRING_USERNAME)] == "old-secret"
+    assert secrets[(config._KEYRING_SERVICE, config._keyring_user("github"))] == "old-secret"
 
 
 def test_config_save_fails_if_secret_delete_fails(tmp_path):
-    config = importlib.import_module("config")
-    secrets = {(config._KEYRING_SERVICE, config._KEYRING_USERNAME): "old-secret"}
+    config = importlib.reload(importlib.import_module("config"))
+    secrets = {(config._KEYRING_SERVICE, config._keyring_user("github")): "old-secret"}
     config.CONFIG_DIR = tmp_path
     config.CONFIG_FILE = tmp_path / "config.json"
 
@@ -475,9 +497,10 @@ def test_config_save_fails_if_secret_delete_fails(tmp_path):
     )
 
     with pytest.raises(RuntimeError):
-        config.save({**config.DEFAULTS, "llm_api_key": ""})
+        # Sätter github-nyckeln till tom -> försöker delete -> failar.
+        config.save({**config.DEFAULTS, "llm_api_key_github": ""})
 
-    assert secrets[(config._KEYRING_SERVICE, config._KEYRING_USERNAME)] == "old-secret"
+    assert secrets[(config._KEYRING_SERVICE, config._keyring_user("github"))] == "old-secret"
 
 
 def test_llm_only_save_failure_restores_transcriber_state(monkeypatch):
@@ -490,24 +513,30 @@ def test_llm_only_save_failure_restores_transcriber_state(monkeypatch):
         "use_cuda": False,
         "llm_enabled": False,
         "llm_privacy_accepted": False,
-        "llm_api_key": "old-key",
-        "llm_model": "old-model",
+        "llm_provider": "github",
+        "llm_api_key_github": "old-key",
+        "llm_model_github": "old-model",
+        "transcription_provider": "local",
     }
     main._config = old_state.copy()
     main._transcriber = SimpleNamespace(
         llm_enabled=False,
+        llm_provider="github",
         llm_api_key="old-key",
         llm_model="old-model",
+        llm_base_url="",
     )
     restarted = []
     monkeypatch.setattr(main, "_restart_dictation", lambda: restarted.append(True))
-    monkeypatch.setattr(main.cfg_module, "save", lambda cfg: (_ for _ in ()).throw(RuntimeError("disk full")))
+    monkeypatch.setattr(main.cfg_module, "save",
+                        lambda cfg: (_ for _ in ()).throw(RuntimeError("disk full")))
 
     result = main._apply_settings({
         "llm_enabled": True,
         "llm_privacy_accepted": True,
-        "llm_api_key": "new-key",
-        "llm_model": "new-model",
+        "llm_provider": "github",
+        "llm_api_key_github": "new-key",
+        "llm_model_github": "new-model",
     })
 
     assert result is False
