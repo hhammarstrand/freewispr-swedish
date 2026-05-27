@@ -218,6 +218,7 @@ _SYSTEM_PROMPT = (
     "Korrigera BARA uppenbara transkriptionsfel: felhörda ord, grammatik, "
     "interpunktion och stavning. "
     "ÄNDRA INTE: innehåll, årtal, namn, siffror, fakta eller meningens betydelse. "
+    "Behåll talspråkliga uttryck om de verkar avsiktliga (t.ex. 'ju', 'nog', 'väl'). "
     "Om texten redan är korrekt, returnera den EXAKT som den är. "
     "Returnera BARA den korrigerade texten, inget annat."
 )
@@ -268,7 +269,7 @@ def _call_api(
             {"role": "user",   "content": user_text},
         ],
         "temperature": 0,
-        "max_tokens": max(200, len(user_text)),
+        "max_tokens": max(100, int(len(user_text) * 1.5)),
     }).encode("utf-8")
     return _request_json(
         f"{base}/chat/completions",
@@ -325,7 +326,7 @@ def polish(
         latency = int((time.perf_counter() - t0) * 1000)
 
         # Hallucinationsfilter: en korrigering ska inte förändra texten radikalt.
-        if len(result) > len(text) * 3 or len(result) < len(text) * 0.3:
+        if len(result) > len(text) * 2 or len(result) < len(text) * 0.5:
             log.warning(
                 "LLM-svar avviker för mycket i längd (%d vs %d), använder original",
                 len(result), len(text),
