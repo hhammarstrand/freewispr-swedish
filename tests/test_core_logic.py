@@ -9,9 +9,8 @@ import pytest
 
 def reload_with_home(module_name: str, tmp_path: Path):
     module = importlib.import_module(module_name)
-    module._FILE = tmp_path / f"{module_name}.json"
-    module._cache = None
-    module._cache_mtime = 0.0
+    from json_store import JsonCache
+    module._store = JsonCache(tmp_path / f"{module_name}.json", default={})
     return module
 
 

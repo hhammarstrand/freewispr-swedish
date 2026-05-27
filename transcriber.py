@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import re
 import logging
 import threading
+from collections.abc import Callable
 from pathlib import Path
 import numpy as np
 from faster_whisper import WhisperModel
@@ -481,7 +484,7 @@ class Transcriber:
         return text
 
     def polish_async(self, text: str,
-                     callback: 'Callable[[str, str], None]') -> None:
+                     callback: Callable[[str, str], None]) -> None:
         """Run LLM polish in a background thread.
 
         When finished, calls ``callback(original_text, polished_text)``

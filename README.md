@@ -51,14 +51,13 @@ pip install torch --index-url https://download.pytorch.org/whl/cu124
 
 ## Integritet
 
-Appen pratar bara med nätverket i två fall:
+Appen pratar bara med nätverket när du uttryckligen slår på det:
 
 - Första gången du använder en modell laddas den ner från Hugging Face om den inte redan finns lokalt.
-- Om du själv slår på LLM-granskning skickas den transkriberade texten – inte ljudet – till GitHub Models.
+- Om du slår på **LLM-granskning** skickas den transkriberade texten – inte ljudet – till vald leverantör. Leverantörer: GitHub Models, staik.se, Berget AI, OpenAI eller valfri OpenAI-kompatibel server.
+- Om du slår på **remote-transkribering** skickas ljudet – inte bara text – till vald leverantör (staik.se, Berget AI eller custom).
 
-GitHub-token för LLM hämtas i tur och ordning från sparad nyckel, `GITHUB_TOKEN`, `GH_TOKEN` eller `gh auth token`. Token loggas aldrig.
-
-- Om du slår på remote-transkribering skickas ljudet – inte bara text – till vald leverantör (staik.se eller Berget AI).
+API-nycklar lagras i Windows Credential Manager via `keyring`, aldrig i config-filen. Token loggas aldrig.
 
 Den dikterade texten kopieras till urklipp och klistras in via syntetisk Ctrl+V (eller Shift+Insert i konsolterminaler). Texten stannar kvar i urklipp efteråt som fallback — gammalt urklippsinnehåll återställs inte.
 
@@ -123,7 +122,11 @@ Exempel:
   "mic_device": null,
   "indicator_follow_mouse": true,
   "llm_enabled": false,
-  "llm_model": "openai/gpt-4.1-nano"
+  "llm_provider": "github",
+  "llm_model_github": "openai/gpt-4.1-nano",
+  "llm_privacy_accepted": false,
+  "transcription_provider": "local",
+  "min_rms": 0.003
 }
 ```
 
@@ -191,7 +194,12 @@ freewispr-swedish/
 +-- transcriber.py       # KBLab Whisper, CUDA och LLM-granskning
 +-- audio.py             # mikrofoninspelning, resampling och kanalhantering
 +-- paste.py             # urklipp och terminalvänlig paste
-+-- ui.py                # Tkinter/CustomTkinter UI och flytande indikator
++-- ui/                  # Tkinter/CustomTkinter UI (paket)
+|   +-- indicator.py     #   flytande indikator
+|   +-- settings_window.py # inställningsfönster med tabs
+|   +-- snippets_window.py # snippet-hantering
+|   +-- dictionary_window.py # personlig ordlista
+|   +-- styles.py        #   färger och ttk-tema
 +-- config.py            # config, nyckelhantering och keyring-integration
 +-- corrections.py       # personlig ordlista med cachad regex
 +-- snippets.py          # snippets/textmallar

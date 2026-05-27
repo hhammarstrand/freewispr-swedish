@@ -289,7 +289,7 @@ def _apply_settings_locked(new_cfg: dict):
             return True
         except Exception as e:
             log.error("Kunde inte spara inställningar: %s", e, exc_info=True)
-            _set_tray_status("Fel: kunde inte spara installningar")
+            _set_tray_status("Fel: kunde inte spara inställningar")
             if _indicator:
                 _indicator.show("Kunde inte spara inställningar", state="error")
                 _indicator.hide(delay_ms=4000)

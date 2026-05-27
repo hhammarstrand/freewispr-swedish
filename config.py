@@ -53,7 +53,7 @@ DEFAULTS = {
     # Per-provider sparade modellnamn. Gör att man kan växla utan att tappa val.
     "llm_model_github": "openai/gpt-4.1-nano",
     "llm_model_staik":  "gemma4:31b",
-    "llm_model_berget": "gemma-4-31B-it",
+    "llm_model_berget": "mistralai/Mistral-Small-3.2-24B-Instruct-2506",
     "llm_model_openai": "gpt-4.1-nano",
     "llm_model_custom": "",
     # Endast använd av custom-leverantören.
