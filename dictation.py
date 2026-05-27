@@ -1,3 +1,4 @@
+"""Push-to-talk dictation: hotkey -> record -> transcribe -> paste."""
 import logging
 import queue
 import threading
@@ -85,14 +86,6 @@ class DictationMode:
         # only the modifiers from this hotkey (not all of them — releasing
         # an unheld Win key opens the Start menu on Windows).
         self._modifier_keys: tuple[str, ...] = self._modifiers
-
-    def _finish_message(self) -> str:
-        state = getattr(self.transcriber, "last_polish_state", "local")
-        if state == "llm_changed":
-            return "Klistrad (LLM-polerad)"
-        if state == "llm_unchanged":
-            return "Klistrad (LLM-granskad)"
-        return "Klistrad (lokal)"
 
     # ------------------------------------------------------------------ public
 
@@ -184,7 +177,6 @@ class DictationMode:
         # Detach the UI push callback before stop_fast so a late audio
         # callback can't redraw bars after we've switched to transcribe.
         self.recorder.on_level = None
-        sounds.play_stop()
         # Stop the stream cheaply and hand back the captured audio. Downmix
         # and resample happen in the worker — keeping this hook callback
         # under ~10 ms so Windows doesn't disable the low-level hook.
@@ -192,12 +184,15 @@ class DictationMode:
             audio, channels, rate = self.recorder.stop_fast()
         except Exception as e:
             log.error("Audio stop error: %s", e, exc_info=True)
+            sounds.play_stop()
             sounds.play_error()
             if self.indicator:
                 self.indicator.show("Mikrofonfel", state="error")
                 self.indicator.hide(delay_ms=2500)
             self.on_status(f"Klar — håll {self.hotkey.upper()}")
             return
+
+        sounds.play_stop()
 
         # Reuse the running RMS maintained by the recorder — O(1).
         rms = self.recorder.rms()

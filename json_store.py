@@ -1,3 +1,4 @@
+"""Atomic JSON file I/O with corruption recovery and mtime-based caching."""
 import json
 import logging
 import os

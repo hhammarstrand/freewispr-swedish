@@ -1,3 +1,4 @@
+"""App configuration with keyring-backed secrets and migration."""
 import logging
 from pathlib import Path
 
