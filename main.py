@@ -272,14 +272,6 @@ def _apply_settings(new_cfg: dict):
 def _apply_settings_locked(new_cfg: dict):
     global _config, _dictation, _transcriber
 
-    if _reload_lock.locked():
-        log.warning("Modellomladdning pågår redan — avvisar nya inställningar")
-        _set_tray_status("Vänta: modell laddas fortfarande")
-        if _indicator:
-            _indicator.show("Vänta: modell laddas", state="error")
-            _indicator.hide(delay_ms=2000)
-        return False
-
     old_config = dict(_config)  # shallow copy for rollback
     old_model = _config.get("model_size")
     old_cuda = _config.get("use_cuda")
@@ -296,10 +288,10 @@ def _apply_settings_locked(new_cfg: dict):
             cfg_module.save(_config)
             return True
         except Exception as e:
-            log.error("Kunde inte spara installningar: %s", e, exc_info=True)
-            _set_tray_status("Fel: kunde inte spara installningar")
+            log.error("Kunde inte spara inställningar: %s", e, exc_info=True)
+            _set_tray_status("Fel: kunde inte spara inställningar")
             if _indicator:
-                _indicator.show("Kunde inte spara installningar", state="error")
+                _indicator.show("Kunde inte spara inställningar", state="error")
                 _indicator.hide(delay_ms=4000)
             return False
 
@@ -360,7 +352,7 @@ def _apply_settings_locked(new_cfg: dict):
             _restart_dictation()
             return False
         _set_tray_status(
-            f"Inställningar sparade — håll {_config.get('hotkey','ctrl+space').upper()}"
+            f"Inställningar sparade — håll {_config.get('hotkey','ctrl+space').upper()} för att prata"
         )
         return True
 
@@ -434,7 +426,7 @@ def _apply_settings_locked(new_cfg: dict):
                     # but warn the user that the next launch will revert.
                     log.warning("Modell laddad men config kunde inte sparas")
                 _set_tray_status(
-                    f"Modell '{new_model}' klar — håll {_config.get('hotkey','ctrl+space').upper()}"
+                    f"Modell '{new_model}' klar — håll {_config.get('hotkey','ctrl+space').upper()} för att prata"
                 )
                 if _indicator:
                     _indicator.show(f"Modell '{new_model}' klar", state="done")
@@ -510,15 +502,6 @@ def _is_startup_enabled() -> bool:
         return False
 
 
-def _enable_startup():
-    import winreg
-    key = _open_run_key(write=True)
-    try:
-        winreg.SetValueEx(key, _RUN_VALUE, 0, winreg.REG_SZ, _startup_exe_path())
-    finally:
-        winreg.CloseKey(key)
-
-
 def _toggle_startup(_=None):
     import winreg
     key = _open_run_key(write=True)
@@ -554,6 +537,8 @@ def _build_menu():
 def _quit(_=None):
     if _dictation:
         _dictation.stop()
+    if _transcriber:
+        _transcriber.close()
     if _tray_icon:
         _tray_icon.stop()
     if _tk_root:

@@ -1,6 +1,7 @@
 # TODO
 
 Prioriterad förbättringslista baserad på repo-granskning 2026-05-20.
+Kompletterad med pre-launch-granskning 2026-05-27.
 
 ## Hög prioritet
 
@@ -29,9 +30,65 @@ Prioriterad förbättringslista baserad på repo-granskning 2026-05-20.
   - Testa minst `transcriber._postprocess`, `corrections.apply`, `snippets.expand`, config-load/save och LLM-fallback.
   - Mocka Whisper, tangentbord, ljudenheter, clipboard och nätverk.
 
+## Buggar (pre-launch-granskning 2026-05-27)
+
+- [x] Fixa `_SYSTEM_PROMPT` i `llm_polish.py` — innehåller degraderad svenska utan å/ä/ö.
+  - Berör: `llm_polish.py:226-233`.
+  - "ar" → "är", "hora" → "höra", "Andra" → "Ändra", "innehall" → "innehåll" osv.
+  - Kan försämra LLM:ens förmåga att följa svenskspråkiga instruktioner.
+
+- [x] Fixa typo i `audio.py:228`: `"oppnas"` → `"öppnas"` (syns för användaren vid mikrofonfel).
+
+- [x] Fixa typo i `audio.py:305`: `"naadde"` → `"nådde"` (syns i loggar).
+
+- [x] Fixa TOCTOU dubbel-stat i `corrections.py:37` och `snippets.py:24`.
+  - `_cache_mtime` sätts med ett andra `stat()`-anrop efter laddning.
+  - Om filen skrivs igen mellan load och det andra stat()-anropet kan cachen
+    registrera en nyare mtime än det som faktiskt laddades, vilket döljer
+    nästa riktiga uppdatering.
+  - Lösning: spara mtime från det första anropet, använd det genom hela load().
+
+- [x] `save()` i `corrections.py:49` och `snippets.py:35` saknar try/except kring `_FILE.stat().st_mtime`.
+  - Om stat() misslyckas direkt efter sparning (race, behörighetsändring)
+    kastas ett ohanterat OSError.
+
+- [x] `_enable_startup` i `main.py:513-519` är död kod — aldrig anropad.
+  - `_toggle_startup` implementerar samma logik inline.
+  - Ta bort den döda funktionen.
+
+- [x] `_llm()` i `ui.py:26-29` är död kod — aldrig anropad.
+  - Alla LLM-operationer använder `_llm_providers()` istället.
+
+- [x] `_text_meta()` duplicerad i `dictation.py:34` och `transcriber.py:17`.
+  - Behålls duplicerad medvetet: import från `transcriber` drar in `faster_whisper`
+    som bryter tester i CI utan native deps.
+
+- [x] `remote_transcribe.py:114-115` — `audio.reshape(-1)` plattar flerkanaligt ljud felaktigt.
+  - Korrekt mono-mix borde vara `audio.mean(axis=1)`.
+  - Ingen anropare skickar flerkanaligt just nu, men tyst korruptionsrisk.
+
+- [x] `remote_transcribe.py:230-234` — JSON-fallback kan klistra in HTML i användarens dokument.
+  - Om servern returnerar HTTP 200 med HTML-kropp (t.ex. Cloudflare-sida) behandlas
+    allt som transkriptionstext.
+  - Lägg till sanity-check: avvisa text som innehåller `<html` eller är orimligt lång.
+
+- [x] Dubblett-entry i `_build_candidates` (`audio.py:257-259`).
+  - `for ch in [1, d["max_input_channels"]]` lägger till samma tuple två gånger
+    om `max_input_channels == 1`. Avduplicera.
+
+- [x] `main.py:275` — Redundant `_reload_lock.locked()`-check.
+  - Används innan `_config.update(new_cfg)` körs, men locken testas igen vid rad 377.
+  - Mellan de två punkterna kan locken ha ändrats — den första checken är inte
+    tillförlitlig och bör tas bort.
+
+- [x] `corrections.py:67` — `_build_apply_cache` bör explicit använda `re.UNICODE`.
+  - `\b` i regex matchar inte alltid korrekt vid svenska tecken (å/ä/ö) utan
+    explicit `re.UNICODE`-flagga. Python 3 sätter detta som default för `\w` men
+    inte alltid konsekvent för `\b`.
+
 ## Kodkvalitet och robusthet
 
-- [ ] Dela upp `ui.py` i mindre moduler.
+- [x] Dela upp `ui.py` i mindre moduler.
   - Föreslagen struktur: `ui/indicator.py`, `ui/settings_window.py`, `ui/snippets_window.py`, `ui/dictionary_window.py`, `ui/hotkey_capture.py`, `ui/styles.py`.
   - Mål: lättare testning, mindre koppling och enklare ändringar.
 
@@ -68,9 +125,54 @@ Prioriterad förbättringslista baserad på repo-granskning 2026-05-20.
   - Berör: `audio.py`, `ui.py`, `config.py`.
   - Spara exempelvis namn + host API + index/signatur för att undvika fel val när flera devices heter samma sak.
 
+- [x] `json_store.py:19-21` — `config.json` korruption sväljs tyst utan backup.
+  - Alla andra JSON-filer får en timestampad backup. `config.json` hoppar över det.
+  - Användarens inställningar försvinner permanent utan varning. Lägg till backup.
+
+- [x] `json_store.py:12-32` — `load_json` hanterar inte `UnicodeDecodeError` specifikt.
+  - En binärkorrupt fil ger `UnicodeDecodeError` som faller in i det generella `except`.
+  - Ingen timestampad backup skapas. Hantera som `JSONDecodeError` med backup.
+
+- [x] `paste.py:73-74` — Obegränsad tråd-skapning i `_paste_and_keep_clipboard_async`.
+  - Varje `paste_text` skapar en ny `Thread`. Om `keyboard.send` blockerar (terminal fryser)
+    stackas trådar. Byt till en enda worker-tråd med kö.
+
+- [x] `ui.py:1205-1207` — `list_input_devices()` anropas utan error handling i UI-bygget.
+  - Om ljuduppräkning misslyckas (inget ljudsystem, PortAudio-fel) kraschar hela
+    inställningsfönstret. Wrappa i try/except och visa degraderat UI.
+
+- [x] `ui.py:1371-1380` — Asynk-trådar i Settings postar `self.root.after(0, ...)` efter
+  att fönstret kan ha stängts → `TclError`. Kontrollera att widgeten lever.
+  - Samma problem i `_test_llm` och `_test_tr`.
+
+- [x] `auto_learn.py:93-135` — `record_correction()` saknar trådsäkerhet.
+  - Ingen lock skyddar `_load_learned()` / `_save_learned()`. Samtida anrop kan
+    orsaka lost-update. Lägg till en `threading.Lock`.
+
+- [x] `auto_learn.py:149-155` — `_promote()` laddar corrections utan lock.
+  - Två samtida promotions kan skriva över varandras ändringar.
+
+- [x] Statusmeddelande-format inkonsekvent i `main.py`.
+  - Fast path (rad 362): `"Inställningar sparade — håll {hotkey}"`
+  - No-model path (rad 456): `"…håll {hotkey} för att prata"`
+  - Model path (rad 436): `"Modell '{new_model}' klar — håll {hotkey}"`
+  - Gör enhetligt.
+
+- [x] `main.py:554-562` — `_quit` stänger inte `_transcriber.close()`.
+  - Om modellen har GPU/VRAM kvar kan den läcka vid avslut.
+  - Kosmetiskt (process avslutas direkt) men korrekt cleanup saknas.
+
+- [x] `config.py` / `llm_polish.py` / `remote_transcribe.py` — Providerlistan hårdkodad på tre ställen.
+  - `config.py:18` har `_LLM_PROVIDERS`, `llm_polish.py:48` har `PROVIDERS`, `remote_transcribe.py:46` har `PROVIDERS`.
+  - En ny provider kräver ändring på alla tre ställen. Gör en enda sanning.
+
+- [x] `remote_transcribe.py:61` — Custom-provider använder `"LLM_API_KEY"` som env-var.
+  - Samma env-var som LLM-custom-providern i `llm_polish.py:138`.
+  - Konflaterar LLM- och transkriberingscredentials. Byt till `TRANSCRIPTION_API_KEY`.
+
 ## Säkerhet och integritet
 
-- [ ] Dokumentera clipboard-baserad paste.
+- [x] Dokumentera clipboard-baserad paste.
   - Berör: `paste.py`, `README.md`.
   - Appen kopierar dikterad text till globala clipboarden och återställer efter paste.
   - Dokumentera risken och överväg alternativ/direct text injection där möjligt.
@@ -80,7 +182,7 @@ Prioriterad förbättringslista baserad på repo-granskning 2026-05-20.
   - I dag ignoreras restore-fel tyst.
   - Överväg retry, clear clipboard eller diskret användarvarning.
 
-- [ ] Dokumentera lokala datafiler och privacy cleanup.
+- [x] Dokumentera lokala datafiler och privacy cleanup.
   - Berör: `README.md`, `config.py`, `corrections.py`, `snippets.py`, `auto_learn.py`.
   - Lista `config.json`, `corrections.json`, `snippets.json`, `learned.json`, `hotwords.txt`, loggfil och modellcache.
   - Lägg gärna till UI-funktion för "Rensa privat data".
@@ -89,6 +191,11 @@ Prioriterad förbättringslista baserad på repo-granskning 2026-05-20.
   - Berör: `transcriber.py`, `README.md`.
   - Om modell saknas ska användaren kunna välja att inte kontakta Hugging Face automatiskt.
 
+- [x] `modifiers.py` — Saknar `"altgr"`-alias.
+  - AltGr (Right Alt) är vanligt på svenska tangentbord. Om användaren binder
+    en hotkey med AltGr kan tangenten fastna efter paste.
+  - Lägg till `"altgr": "alt"` (eller egen canonical `"altgr"`) i `_ALIASES`.
+
 ## Bygg, release och supply chain
 
 - [x] Pin dependency-versioner för release.
@@ -96,11 +203,11 @@ Prioriterad förbättringslista baserad på repo-granskning 2026-05-20.
   - Ersätt breda `>=` med låsta versioner eller skapa separat lockfil.
   - Pin även `torch` och `pyinstaller` i buildflödet.
 
-- [ ] Lägg till dependency/security scanning i CI.
+- [x] Lägg till dependency/security scanning i CI.
   - Exempel: pip-audit, safety eller GitHub Dependabot.
   - Kör även lint och tester i CI.
 
-- [ ] Pin modellrevisioner och verifiera checksums.
+- [x] Pin modellrevisioner och verifiera checksums.
   - Berör: `transcriber.py`, `convert_model.py`, `README.md`.
   - Använd fasta Hugging Face revisions/commit-SHA och dokumentera nätverksendpoints.
 
@@ -116,17 +223,44 @@ Prioriterad förbättringslista baserad på repo-granskning 2026-05-20.
   - Berör: `.gitignore`, `build/`, `dist/`, `*.spec`, `__pycache__/`.
   - Granska releasepaket för lokala paths, pyc-filer, loggar, config och hemligheter.
 
+- [x] `build.bat` saknar `--hidden-import=keyring.backends.Windows` och customtkinter-bundling.
+  - CI-workflowen (`build-windows.yml`) har båda, men `build.bat` (lokal build) saknar dem.
+  - Lokalt bygge kan krascha med `keyring` backend missing och sakna CTk-widgets.
+
+- [x] `requirements.txt:11` — `pyautogui` anges som dependency trots att paste.py inte längre använder det.
+  - Kommentaren säger "kept temporarily for legacy callers" men inga legacy-anropare finns.
+  - Ta bort pyautogui helt — minskar installationen och angreppytan.
+
+- [x] `NOTICE:19` — Listar `requests` som runtime-dependency, men ingenstans importeras requests.
+  - Ta bort `requests` från NOTICE-filen.
+
 ## Dokumentation
 
-- [ ] Uppdatera `README.md` så den matchar aktuell funktionalitet.
-  - LLM-läge, privacy tradeoffs, clipboardbeteende, lokala datafiler och nätverkskontakt ska beskrivas tydligt.
+- [x] Uppdatera `README.md` så den matchar aktuell funktionalitet.
+  - `learned.json` saknas i datafiltabellen — lägg till.
+  - Clipboard-beteendet (text stannar kvar, inget restore) bör nämnas tydligare.
+  - Remote-transkribering (staik/berget/custom) nämns inte alls — nytt feature.
+  - Privacy-sektionen nämner inte remote-transkribering.
+  - `auto_learn.py` (auto-lärning) bör beskrivas kort i funktionslistan.
 
-- [ ] Arkivera eller uppdatera `SPEC.md`.
+- [x] Arkivera eller uppdatera `SPEC.md`.
   - Dokumentet säger själv att flera detaljer är föråldrade.
   - Antingen flytta till historik/arkiv eller synka mot aktuell implementation.
+  - Innehåller kinesiska tecken, stavfel, och föråldrad filstruktur.
 
-- [ ] Lägg till utvecklarguide.
+- [x] Lägg till utvecklarguide.
   - Beskriv testkommandon, lint/format, build, release, modellkonvertering och felsökning.
+
+- [x] `docs/index.html` — Webbsidan nämner inte remote-transkribering, auto-lärning, eller
+  alla LLM-leverantörer (staik, berget, openai, custom).
+  - Funktionslistan bör uppdateras så den matchar appens verkliga kapacitet.
+
+- [x] `LICENSE` copyright anger bara "Prakhar Singh".
+  - Forken har bidragande kod från en ny författare.
+  - Överväg att lägga till "and contributors" eller forkens upphovsman.
+
+- [x] `llm_polish.py:174-177` — Bakåtkompatibla module-level-aliases (`API_URL`, `AVAILABLE_MODELS`, etc.)
+  bör markeras som deprecated eller tas bort om gammal UI-kod har uppdaterats.
 
 ## Prestanda och latens (granskning 2026-05-20)
 
@@ -148,7 +282,7 @@ Prioriterad förbättringslista baserad på repo-granskning 2026-05-20.
   - Default i faster-whisper är 2000 ms; 300 ms kapar legitima pauser och **tappar ord**.
   - Sätt ≥500 ms eller ta bort overriden helt.
 
-- [ ] Kör LLM polish i bakgrunden efter paste.
+- [x] Kör LLM polish i bakgrunden efter paste.
   - Berör: `transcriber.py:368`, `dictation.py:120-132`, `llm_polish.py:75`.
   - `polish()` körs synkront i dictation-tråden → blockerar paste upp till 8 s.
   - Paste lokalt resultat omedelbart, polera i bakgrunden, uppdatera clipboard/visa toast efteråt.
@@ -171,7 +305,7 @@ Prioriterad förbättringslista baserad på repo-granskning 2026-05-20.
   - Bygg en `re.compile(r'\b(' + '|'.join(re.escape(k) for k in corr) + r')\b', re.IGNORECASE)` cachad på mtime.
   - Verifiera case-bevarande för "Prak" vs "PRAK" → "Prakhar".
 
-- [ ] Pre-allokera audio ring-buffer i `MicRecorder`.
+- [x] Pre-allokera audio ring-buffer i `MicRecorder`.
   - Berör: `audio.py:162-200`.
   - `indata.copy()` per callback allokerar småarrayer från realtidstråden → GC-thrashing.
   - Använd `np.empty((MAX_SECONDS * rate, channels))` och `memcpy` chunks in.
@@ -216,7 +350,7 @@ Prioriterad förbättringslista baserad på repo-granskning 2026-05-20.
   - Berör: `dictation.py:107`, `audio.py:169`.
   - Level beräknas redan per chunk i capture; återanvänd istället för full audio-pass efter resample.
 
-- [ ] Cacha polyphase-filter eller byt till `soxr` för resampling.
+- [x] Cacha polyphase-filter eller byt till `soxr` för resampling.
   - Berör: `audio.py:73-86`.
   - `resample_poly` rekomputerar FIR-filter varje anrop (~30-80 ms på 10s audio).
 
@@ -224,7 +358,7 @@ Prioriterad förbättringslista baserad på repo-granskning 2026-05-20.
   - Berör: `transcriber.py:262-263`, `corrections.py`.
   - Bryt koppling till private modulvariabler.
 
-- [ ] Hantera kanaldetektering vid stream-open, inte från första frame.
+- [x] Hantera kanaldetektering vid stream-open, inte från första frame.
   - Berör: `audio.py:185-200`.
   - `_total_samples` räknar frames men buffer-alloc antar flat = mono.
 
@@ -236,8 +370,18 @@ Prioriterad förbättringslista baserad på repo-granskning 2026-05-20.
   - Berör: `transcriber.py:357-358`, `_postprocess`.
   - Kör `_postprocess` en gång sist.
 
-- [ ] Använd `np.max(np.abs(audio))` utan extra kopia i log path.
+- [x] Använd `np.max(np.abs(audio))` utan extra kopia i log path.
   - Berör: `transcriber.py:204`.
+
+- [x] `llm_polish.py:281` — `max_tokens` beräknas från tecken (len) inte tokens.
+  - `max(200, len(user_text) * 2)` överestimerar ~4-8× för svenska.
+  - Slösar rate-limit-kvot och kan orsaka 400-fel på providers med hård max-gräns.
+  - Byt till `max(200, len(user_text) // 2)` eller liknande.
+
+- [x] `llm_polish.py:356-365` — HTTP-felsvar läses men loggas inte i `polish()`.
+  - `e.read()` anropas för att dränera socketen men body kastas.
+  - Jämför med `test_connection()` som inkluderar body i felmeddelandet.
+  - Logga första 200 tecken av bodyn för lättare felsökning.
 
 ### Snabba vinster
 
@@ -278,7 +422,7 @@ Prioriterad förbättringslista baserad på repo-granskning 2026-05-20.
   - Konstanten är nu härledd i en kommentar (noise floor + tal-RMS) och
     exponerad via `config["min_rms"]` (UI-widget ej tillagd ännu).
 
-- [ ] Extrahera `JsonCache`-helper.
+- [x] Extrahera `JsonCache`-helper.
   - Berör: `corrections.py`, `snippets.py`, `auto_learn.py`.
   - Tre kopior av load/save/cache-mönster.
 
@@ -304,3 +448,19 @@ Prioriterad förbättringslista baserad på repo-granskning 2026-05-20.
 - [x] Notera `pystray` LGPL-3.0 i NOTICE.
   - Dynamisk import OK för MIT-app men bör nämnas.
 
+## Webbsida och visuellt (pre-launch-granskning 2026-05-27)
+
+- [x] `docs/index.html` — Footer: `"svensk fork av freewispr"` bör lägga till `"av x26prakhar"` för
+  tydlig attribution och copyright-compliance med MIT-licensen.
+
+- [x] `docs/index.html` — Webbsidan saknar `lang`-attributets delsida `xml:lang`.
+  - `lang="sv"` på `<html>` är korrekt men saknar `hreflang`-link för SEO (minor).
+
+- [x] `docs/index.html` — Ingen `<meta name="author">` — tillägg kan hjälpa sökmotorer.
+
+- [x] `docs/index.html` — Funktions-sektionen nämner 6 funktioner men appen har fler
+  (remote-transkribering, auto-lärning, audio feedback, tystnadsdetektion).
+  - Uppdatera eller lägg till fler feature-kort.
+
+- [x] `docs/vercel.json` — Vercel-config finns men Pages deployar via GitHub Actions.
+  - Om Vercel inte används bör filen tas bort för att undvika förvirring.

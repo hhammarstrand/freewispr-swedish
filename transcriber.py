@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 import re
 import logging
 import threading
+from collections.abc import Callable
 from pathlib import Path
 import numpy as np
 from faster_whisper import WhisperModel
@@ -108,6 +111,17 @@ KBLAB_MODELS = {
     "small": "KBLab/kb-whisper-small",
     "medium": "KBLab/kb-whisper-medium",
     "large": "KBLab/kb-whisper-large",
+}
+
+# Pin specific HuggingFace revisions for reproducible downloads.
+# Set to a commit SHA from the model's HF page to lock to that version.
+# None = use latest (current behavior).
+KBLAB_REVISIONS: dict[str, str | None] = {
+    "tiny": None,
+    "base": None,
+    "small": None,
+    "medium": None,
+    "large": None,
 }
 
 # Whisper noise/placeholder tokens to strip (always, regardless of settings).
@@ -371,6 +385,10 @@ class Transcriber:
         if cuda_used:
             log.info("GPU: NVIDIA CUDA aktiverad")
 
+        # NOTE: Revision pinning only matters at download/convert time
+        # (convert_model.py). Here local_files_only=True means we load
+        # whatever snapshot is already on disk — no network request is made,
+        # so the revision parameter has no effect.
         self.model = WhisperModel(
             model_path,
             device=device,
@@ -418,7 +436,7 @@ class Transcriber:
                 for _ in segments:
                     pass
             self._warmed = True
-            log.info("Whisper-warmup klar pa %.0f ms", (_time.monotonic() - t0) * 1000)
+            log.info("Whisper-warmup klar på %.0f ms", (_time.monotonic() - t0) * 1000)
         except Exception as e:
             log.debug("Whisper-warmup misslyckades (ignoreras): %s", e)
 
@@ -444,13 +462,18 @@ class Transcriber:
             except Exception:
                 pass
         except Exception as e:
-            log.debug("Kunde inte frigora modell rent: %s", e)
+            log.debug("Kunde inte frigöra modell rent: %s", e)
 
     def transcribe(self, audio: np.ndarray) -> str:
+        """Transcribe audio to text (local or remote) with postprocessing.
+
+        Does NOT run LLM polish — use :meth:`polish_async` for that.
+        Sets ``last_polish_state`` to ``"local"`` unconditionally.
+        """
         self.last_polish_state = "local"
         self.last_transcribe_error = None
         log.info("Transkriberar: %d samples, peak=%.4f, modell=%s, lang=%s, provider=%s",
-                 len(audio), float(np.max(np.abs(audio))) if audio.size else 0.0,
+                 len(audio), max(abs(float(audio.min())), abs(float(audio.max()))) if audio.size else 0.0,
                  self.model_size, self.language, self.transcription_provider)
 
         if self.transcription_provider != "local":
@@ -458,39 +481,57 @@ class Transcriber:
         else:
             text = self._transcribe_local(audio)
 
-        if not text:
-            return text
+        return text
 
-        # LLM polishing — optional, never blocks on failure
-        if self.llm_enabled:
+    def polish_async(self, text: str,
+                     callback: Callable[[str, str], None]) -> None:
+        """Run LLM polish in a background thread.
+
+        When finished, calls ``callback(original_text, polished_text)``
+        from the background thread.  If polish fails or text is unchanged
+        the callback receives ``(text, text)``.
+
+        Updates ``self.last_polish_state`` to reflect the outcome.
+        The ``on_stage`` callback is fired with ``"llm_reviewing"``
+        immediately so the indicator can show the reviewing state.
+        """
+        self.last_polish_state = "llm_reviewing"
+        on_stage = getattr(self, "on_stage", None)
+        if on_stage is not None:
+            try:
+                on_stage("llm_reviewing")
+            except Exception:
+                pass
+
+        def _run():
             from llm_polish import polish
             from auto_learn import record_correction
 
-            self.last_polish_state = "llm_reviewing"
-            on_stage = getattr(self, "on_stage", None)
-            if on_stage is not None:
-                try:
-                    on_stage("llm_reviewing")
-                except Exception:
-                    pass
-            result = polish(
-                text,
-                self.llm_api_key,
-                model=self.llm_model,
-                provider=self.llm_provider,
-                base_url_override=self.llm_base_url,
-            )
+            try:
+                result = polish(
+                    text,
+                    self.llm_api_key,
+                    model=self.llm_model,
+                    provider=self.llm_provider,
+                    base_url_override=self.llm_base_url,
+                )
+            except Exception as e:
+                log.warning("LLM-polish kraschade: %s", e, exc_info=True)
+                self.last_polish_state = "local"
+                callback(text, text)
+                return
+
             if result.changed:
-                # Feed the before/after to auto-learning
                 record_correction(text, result.text)
-                text = result.text
                 self.last_polish_state = "llm_changed"
                 log.info("Resultat (LLM) klart (%dms, %s)",
-                         result.latency_ms, _text_meta(text))
+                         result.latency_ms, _text_meta(result.text))
+                callback(text, result.text)
             else:
                 self.last_polish_state = "llm_unchanged"
+                callback(text, text)
 
-        return text
+        threading.Thread(target=_run, name="llm-polish", daemon=True).start()
 
     def _transcribe_local(self, audio: np.ndarray) -> str:
         prompt = _INITIAL_PROMPTS.get(self.language, "")

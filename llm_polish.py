@@ -167,16 +167,6 @@ def _resolve_base_url(provider: str, base_url_override: str = "") -> str:
     return url
 
 
-# --------------------------------------------------------------------------- #
-#  Bakåtkompatibla namn — gammal UI- och testkod använder dessa.
-# --------------------------------------------------------------------------- #
-
-API_URL = PROVIDERS["github"].base_url + "/chat/completions"
-API_VERSION = PROVIDERS["github"].api_version
-AVAILABLE_MODELS = PROVIDERS["github"].fallback_models
-DEFAULT_MODEL = PROVIDERS["github"].default_model
-
-
 def normalize_model(model: str = "", provider: str = DEFAULT_PROVIDER) -> str:
     p = _get_provider(provider)
     name = (model or p.default_model).strip()
@@ -224,11 +214,11 @@ def resolve_api_key(api_key: str = "", provider: str = DEFAULT_PROVIDER) -> str:
 # --------------------------------------------------------------------------- #
 
 _SYSTEM_PROMPT = (
-    "Du ar en svensk textkorrigerare for dikterad text (speech-to-text). "
-    "Korrigera BARA uppenbara transkriptionsfel: felhorda ord, grammatik, "
+    "Du är en svensk textkorrigerare för dikterad text (speech-to-text). "
+    "Korrigera BARA uppenbara transkriptionsfel: felhörda ord, grammatik, "
     "interpunktion och stavning. "
-    "ANDRA INTE: innehall, artal, namn, siffror, fakta eller meningens betydelse. "
-    "Om texten redan ar korrekt, returnera den EXAKT som den ar. "
+    "ÄNDRA INTE: innehåll, årtal, namn, siffror, fakta eller meningens betydelse. "
+    "Om texten redan är korrekt, returnera den EXAKT som den är. "
     "Returnera BARA den korrigerade texten, inget annat."
 )
 
@@ -278,7 +268,7 @@ def _call_api(
             {"role": "user",   "content": user_text},
         ],
         "temperature": 0,
-        "max_tokens": max(200, len(user_text) * 2),
+        "max_tokens": max(200, len(user_text)),
     }).encode("utf-8")
     return _request_json(
         f"{base}/chat/completions",
@@ -337,7 +327,7 @@ def polish(
         # Hallucinationsfilter: en korrigering ska inte förändra texten radikalt.
         if len(result) > len(text) * 3 or len(result) < len(text) * 0.3:
             log.warning(
-                "LLM-svar avviker for mycket i langd (%d vs %d), anvander original",
+                "LLM-svar avviker för mycket i längd (%d vs %d), använder original",
                 len(result), len(text),
             )
             return PolishResult(text=text, model=used_model, latency_ms=latency,
@@ -348,19 +338,20 @@ def polish(
             log.info("LLM-polerad (%s/%s, %dms, in=%s, out=%s)",
                      provider, used_model, latency, _text_meta(text), _text_meta(result))
         else:
-            log.info("LLM: ingen andring behoves (%s/%s, %dms)",
+            log.info("LLM: ingen ändring behövdes (%s/%s, %dms)",
                      provider, used_model, latency)
         return PolishResult(text=result, model=used_model, latency_ms=latency,
                             changed=changed)
 
     except urllib.error.HTTPError as e:
         latency = int((time.perf_counter() - t0) * 1000)
+        body = ""
         try:
-            e.read()
+            body = e.read().decode("utf-8", errors="replace")[:200]
         except Exception:
             pass
-        log.warning("LLM HTTP %d (%dms, provider=%s, model=%s)",
-                    e.code, latency, provider, used_model)
+        log.warning("LLM HTTP %d (%dms, provider=%s, model=%s): %s",
+                    e.code, latency, provider, used_model, body)
         return PolishResult(text=text, model=used_model, latency_ms=latency,
                             changed=False)
 
@@ -399,7 +390,7 @@ def test_connection(
     if not used_model:
         return False, "Inget modellnamn angivet — välj eller skriv in en modell."
 
-    test_input = "Det har ar ett test av dikteringsfunktionen."
+    test_input = "Det här är ett test av dikteringsfunktionen."
 
     t0 = time.perf_counter()
     try:
@@ -423,11 +414,11 @@ def test_connection(
         if e.code == 401:
             return False, f"Ogiltig API-nyckel (HTTP 401, {latency}ms)"
         if e.code == 403:
-            return False, f"Atkomst nekad (HTTP 403, {latency}ms)"
+            return False, f"Åtkomst nekad (HTTP 403, {latency}ms)"
         if e.code == 404:
             return False, f"Modell '{used_model}' finns inte (HTTP 404, {latency}ms)"
         if e.code == 429:
-            return False, f"Rate limit — for manga anrop (HTTP 429, {latency}ms)"
+            return False, f"Rate limit — för många anrop (HTTP 429, {latency}ms)"
         body = ""
         try:
             body = e.read().decode("utf-8", errors="replace")[:200]
@@ -437,7 +428,7 @@ def test_connection(
 
     except urllib.error.URLError as e:
         latency = int((time.perf_counter() - t0) * 1000)
-        return False, f"Natverksfel ({latency}ms): {e.reason}"
+        return False, f"Nätverksfel ({latency}ms): {e.reason}"
 
     except Exception as e:
         latency = int((time.perf_counter() - t0) * 1000)
@@ -473,7 +464,7 @@ def fetch_models(
             timeout_sec=timeout_sec,
         )
     except Exception as e:
-        log.info("Kunde inte hamta modellista fran %s: %s", provider, e)
+        log.info("Kunde inte hämta modellista från %s: %s", provider, e)
         return dict(p.fallback_models)
 
     items = data.get("data") if isinstance(data, dict) else data

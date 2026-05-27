@@ -12,6 +12,45 @@ import pytest
 
 
 # --------------------------------------------------------------------------- #
+#  Provider tuple consistency (config.py vs actual modules)
+# --------------------------------------------------------------------------- #
+
+def test_config_llm_providers_match_llm_polish():
+    """_LLM_PROVIDERS in config.py must list exactly the same keys as
+    llm_polish.PROVIDERS. If this fails, a provider was added/removed in
+    llm_polish.py without updating the hardcoded tuple in config.py."""
+    config = importlib.reload(importlib.import_module("config"))
+    llm_polish = importlib.reload(importlib.import_module("llm_polish"))
+    assert set(config._LLM_PROVIDERS) == set(llm_polish.PROVIDERS.keys())
+
+
+def test_config_tr_providers_match_remote_transcribe():
+    """_TR_PROVIDERS in config.py must list exactly the same keys as
+    remote_transcribe.PROVIDERS. If this fails, a provider was added/removed
+    in remote_transcribe.py without updating the hardcoded tuple in config.py."""
+    config = importlib.reload(importlib.import_module("config"))
+    rt = importlib.reload(importlib.import_module("remote_transcribe"))
+    assert set(config._TR_PROVIDERS) == set(rt.PROVIDERS.keys())
+
+
+def test_config_validate_providers_logs_warning_on_mismatch(caplog, monkeypatch):
+    """_validate_providers() must log a warning when the tuples diverge."""
+    config = importlib.reload(importlib.import_module("config"))
+    # Reset the guard so validation runs again.
+    config._providers_validated = False
+    # Inject a fake llm_polish with an extra provider.
+    fake_llm = SimpleNamespace(PROVIDERS={"github": None, "staik": None,
+                                          "berget": None, "openai": None,
+                                          "custom": None, "extra": None})
+    monkeypatch.setitem(sys.modules, "llm_polish", fake_llm)
+    import logging
+    with caplog.at_level(logging.WARNING):
+        config._validate_providers()
+    assert "config._LLM_PROVIDERS" in caplog.text
+    assert "extra" in caplog.text
+
+
+# --------------------------------------------------------------------------- #
 #  llm_polish: provider-registry och nyckelhantering
 # --------------------------------------------------------------------------- #
 

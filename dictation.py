@@ -13,6 +13,12 @@ import sounds
 
 log = logging.getLogger("freewispr")
 
+
+def _text_meta(text: str) -> str:
+    words = len(text.split())
+    return f"chars={len(text)}, words={words}"
+
+
 MIN_AUDIO_SAMPLES = 3200   # 0.2 s at 16 kHz — ignore accidental taps
 # Default RMS gate. Audio quieter than this is treated as silence and dropped
 # without invoking Whisper (saves ~1 s of CPU per phantom press).
@@ -29,11 +35,6 @@ DEFAULT_MIN_RMS = 0.003
 # transcriptions stall (e.g. LLM-polish round-trip). Beyond this depth we
 # drop new presses and show "Upptagen" instead.
 _QUEUE_MAX = 2
-
-
-def _text_meta(text: str) -> str:
-    words = len(text.split())
-    return f"chars={len(text)}, words={words}"
 
 
 def _parse_hotkey(hotkey: str) -> tuple[str, tuple[str, ...]]:
@@ -111,7 +112,7 @@ class DictationMode:
             keyboard.on_press_key(self._trigger_key, self._on_press, suppress=False),
             keyboard.on_release_key(self._trigger_key, self._on_release, suppress=False),
         ]
-        self.on_status(f"Ready — hold {self.hotkey.upper()} to speak")
+        self.on_status(f"Klar — håll {self.hotkey.upper()} för att prata")
 
     def stop(self, wait: bool = True):
         self._active = False
@@ -262,21 +263,12 @@ class DictationMode:
                 log.info("Hoppar över stale transkribering efter stopp")
                 return
             log.info("Transkriberar %d samples...", len(audio))
-            if getattr(self.transcriber, "llm_enabled", False):
+            llm_enabled = getattr(self.transcriber, "llm_enabled", False)
+            if llm_enabled:
                 self.on_status("Transkriberar lokalt...")
                 if self.indicator:
                     self.indicator.show("Transkriberar lokalt...", state="transcribe")
-            old_stage = getattr(self.transcriber, "on_stage", None)
-            def _on_stage(stage: str):
-                if stage == "llm_reviewing":
-                    self.on_status("LLM-granskar...")
-                    if self.indicator:
-                        self.indicator.show("LLM-granskar...", state="transcribe")
-            try:
-                self.transcriber.on_stage = _on_stage
-                text = self.transcriber.transcribe(audio)
-            finally:
-                self.transcriber.on_stage = old_stage
+            text = self.transcriber.transcribe(audio)
             # Apply snippet expansion — if full text is a trigger, replace it
             text = snippet_module.expand(text)
             log.info("Resultat klart (%s)", _text_meta(text))
@@ -284,12 +276,56 @@ class DictationMode:
                 if self._worker_stop.is_set() or not self._active:
                     log.info("Hoppar över paste från stale transkribering")
                     return
+                # Paste the local result immediately — user gets text without
+                # waiting for the LLM round-trip.
                 paste_text(text, active_modifiers=self._modifier_keys)
-                message = self._finish_message()
+                message = "Klistrad (lokal)"
                 self.on_status(f"{message} — håll {self.hotkey.upper()} igen")
                 if self.indicator:
                     self.indicator.show(message, state="done")
-                    self.indicator.hide(delay_ms=1800)
+
+                if llm_enabled:
+                    # Fire off background LLM polish. The on_stage callback
+                    # updates the indicator while the request is in flight.
+                    old_stage = getattr(self.transcriber, "on_stage", None)
+                    def _on_stage(stage: str):
+                        if stage == "llm_reviewing":
+                            self.on_status("LLM-granskar...")
+                            if self.indicator:
+                                self.indicator.show("LLM-granskar...", state="transcribe")
+                    self.transcriber.on_stage = _on_stage
+
+                    def _on_polish_done(original: str, polished: str):
+                        # Restore old on_stage callback
+                        self.transcriber.on_stage = old_stage
+                        if self._worker_stop.is_set() or not self._active:
+                            log.info("Hoppar över LLM-uppdatering efter stopp")
+                            return
+                        if polished != original:
+                            # Update the clipboard with the polished text so
+                            # the user can Ctrl+V again to get the improved
+                            # version. The already-pasted local text stays in
+                            # the document.
+                            import pyperclip
+                            pyperclip.copy(polished + " ")
+                            msg = "Klistrad (LLM-polerad)"
+                        else:
+                            state = getattr(self.transcriber, "last_polish_state", "local")
+                            if state == "llm_unchanged":
+                                msg = "Klistrad (LLM-granskad)"
+                            else:
+                                # polish failed or returned local
+                                msg = "Klistrad (lokal)"
+                        self.on_status(f"{msg} — håll {self.hotkey.upper()} igen")
+                        if self.indicator:
+                            self.indicator.show(msg, state="done")
+                            self.indicator.hide(delay_ms=1800)
+
+                    self.transcriber.polish_async(text, _on_polish_done)
+                else:
+                    # No LLM — hide the indicator after a short delay.
+                    if self.indicator:
+                        self.indicator.hide(delay_ms=1800)
             else:
                 self.on_status(f"Inget hördes — håll {self.hotkey.upper()}")
                 if self.indicator:

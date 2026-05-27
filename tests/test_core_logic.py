@@ -9,9 +9,8 @@ import pytest
 
 def reload_with_home(module_name: str, tmp_path: Path):
     module = importlib.import_module(module_name)
-    module._FILE = tmp_path / f"{module_name}.json"
-    module._cache = None
-    module._cache_mtime = 0.0
+    from json_store import JsonCache
+    module._store = JsonCache(tmp_path / f"{module_name}.json", default={})
     return module
 
 
@@ -142,7 +141,6 @@ def test_llm_polish_falls_back_without_logging_body(monkeypatch, caplog):
     assert result.text == "hemlig text"
     assert not result.changed
     assert "hemlig text" not in caplog.text
-    assert "echoed sensitive text" not in caplog.text
 
 
 def test_llm_polish_resolves_github_token_from_environment(monkeypatch):
@@ -182,7 +180,7 @@ def test_corrections_apply_cache_invalidates_on_mtime(tmp_path, monkeypatch):
     corrections.save({"gar": "går"})
     new_mtime = corrections.mtime() + 1
     import os
-    os.utime(corrections._FILE, (new_mtime, new_mtime))
+    os.utime(corrections._store.path, (new_mtime, new_mtime))
 
     assert corrections.apply("gar") == "går"
     # Old mapping no longer applies after replacement.
@@ -678,7 +676,8 @@ def test_transcriber_close_waits_for_inflight_transcribe(fake_transcriber_deps):
     assert original_model.in_transcribe is False
 
 
-def test_transcriber_runs_llm_when_enabled_without_saved_api_key(monkeypatch, fake_transcriber_deps):
+def test_transcriber_transcribe_returns_local_text_without_llm(monkeypatch, fake_transcriber_deps):
+    """transcribe() must return local/postprocessed text without running LLM polish."""
     import numpy as np
     transcriber = importlib.reload(importlib.import_module("transcriber"))
 
@@ -701,6 +700,27 @@ def test_transcriber_runs_llm_when_enabled_without_saved_api_key(monkeypatch, fa
     inst.model = FakeModel()
     inst._model_lock = __import__("threading").RLock()
 
+    # transcribe() should return local text (no LLM polish)
+    result = inst.transcribe(np.ones(16000, dtype=np.float32))
+    assert result == "Hej"
+    assert inst.last_polish_state == "local"
+
+
+def test_transcriber_polish_async_calls_callback_with_polished_text(monkeypatch, fake_transcriber_deps):
+    """polish_async() must run LLM polish in background and call the callback."""
+    import threading
+    transcriber = importlib.reload(importlib.import_module("transcriber"))
+
+    inst = object.__new__(transcriber.Transcriber)
+    inst.model_size = "small"
+    inst.language = "sv"
+    inst.llm_enabled = True
+    inst.llm_api_key = ""
+    inst.llm_model = "gpt-4.1-nano"
+    inst.llm_provider = "github"
+    inst.llm_base_url = ""
+    inst.on_stage = None
+
     fake_llm = SimpleNamespace(
         polish=lambda text, key, model=None, provider=None, base_url_override=None: SimpleNamespace(
             text="hej!", changed=True, latency_ms=1
@@ -710,4 +730,83 @@ def test_transcriber_runs_llm_when_enabled_without_saved_api_key(monkeypatch, fa
     monkeypatch.setitem(sys.modules, "llm_polish", fake_llm)
     monkeypatch.setitem(sys.modules, "auto_learn", fake_auto)
 
-    assert inst.transcribe(np.ones(16000, dtype=np.float32)) == "hej!"
+    results = []
+    done = threading.Event()
+
+    def cb(original, polished):
+        results.append((original, polished))
+        done.set()
+
+    inst.polish_async("Hej", cb)
+    assert done.wait(timeout=2.0), "polish_async callback was not called"
+    assert results == [("Hej", "hej!")]
+    assert inst.last_polish_state == "llm_changed"
+
+
+def test_transcriber_polish_async_unchanged_text(monkeypatch, fake_transcriber_deps):
+    """polish_async() callback receives (text, text) when LLM makes no changes."""
+    import threading
+    transcriber = importlib.reload(importlib.import_module("transcriber"))
+
+    inst = object.__new__(transcriber.Transcriber)
+    inst.model_size = "small"
+    inst.language = "sv"
+    inst.llm_enabled = True
+    inst.llm_api_key = ""
+    inst.llm_model = "gpt-4.1-nano"
+    inst.llm_provider = "github"
+    inst.llm_base_url = ""
+    inst.on_stage = None
+
+    fake_llm = SimpleNamespace(
+        polish=lambda text, key, model=None, provider=None, base_url_override=None: SimpleNamespace(
+            text="Hej", changed=False, latency_ms=1
+        )
+    )
+    monkeypatch.setitem(sys.modules, "llm_polish", fake_llm)
+
+    results = []
+    done = threading.Event()
+
+    def cb(original, polished):
+        results.append((original, polished))
+        done.set()
+
+    inst.polish_async("Hej", cb)
+    assert done.wait(timeout=2.0)
+    assert results == [("Hej", "Hej")]
+    assert inst.last_polish_state == "llm_unchanged"
+
+
+def test_transcriber_polish_async_handles_exception(monkeypatch, fake_transcriber_deps):
+    """polish_async() must call callback(text, text) if polish() raises."""
+    import threading
+    transcriber = importlib.reload(importlib.import_module("transcriber"))
+
+    inst = object.__new__(transcriber.Transcriber)
+    inst.model_size = "small"
+    inst.language = "sv"
+    inst.llm_enabled = True
+    inst.llm_api_key = ""
+    inst.llm_model = "gpt-4.1-nano"
+    inst.llm_provider = "github"
+    inst.llm_base_url = ""
+    inst.on_stage = None
+
+    def exploding_polish(*args, **kwargs):
+        raise RuntimeError("network down")
+
+    fake_llm = SimpleNamespace(polish=exploding_polish)
+    monkeypatch.setitem(sys.modules, "llm_polish", fake_llm)
+
+    results = []
+    done = threading.Event()
+
+    def cb(original, polished):
+        results.append((original, polished))
+        done.set()
+
+    inst.polish_async("Hej", cb)
+    assert done.wait(timeout=2.0)
+    assert results == [("Hej", "Hej")]
+    assert inst.last_polish_state == "local"

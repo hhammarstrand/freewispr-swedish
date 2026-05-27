@@ -51,14 +51,15 @@ pip install torch --index-url https://download.pytorch.org/whl/cu124
 
 ## Integritet
 
-Appen pratar bara med nätverket i två fall:
+Appen pratar bara med nätverket när du uttryckligen slår på det:
 
 - Första gången du använder en modell laddas den ner från Hugging Face om den inte redan finns lokalt.
-- Om du själv slår på LLM-granskning skickas den transkriberade texten – inte ljudet – till GitHub Models.
+- Om du slår på **LLM-granskning** skickas den transkriberade texten – inte ljudet – till vald leverantör. Leverantörer: GitHub Models, staik.se, Berget AI, OpenAI eller valfri OpenAI-kompatibel server.
+- Om du slår på **remote-transkribering** skickas ljudet – inte bara text – till vald leverantör (staik.se, Berget AI eller custom).
 
-GitHub-token för LLM hämtas i tur och ordning från sparad nyckel, `GITHUB_TOKEN`, `GH_TOKEN` eller `gh auth token`. Token loggas aldrig.
+API-nycklar lagras i Windows Credential Manager via `keyring`, aldrig i config-filen. Token loggas aldrig.
 
-Den dikterade texten ligger kvar i urklipp efter att appen har försökt klistra in. Det är ett medvetet val: gamla urklippets innehåll återställs inte, men du kan alltid klistra in manuellt om paste-försöket inte gick fram.
+Den dikterade texten kopieras till urklipp och klistras in via syntetisk Ctrl+V (eller Shift+Insert i konsolterminaler). Texten stannar kvar i urklipp efteråt som fallback — gammalt urklippsinnehåll återställs inte.
 
 ## Funktioner
 
@@ -70,6 +71,8 @@ Den dikterade texten ligger kvar i urklipp efter att appen har försökt klistra
 - Personliga ordkorrigeringar.
 - Hotwords från ordlista och `~/.freewispr-swedish/hotwords.txt`.
 - Snippets och textmallar.
+- Valfri remote-transkribering via staik.se eller Berget AI.
+- Auto-lärning: appen lär sig från LLM-korrigeringar och befordrar frekventa rättningar till ordlistan.
 - Statuslägen i indikatorn: lokal, LLM-granskad eller LLM-polerad.
 
 ## Modeller
@@ -119,7 +122,11 @@ Exempel:
   "mic_device": null,
   "indicator_follow_mouse": true,
   "llm_enabled": false,
-  "llm_model": "openai/gpt-4.1-nano"
+  "llm_provider": "github",
+  "llm_model_github": "openai/gpt-4.1-nano",
+  "llm_privacy_accepted": false,
+  "transcription_provider": "local",
+  "min_rms": 0.003
 }
 ```
 
@@ -130,6 +137,7 @@ Exempel:
 | `~/.freewispr-swedish/corrections.json` | Personliga ordkorrigeringar |
 | `~/.freewispr-swedish/snippets.json` | Snippets och expansioner |
 | `~/.freewispr-swedish/hotwords.txt` | Egna termer för Whisper |
+| `~/.freewispr-swedish/learned.json` | Auto-lärda korrigeringar från LLM |
 | `~/.freewispr-swedish/freewispr.log` | Logg för felsökning |
 | `~/.freewispr-swedish/models/` | Nedladdade och konverterade modeller |
 
@@ -147,28 +155,64 @@ Ikoner och webbgrafik genereras med:
 python make_icon.py
 ```
 
-## Testa
+## Utveckling
+
+### Testa
 
 ```bash
 python -m pytest tests/ -q
 ```
 
+Tester som behöver `sounddevice`, `keyboard` eller `pyperclip` kräver att dessa paket är installerade (de skippas annars).
+
+### Lint och format
+
+Projektet har ingen formell linter-konfiguration ännu, men koden följer PEP 8 med 100-teckensbredd.
+
+### Modellkonvertering
+
+Medium- och large-modeller kan behöva konverteras till CTranslate2-format:
+
+```bash
+pip install ctranslate2 transformers
+python convert_model.py medium
+python convert_model.py large
+```
+
+### Release-flöde
+
+1. Push till `master` triggar GitHub Actions som bygger `.exe` och publicerar en rolling pre-release.
+2. Webbsidan deployar automatiskt via GitHub Pages vid ändringar i `docs/`.
+3. Ikoner och OG-bild genereras med `python make_icon.py` (kräver Windows-fonter för bästa resultat).
+
 ## Projektstruktur
 
 ```text
 freewispr-swedish/
-+-- main.py          # systemfack, inställningar, applifecycle
-+-- dictation.py     # push-to-talk, pipeline och paste-status
-+-- transcriber.py   # KBLab Whisper, CUDA och LLM-granskning
-+-- audio.py         # mikrofoninspelning, resampling och kanalhantering
-+-- paste.py         # urklipp och terminalvänlig paste
-+-- ui.py            # Tkinter UI och flytande indikator
-+-- config.py        # config och nyckelhantering
-+-- corrections.py   # personlig ordlista
-+-- snippets.py      # snippets/textmallar
-+-- llm_polish.py    # GitHub Models-integration
-+-- make_icon.py     # genererar appikon, favicon och OG-bild
-+-- docs/            # GitHub Pages-site
++-- main.py              # systemfack, inställningar, applifecycle
++-- dictation.py         # push-to-talk, pipeline och paste-status
++-- transcriber.py       # KBLab Whisper, CUDA och LLM-granskning
++-- audio.py             # mikrofoninspelning, resampling och kanalhantering
++-- paste.py             # urklipp och terminalvänlig paste
++-- ui/                  # Tkinter/CustomTkinter UI (paket)
+|   +-- indicator.py     #   flytande indikator
+|   +-- settings_window.py # inställningsfönster med tabs
+|   +-- snippets_window.py # snippet-hantering
+|   +-- dictionary_window.py # personlig ordlista
+|   +-- styles.py        #   färger och ttk-tema
++-- config.py            # config, nyckelhantering och keyring-integration
++-- corrections.py       # personlig ordlista med cachad regex
++-- snippets.py          # snippets/textmallar
++-- llm_polish.py        # LLM-leverantörer (GitHub, staik, Berget, OpenAI, custom)
++-- remote_transcribe.py # remote-transkribering via OpenAI-kompatibelt API
++-- auto_learn.py        # auto-lärning från LLM-korrigeringar
++-- json_store.py        # atomisk JSON-lagring med backup vid korruption
++-- modifiers.py         # kanoniska modifier-namn för tangentbord
++-- sounds.py            # syntetiserade ljudeffekter
++-- make_icon.py         # genererar appikon, favicon och OG-bild
++-- convert_model.py     # konverterar Whisper-modeller till CTranslate2
++-- docs/                # GitHub Pages-site
++-- tests/               # pytest-tester
 ```
 
 ## Synka med originalet

@@ -1,4 +1,5 @@
 import logging
+import queue
 import threading
 import ctypes
 
@@ -70,8 +71,24 @@ def _paste_and_keep_clipboard(text: str):
             return
 
 
+_paste_queue: queue.Queue[str] = queue.Queue()
+
+
+def _paste_worker():
+    while True:
+        text = _paste_queue.get()
+        try:
+            _paste_and_keep_clipboard(text)
+        except Exception:
+            pass
+
+
+threading.Thread(target=_paste_worker, daemon=True, name="paste-worker").start()
+
+
 def _paste_and_keep_clipboard_async(text: str):
-    threading.Thread(target=_paste_and_keep_clipboard, args=(text,), daemon=True).start()
+    _paste_queue.put(text)
+
 
 def paste_text(text: str, active_modifiers: tuple[str, ...] = ()):
     """Paste text at the current cursor position.

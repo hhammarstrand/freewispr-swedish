@@ -30,11 +30,22 @@ KBLAB_MODELS = {
     "large": "KBLab/kb-whisper-large",
 }
 
+# Pin specific HuggingFace revisions for reproducible downloads.
+# Set to a commit SHA from the model's HF page to lock to that version.
+# None = use latest (current behavior).
+KBLAB_REVISIONS: dict[str, str | None] = {
+    "tiny": None,
+    "base": None,
+    "small": None,
+    "medium": None,
+    "large": None,
+}
+
 
 def convert(size: str) -> None:
     repo = KBLAB_MODELS.get(size)
     if not repo:
-        log.error("Okand modellstorlek: %s (valj: %s)", size, ", ".join(KBLAB_MODELS))
+        log.error("Okänd modellstorlek: %s (välj: %s)", size, ", ".join(KBLAB_MODELS))
         return
 
     output_dir = MODEL_DIR / f"kb-whisper-{size}-ct2"
@@ -47,21 +58,26 @@ def convert(size: str) -> None:
     try:
         from ctranslate2.converters import TransformersConverter
     except ImportError:
-        log.error("Saknar ctranslate2. Kor: pip install ctranslate2")
+        log.error("Saknar ctranslate2. Kör: pip install ctranslate2")
         return
 
     try:
         import transformers  # noqa: F401
     except ImportError:
-        log.error("Saknar transformers. Kor: pip install transformers")
+        log.error("Saknar transformers. Kör: pip install transformers")
         return
 
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    converter = TransformersConverter(
-        repo,
+    revision = KBLAB_REVISIONS.get(size)
+    converter_kwargs: dict = dict(
         copy_files=["tokenizer.json", "preprocessor_config.json"],
     )
+    if revision is not None:
+        converter_kwargs["revision"] = revision
+        log.info("Använder pinnad revision: %s", revision)
+
+    converter = TransformersConverter(repo, **converter_kwargs)
     converter.convert(
         output_dir=str(output_dir),
         quantization="float16",

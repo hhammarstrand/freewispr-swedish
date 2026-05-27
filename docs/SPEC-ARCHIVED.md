@@ -1,8 +1,7 @@
 # FreeWispr-SV — Svensk speech-to-text för Windows
 
-> **OBS: Detta dokument är den ursprungliga designspecifikationen från innan implementation.**
-> **Den aktuella arkitekturen och funktionaliteten beskrivs i [README.md](README.md).**
-> **Många detaljer nedan (t.ex. filler-ord, språkväljare, filstruktur) stämmer inte längre.**
+> **OBS: Detta dokument är den ursprungliga designspecifikationen från innan implementation och är ARKIVERAT.**
+> **Det underhålls inte och stämmer inte överens med aktuell kod. Se [README.md](../README.md) för korrekt dokumentation.**
 
 > **Fork av:** [x26prakhar/freewispr](https://github.com/x26prakhar/freewispr)
 > **Licens:** MIT

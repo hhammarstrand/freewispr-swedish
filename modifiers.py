@@ -19,6 +19,7 @@ _ALIASES = {
     "control": "ctrl",
     "shift": "shift",
     "alt": "alt",
+    "altgr": "alt",
     "win": "windows",
     "windows": "windows",
     "cmd": "windows",

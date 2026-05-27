@@ -4,35 +4,18 @@ Stored at ~/.freewispr-swedish/snippets.json as {"trigger": "expansion", ...}
 """
 from pathlib import Path
 
-from json_store import load_json, save_json_atomic
+from json_store import JsonCache
 
-_FILE = Path.home() / ".freewispr-swedish" / "snippets.json"
-
-# In-memory cache — avoids re-reading JSON on every transcription.
-_cache: dict[str, str] | None = None
-_cache_mtime: float = 0.0
+_store = JsonCache(Path.home() / ".freewispr-swedish" / "snippets.json", default={})
 
 
 def load() -> dict[str, str]:
     """Load snippets, using in-memory cache when file hasn't changed."""
-    global _cache, _cache_mtime
-    current_mt = _FILE.stat().st_mtime if _FILE.exists() else 0.0
-    if _cache is not None and current_mt == _cache_mtime:
-        return _cache
-    if _FILE.exists():
-        _cache = dict(load_json(_FILE, {}))
-        _cache_mtime = _FILE.stat().st_mtime if _FILE.exists() else 0.0
-        return _cache
-    _cache = {}
-    _cache_mtime = current_mt
-    return _cache
+    return _store.load()
 
 
 def save(snippets: dict[str, str]):
-    global _cache, _cache_mtime
-    save_json_atomic(_FILE, snippets)
-    _cache = snippets
-    _cache_mtime = _FILE.stat().st_mtime
+    _store.save(snippets)
 
 
 def expand(text: str) -> str:
