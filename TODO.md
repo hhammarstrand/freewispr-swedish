@@ -172,7 +172,7 @@ Kompletterad med pre-launch-granskning 2026-05-27.
 
 ## Säkerhet och integritet
 
-- [ ] Dokumentera clipboard-baserad paste.
+- [x] Dokumentera clipboard-baserad paste.
   - Berör: `paste.py`, `README.md`.
   - Appen kopierar dikterad text till globala clipboarden och återställer efter paste.
   - Dokumentera risken och överväg alternativ/direct text injection där möjligt.
@@ -182,7 +182,7 @@ Kompletterad med pre-launch-granskning 2026-05-27.
   - I dag ignoreras restore-fel tyst.
   - Överväg retry, clear clipboard eller diskret användarvarning.
 
-- [ ] Dokumentera lokala datafiler och privacy cleanup.
+- [x] Dokumentera lokala datafiler och privacy cleanup.
   - Berör: `README.md`, `config.py`, `corrections.py`, `snippets.py`, `auto_learn.py`.
   - Lista `config.json`, `corrections.json`, `snippets.json`, `learned.json`, `hotwords.txt`, loggfil och modellcache.
   - Lägg gärna till UI-funktion för "Rensa privat data".
@@ -243,7 +243,7 @@ Kompletterad med pre-launch-granskning 2026-05-27.
   - Privacy-sektionen nämner inte remote-transkribering.
   - `auto_learn.py` (auto-lärning) bör beskrivas kort i funktionslistan.
 
-- [ ] Arkivera eller uppdatera `SPEC.md`.
+- [x] Arkivera eller uppdatera `SPEC.md`.
   - Dokumentet säger själv att flera detaljer är föråldrade.
   - Antingen flytta till historik/arkiv eller synka mot aktuell implementation.
   - Innehåller kinesiska tecken, stavfel, och föråldrad filstruktur.
@@ -251,7 +251,7 @@ Kompletterad med pre-launch-granskning 2026-05-27.
 - [ ] Lägg till utvecklarguide.
   - Beskriv testkommandon, lint/format, build, release, modellkonvertering och felsökning.
 
-- [ ] `docs/index.html` — Webbsidan nämner inte remote-transkribering, auto-lärning, eller
+- [x] `docs/index.html` — Webbsidan nämner inte remote-transkribering, auto-lärning, eller
   alla LLM-leverantörer (staik, berget, openai, custom).
   - Funktionslistan bör uppdateras så den matchar appens verkliga kapacitet.
 
@@ -282,7 +282,7 @@ Kompletterad med pre-launch-granskning 2026-05-27.
   - Default i faster-whisper är 2000 ms; 300 ms kapar legitima pauser och **tappar ord**.
   - Sätt ≥500 ms eller ta bort overriden helt.
 
-- [ ] Kör LLM polish i bakgrunden efter paste.
+- [x] Kör LLM polish i bakgrunden efter paste.
   - Berör: `transcriber.py:368`, `dictation.py:120-132`, `llm_polish.py:75`.
   - `polish()` körs synkront i dictation-tråden → blockerar paste upp till 8 s.
   - Paste lokalt resultat omedelbart, polera i bakgrunden, uppdatera clipboard/visa toast efteråt.
@@ -370,7 +370,7 @@ Kompletterad med pre-launch-granskning 2026-05-27.
   - Berör: `transcriber.py:357-358`, `_postprocess`.
   - Kör `_postprocess` en gång sist.
 
-- [ ] Använd `np.max(np.abs(audio))` utan extra kopia i log path.
+- [x] Använd `np.max(np.abs(audio))` utan extra kopia i log path.
   - Berör: `transcriber.py:204`.
 
 - [x] `llm_polish.py:281` — `max_tokens` beräknas från tecken (len) inte tokens.
@@ -422,7 +422,7 @@ Kompletterad med pre-launch-granskning 2026-05-27.
   - Konstanten är nu härledd i en kommentar (noise floor + tal-RMS) och
     exponerad via `config["min_rms"]` (UI-widget ej tillagd ännu).
 
-- [ ] Extrahera `JsonCache`-helper.
+- [x] Extrahera `JsonCache`-helper.
   - Berör: `corrections.py`, `snippets.py`, `auto_learn.py`.
   - Tre kopior av load/save/cache-mönster.
 
@@ -456,9 +456,9 @@ Kompletterad med pre-launch-granskning 2026-05-27.
 - [ ] `docs/index.html` — Webbsidan saknar `lang`-attributets delsida `xml:lang`.
   - `lang="sv"` på `<html>` är korrekt men saknar `hreflang`-link för SEO (minor).
 
-- [ ] `docs/index.html` — Ingen `<meta name="author">` — tillägg kan hjälpa sökmotorer.
+- [x] `docs/index.html` — Ingen `<meta name="author">` — tillägg kan hjälpa sökmotorer.
 
-- [ ] `docs/index.html` — Funktions-sektionen nämner 6 funktioner men appen har fler
+- [x] `docs/index.html` — Funktions-sektionen nämner 6 funktioner men appen har fler
   (remote-transkribering, auto-lärning, audio feedback, tystnadsdetektion).
   - Uppdatera eller lägg till fler feature-kort.
 
