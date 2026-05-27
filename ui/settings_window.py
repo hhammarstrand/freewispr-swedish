@@ -407,7 +407,7 @@ class SettingsWindow:
         self._llm_base_entry = self._entry(parent, self._llm_base_url_var)
         self._llm_base_hint = self._hint(
             parent,
-            "T.ex. http://localhost:8080/v1 för en lokal OpenAI-kompatibel server."
+            "T.ex. http://localhost:11434/v1 (Ollama) eller http://localhost:1234/v1 (LM Studio)."
         )
 
         # Initialise dependent widgets (model list, key field, base URL row)
