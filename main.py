@@ -2,6 +2,8 @@
 freewispr-swedish — Svensk speech-to-text för Windows
 Entry point: system tray icon + dictation mode.
 """
+from __future__ import annotations
+
 import sys
 import logging
 from pathlib import Path
