@@ -646,7 +646,9 @@ footer a:hover {
   overflow: hidden;
 }
 
-/* Traveling dot on connector */
+/* Traveling dot on connector — varje dot syns och rör sig BARA under
+   det tidsfönster då dess föregående steg lyser, så pilen följer det
+   aktiva steget istället för att hoppa runt slumpmässigt. */
 .pipe-connector::after {
   content: "";
   position: absolute;
@@ -660,16 +662,23 @@ footer a:hover {
   opacity: 0;
   animation: dotTravel 4.4s linear infinite;
 }
+/* Connector 1->2: aktiv under 0-1.1s (när "Lyssnar" lyser) */
 .pipe-connector:nth-of-type(2)::after  { animation-delay: 0s; }
+/* Connector 2->3: aktiv under 1.1-2.2s (när "Transkriberar" lyser) */
 .pipe-connector:nth-of-type(4)::after  { animation-delay: 1.1s; }
+/* Connector 3->4: aktiv under 2.2-3.3s (när "Korrigerar" lyser) */
 .pipe-connector:nth-of-type(6)::after  { animation-delay: 2.2s; }
-.pipe-connector:nth-of-type(8)::after  { animation-delay: 3.3s; }
 
 @keyframes dotTravel {
-  0%   { left: -8px;  opacity: 0; }
-  5%   { opacity: 1; }
-  95%  { opacity: 1; }
-  100% { left: calc(100% + 8px); opacity: 0; }
+  /* Dot:en rör sig från vänster till höger under första 25% av cykeln
+     (= 1.1s av 4.4s) och är osynlig resten. Positiva delays på varje
+     connector förskjuter rörelsen så att rätt dot animeras när
+     motsvarande steg lyser upp. */
+  0%   { left: -8px;                opacity: 0; }
+  2%   { left: -8px;                opacity: 1; }
+  23%  { left: calc(100% + 8px);    opacity: 1; }
+  25%  { left: calc(100% + 8px);    opacity: 0; }
+  100% { left: calc(100% + 8px);    opacity: 0; }
 }
 
 /* Step glow animation — each step lights up in sequence */
@@ -824,7 +833,7 @@ footer a:hover {
 
       <section class="pipeline-section">
         <div class="section-head">
-          <div><p class="eyebrow">Så funkar det</p><h2>Från röst till text på under en sekund.</h2></div>
+          <div><p class="eyebrow">Så funkar det</p><h2>Från röst till text på några sekunder.</h2></div>
         </div>
         <div class="pipeline" aria-label="Dikteringsflöde i fyra steg">
           <!-- Step 1: Lyssnar -->
