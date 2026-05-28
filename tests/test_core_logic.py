@@ -577,6 +577,135 @@ def test_dictation_worker_does_not_paste_after_stop(monkeypatch):
     assert pasted == []
 
 
+def test_dictation_wait_mode_pastes_polished_not_raw(monkeypatch):
+    """When LLM is enabled, raw transcript must NOT be pasted before polish.
+
+    Only the polished text reaches the clipboard, and only once.
+    """
+    import numpy as np
+    import threading
+    dictation = importlib.reload(importlib.import_module("dictation"))
+
+    pasted = []
+
+    def fake_polish_async(text, callback, on_stage=None):
+        # Simulate the LLM thread: deliver polished text after a tiny delay.
+        def _run():
+            callback(text, "POLERAD: " + text)
+        threading.Thread(target=_run, daemon=True).start()
+
+    mode = object.__new__(dictation.DictationMode)
+    mode.transcriber = SimpleNamespace(
+        transcribe=lambda audio: "ra text",
+        polish_async=fake_polish_async,
+        last_polish_state="llm_changed",
+        llm_enabled=True,
+    )
+    mode._worker_stop = threading.Event()
+    mode._active = True
+    mode._modifier_keys = ()
+    mode.hotkey = "ctrl+space"
+    mode.indicator = None
+    mode.on_status = lambda msg: None
+    mode.llm_enabled = True
+    monkeypatch.setattr(dictation, "paste_text",
+                        lambda text, active_modifiers=(): pasted.append(text))
+    monkeypatch.setattr(dictation, "snippet_module",
+                        SimpleNamespace(expand=lambda t: t))
+
+    mode._transcribe(np.ones(16000, dtype=np.float32))
+
+    # Wait for the background polish callback to fire.
+    import time
+    for _ in range(50):
+        if pasted:
+            break
+        time.sleep(0.02)
+
+    assert pasted == ["POLERAD: ra text"], \
+        f"Expected single polished paste, got: {pasted}"
+
+
+def test_dictation_wait_mode_watchdog_pastes_raw_on_timeout(monkeypatch):
+    """If polish_async never calls back, watchdog must paste the raw text."""
+    import numpy as np
+    import threading
+    dictation = importlib.reload(importlib.import_module("dictation"))
+
+    pasted = []
+
+    def fake_polish_async_hang(text, callback, on_stage=None):
+        # Never calls back — simulating a hung LLM endpoint.
+        pass
+
+    mode = object.__new__(dictation.DictationMode)
+    mode.transcriber = SimpleNamespace(
+        transcribe=lambda audio: "ra text",
+        polish_async=fake_polish_async_hang,
+        last_polish_state="local",
+        llm_enabled=True,
+    )
+    mode._worker_stop = threading.Event()
+    mode._active = True
+    mode._modifier_keys = ()
+    mode.hotkey = "ctrl+space"
+    mode.indicator = None
+    mode.on_status = lambda msg: None
+    mode.llm_enabled = True
+    monkeypatch.setattr(dictation, "paste_text",
+                        lambda text, active_modifiers=(): pasted.append(text))
+    monkeypatch.setattr(dictation, "snippet_module",
+                        SimpleNamespace(expand=lambda t: t))
+    # Shrink watchdog so the test doesn't wait 15 s.
+    import threading as _threading_mod
+    original_timer = _threading_mod.Timer
+    monkeypatch.setattr(dictation.threading, "Timer",
+                        lambda interval, fn: original_timer(0.05, fn))
+
+    mode._transcribe(np.ones(16000, dtype=np.float32))
+
+    import time
+    for _ in range(50):
+        if pasted:
+            break
+        time.sleep(0.02)
+
+    assert pasted == ["ra text"], \
+        f"Expected raw fallback paste after watchdog, got: {pasted}"
+
+
+def test_dictation_no_llm_mode_pastes_raw_immediately(monkeypatch):
+    """LLM disabled = fast path: paste raw text exactly once, no polish call."""
+    import numpy as np
+    import threading
+    dictation = importlib.reload(importlib.import_module("dictation"))
+
+    pasted = []
+    polish_called = []
+
+    mode = object.__new__(dictation.DictationMode)
+    mode.transcriber = SimpleNamespace(
+        transcribe=lambda audio: "ra text",
+        polish_async=lambda *a, **kw: polish_called.append(True),
+    )
+    mode._worker_stop = threading.Event()
+    mode._active = True
+    mode._modifier_keys = ()
+    mode.hotkey = "ctrl+space"
+    mode.indicator = None
+    mode.on_status = lambda msg: None
+    mode.llm_enabled = False
+    monkeypatch.setattr(dictation, "paste_text",
+                        lambda text, active_modifiers=(): pasted.append(text))
+    monkeypatch.setattr(dictation, "snippet_module",
+                        SimpleNamespace(expand=lambda t: t))
+
+    mode._transcribe(np.ones(16000, dtype=np.float32))
+
+    assert pasted == ["ra text"]
+    assert polish_called == []  # polish_async must NOT be called when LLM off
+
+
 def test_transcriber_close_waits_for_inflight_transcribe(fake_transcriber_deps):
     import numpy as np
     import threading

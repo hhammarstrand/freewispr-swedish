@@ -325,106 +325,91 @@ class DictationMode:
                 if self._worker_stop.is_set() or not self._active:
                     log.info("Hoppar över paste från stale transkribering")
                     return
-                # Paste the transcribed result immediately — user gets text
-                # without waiting for the LLM round-trip. "Rå" here means
-                # "not yet polished", not "from the local model".
-                paste_text(text, active_modifiers=self._modifier_keys)
-                message = "Klistrad (rå)"
-                self.on_status(f"{message} — håll {self.hotkey.upper()} igen")
-                if self.indicator:
-                    self.indicator.show(message, state="done")
 
                 if llm_enabled:
-                    # Per-job stage callback. Passed as a parameter to
-                    # polish_async so two overlapping jobs don't trample
-                    # each other's callbacks via a shared attribute.
-                    def _on_stage(stage: str):
-                        if stage == "llm_reviewing":
-                            self.on_status("LLM-granskar…")
-                            if self.indicator:
-                                self.indicator.show("LLM-granskar…", state="transcribe")
+                    # Wait-mode: don't paste the raw transcript. Run LLM polish
+                    # first and paste the polished result in one step. This
+                    # avoids the paste-twice problem where the user has
+                    # already sent the raw text (Enter, Tab, …) before the
+                    # LLM update lands on the clipboard.
+                    #
+                    # Trade-off: the user waits 1-3s longer before *any* text
+                    # appears, but they get exactly one paste of the final
+                    # text. Watchdog falls back to pasting the raw transcript
+                    # if polish hangs past 15s.
+                    self.on_status("LLM-granskar…")
+                    if self.indicator:
+                        self.indicator.show("LLM-granskar…", state="transcribe")
 
-                    # Watchdog: if the LLM polish callback fails to fire
-                    # within 15 s (network hang, thread died, …) we force
-                    # the indicator back to a final state so the user
-                    # isn't left staring at "LLM-granskar…" forever. The
-                    # _polish_completed flag is the single source of truth
-                    # for "callback already ran"; both paths use it under
-                    # the lock so we never run the cleanup twice.
                     polish_lock = threading.Lock()
                     polish_completed = {"done": False}
 
-                    def _finalize_local_fallback() -> None:
-                        """Run from the watchdog timer when polish hangs."""
+                    def _paste_and_finalize(final_text: str, polished_label: bool) -> None:
+                        """Paste once and update indicator. Must be called under lock."""
+                        if self._worker_stop.is_set() or not self._active:
+                            log.info("Hoppar över paste efter stopp")
+                            return
+                        paste_text(final_text, active_modifiers=self._modifier_keys)
+                        if polished_label:
+                            state = getattr(self.transcriber, "last_polish_state", "local")
+                            if state == "llm_changed":
+                                msg = "Klistrad (LLM-polerad)"
+                            elif state == "llm_unchanged":
+                                msg = "Klistrad (LLM-granskad)"
+                            else:
+                                msg = "Klistrad (rå)"
+                        else:
+                            msg = "Klistrad (rå — LLM-timeout)"
+                        self.on_status(f"{msg} — håll {self.hotkey.upper()} igen")
+                        if self.indicator:
+                            self.indicator.show(msg, state="done")
+                            self.indicator.hide(delay_ms=1800)
+
+                    def _watchdog_fallback() -> None:
                         with polish_lock:
                             if polish_completed["done"]:
                                 return
                             polish_completed["done"] = True
                         log.warning(
                             "LLM-polish svarade inte inom 15 s — "
-                            "tvingar indikatorn till 'Klistrad (rå)'"
+                            "klistrar rå transkribering som fallback"
                         )
-                        if self._worker_stop.is_set() or not self._active:
-                            return
-                        self.on_status(
-                            f"Klistrad (rå) — håll {self.hotkey.upper()} igen"
-                        )
-                        if self.indicator:
-                            self.indicator.show("Klistrad (rå)", state="done")
-                            self.indicator.hide(delay_ms=1800)
+                        _paste_and_finalize(text, polished_label=False)
 
-                    watchdog = threading.Timer(15.0, _finalize_local_fallback)
+                    watchdog = threading.Timer(15.0, _watchdog_fallback)
                     watchdog.daemon = True
                     watchdog.name = "llm-polish-watchdog"
 
                     def _on_polish_done(original: str, polished: str):
-                        # First-come-first-served vs. the watchdog. If the
-                        # watchdog already fired we silently no-op so we
-                        # don't yank the indicator back to a stale state.
                         with polish_lock:
                             if polish_completed["done"]:
                                 return
                             polish_completed["done"] = True
                         watchdog.cancel()
-                        if self._worker_stop.is_set() or not self._active:
-                            log.info("Hoppar över LLM-uppdatering efter stopp")
-                            return
-                        if polished != original:
-                            # Update the clipboard with the polished text so
-                            # the user can Ctrl+V again to get the improved
-                            # version. The already-pasted local text stays in
-                            # the document.
-                            import pyperclip
-                            pyperclip.copy(polished + " ")
-                            msg = "Klistrad (LLM-polerad)"
-                        else:
-                            state = getattr(self.transcriber, "last_polish_state", "local")
-                            if state == "llm_unchanged":
-                                msg = "Klistrad (LLM-granskad)"
-                            else:
-                                # polish failed or returned the raw transcript
-                                msg = "Klistrad (rå)"
-                        self.on_status(f"{msg} — håll {self.hotkey.upper()} igen")
-                        if self.indicator:
-                            self.indicator.show(msg, state="done")
-                            self.indicator.hide(delay_ms=1800)
+                        # If polish returned (text, text) on failure, we still
+                        # have something usable; paste it as the raw transcript.
+                        # Otherwise paste the polished version directly.
+                        _paste_and_finalize(polished, polished_label=True)
 
-                    # Start the watchdog *before* kicking off polish — if
-                    # polish_async raises synchronously we want the timer
-                    # to still cover us, and the cancel() above remains
-                    # cheap even if the timer hasn't started ticking yet.
+                    # on_stage callback is now a no-op: we've already set the
+                    # status above before kicking polish off. Passing None
+                    # keeps the transcriber's per-job slot clean.
                     watchdog.start()
                     try:
                         self.transcriber.polish_async(text, _on_polish_done,
-                                                      on_stage=_on_stage)
+                                                      on_stage=None)
                     except Exception as e:
                         log.error("polish_async kraschade synkront: %s",
                                   e, exc_info=True)
                         watchdog.cancel()
-                        _finalize_local_fallback()
+                        _watchdog_fallback()
                 else:
-                    # No LLM — hide the indicator after a short delay.
+                    # No LLM — paste immediately, this is the fast path.
+                    paste_text(text, active_modifiers=self._modifier_keys)
+                    message = "Klistrad"
+                    self.on_status(f"{message} — håll {self.hotkey.upper()} igen")
                     if self.indicator:
+                        self.indicator.show(message, state="done")
                         self.indicator.hide(delay_ms=1800)
             else:
                 self.on_status(f"Inget hördes — håll {self.hotkey.upper()}")
