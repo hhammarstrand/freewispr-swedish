@@ -7,7 +7,7 @@ Svensk diktering för Windows. Håll en tangent, prata, släpp – texten hamnar
 
 ![freewispr-swedish preview](docs/og-image.png?v=20260527)
 
-Det här är en svensk fork av [x26prakhar/freewispr](https://github.com/x26prakhar/freewispr). Den använder KBLab:s svenska Whisper-modeller och är trimmad för att fungera även i terminaler och CLI-verktyg där vanlig syntetisk paste brukar misslyckas.
+Det här är en svensk fork av [x26prakhar/freewispr](https://github.com/x26prakhar/freewispr). Du kan köra KBLab:s svenska Whisper-modeller lokalt om du vill ha allt på datorn, eller välja providers som staik.se och Berget AI för transkribering och LLM-granskning. Appen är trimmad för att fungera även i terminaler och CLI-verktyg där vanlig syntetisk paste brukar misslyckas.
 
 ## Vad som skiljer mot originalet
 
@@ -15,7 +15,7 @@ Det här är en svensk fork av [x26prakhar/freewispr](https://github.com/x26prak
 - Inget skickas över nätet vid normal användning. Ljudet stannar på datorn och transkriberingen sker lokalt.
 - Den dikterade texten lämnas kvar i urklipp efter pasteförsöket, så att den går att klistra in manuellt om en terminal eller ett CLI-verktyg blockerar syntetisk paste.
 - Indikatorn kan följa muspekaren mellan skärmar, eller ligga still på huvudskärmen.
-- Personlig ordlista, hotwords och snippets för namn, facktermer och fraser man skriver ofta.
+- Personlig kontext för LLM-granskning — fritextfält där du beskriver dig själv, fackord och vanliga feltolkningar. Skickas som referens vid varje LLM-pass.
 - Valfri eftergranskning via GitHub Models. Avstängd som standard.
 - Windows-byggen via GitHub Actions.
 
@@ -61,7 +61,7 @@ Appen pratar bara med nätverket när du uttryckligen slår på det:
 
 - Modeller laddas ner via `python convert_model.py` — appen kontaktar inte Hugging Face automatiskt.
 - Om du slår på **LLM-granskning** skickas den transkriberade texten – inte ljudet – till vald leverantör. Leverantörer: GitHub Models, staik.se, Berget AI, OpenAI eller valfri OpenAI-kompatibel server.
-- Om du slår på **remote-transkribering** skickas ljudet – inte bara text – till vald leverantör (staik.se, Berget AI eller custom).
+- Om du slår på **remote-transkribering** skickas ljudet – inte bara text – till vald leverantör (staik.se, Berget AI eller custom). Det är valfritt; lokala KBLab-modeller fungerar utan provider.
 
 API-nycklar lagras i Windows Credential Manager via `keyring`, aldrig i config-filen. Token loggas aldrig.
 
@@ -74,11 +74,10 @@ Den dikterade texten kopieras till urklipp och klistras in via syntetisk Ctrl+V 
 - WASAPI/DirectSound/MME med automatisk prioritering.
 - Flerkanalig inspelning och resampling till 16 kHz.
 - Tystnadsdetektion som kastar för tysta inspelningar.
-- Personliga ordkorrigeringar.
-- Hotwords från ordlista och `~/.freewispr-swedish/hotwords.txt`.
-- Snippets och textmallar.
-- Valfri remote-transkribering via staik.se eller Berget AI.
-- Auto-lärning från LLM-korrigeringar (se nedan).
+- Personlig kontext (fritext) som skickas till LLM-granskaren för bättre resultat med namn och fackord.
+- Hotwords från `~/.freewispr-swedish/hotwords.txt` för lokala Whisper-modeller.
+- Valfri remote-transkribering via staik.se eller Berget AI, som alternativ till lokal modell.
+- Vänta-läge för LLM: indikator visar "LLM-granskar…" och polerad text klistras i ett enda steg.
 - Statuslägen i indikatorn: lokal, LLM-granskad eller LLM-polerad.
 
 ## Modeller
@@ -159,28 +158,22 @@ I appen: Inställningar → LLM-granskning → Leverantör: **Custom** → Base 
 | `qwen3:14b` | ~9 GB | Stark på korrigering, kräver offload till RAM |
 | `mistral-small:24b` | ~16 GB | Bäst kvalitet, kräver mycket RAM |
 
-> **Tips:** LLM-polishen körs asynkront — texten klistras in direkt och korrigeringen uppdaterar urklipp i bakgrunden. Latensen märks inte oavsett om LLM:en tar 300 ms eller 2 s.
+> **Tips:** När LLM-granskning är aktiverad körs appen i vänta-läge — texten klistras inte in förrän polishen är klar (eller 15 s timeout). Du får alltid polerad text i ett enda steg, så du slipper trycka Ctrl+V två gånger eller skicka rå text av misstag.
 
-## Auto-lärning
+## Personlig kontext
 
-När LLM-granskning är aktiverad lär sig appen automatiskt från korrigeringarna som LLM:en gör. Så här fungerar det:
+LLM-granskaren får en kort beskrivning av dig som referens vid varje pass — namn, fackord, vanliga feltolkningar. Du redigerar texten under **Inställningar → Kontext**.
 
-1. Du dikterar och Whisper transkriberar lokalt.
-2. LLM:en korrigerar texten (t.ex. "motte" → "möte").
-3. Appen jämför före/efter och sparar varje ordkorrigering i `~/.freewispr-swedish/learned.json`.
-4. När samma korrigering setts **3 gånger** befordras den automatiskt till den personliga ordlistan (`corrections.json`) och som hotword till Whisper.
-5. Nästa gång korrigerar Whisper och ordlistan felet direkt — utan att behöva LLM:en.
+Texten skickas som en del av system-prompten med tydlig instruktion att använda den som referens, inte som innehåll att klistra in. Max 8000 tecken. Tom kontext utelämnas helt så modellen inte får en tom referensblock.
 
-> **OBS:** Auto-lärningen fångar bara korrigeringar som LLM:en gör, inte manuella redigeringar du gör i appen efteråt (t.ex. om du ändrar text i ett chattfält innan du skickar). Vill du lägga till egna korrigeringar manuellt kan du göra det via **Personlig ordlista** i tray-menyn.
+Vid första start migreras eventuella tidigare `snippets.json`, `corrections.json` och `learned.json` automatiskt till en initial kontext-text. Originalfilerna lämnas på disk som backup.
 
 ## Datafiler
 
 | Fil | Beskrivning |
 |-----|-------------|
-| `~/.freewispr-swedish/corrections.json` | Personliga ordkorrigeringar |
-| `~/.freewispr-swedish/snippets.json` | Snippets och expansioner |
-| `~/.freewispr-swedish/hotwords.txt` | Egna termer för Whisper |
-| `~/.freewispr-swedish/learned.json` | Auto-lärda korrigeringar från LLM |
+| `~/.freewispr-swedish/personal_context.json` | Personlig kontext för LLM-granskning |
+| `~/.freewispr-swedish/hotwords.txt` | Egna termer för lokala Whisper-modeller |
 | `~/.freewispr-swedish/freewispr.log` | Logg för felsökning |
 | `~/.freewispr-swedish/models/` | Nedladdade och konverterade modeller |
 
@@ -241,17 +234,14 @@ freewispr-swedish/
 |   +-- _ctk.py          #   lazy-import av customtkinter
 |   +-- indicator.py     #   flytande indikator
 |   +-- settings_window.py # inställningsfönster med tabs
-|   +-- snippets_window.py # snippet-hantering
-|   +-- dictionary_window.py # personlig ordlista
 |   +-- hotkey_capture.py #  tangentfångst-dialog
 |   +-- pair_dialog.py   #   nyckel-värde-dialog
 |   +-- styles.py        #   färger och ttk-tema
 +-- config.py            # config, nyckelhantering och keyring-integration
-+-- corrections.py       # personlig ordlista med cachad regex
-+-- snippets.py          # snippets/textmallar
++-- personal_context.py  # personlig kontext-text för LLM-granskning
++-- migrate_context.py   # en-gångs migration från snippets/corrections/learned
 +-- llm_polish.py        # LLM-leverantörer (GitHub, staik, Berget, OpenAI, custom)
 +-- remote_transcribe.py # remote-transkribering via OpenAI-kompatibelt API
-+-- auto_learn.py        # auto-lärning från LLM-korrigeringar
 +-- json_store.py        # atomisk JSON-lagring med backup vid korruption
 +-- modifiers.py         # kanoniska modifier-namn för tangentbord
 +-- sounds.py            # syntetiserade ljudeffekter
@@ -286,7 +276,7 @@ Ja, helt — så länge du har laddat ned en modell (`python convert_model.py sm
 Öppna *Inställningar → Mikrofon* och välj din mikrofon manuellt. Om listan är tom: kolla att Windows har gett appen åtkomst i *Inställningar → Sekretess → Mikrofon*.
 
 **Texten innehåller fel ord.**
-Lägg till en korrigering via *Tray → Personlig ordlista*. Eller slå på LLM-granskning så lär sig appen automatiskt av rättningarna.
+Slå på LLM-granskning och beskriv namnen, fackorden eller felmönstren under *Inställningar → Kontext*. För lokala Whisper-modeller kan du även lägga till termer i `~/.freewispr-swedish/hotwords.txt`.
 
 **Kan jag använda en lokal LLM istället för GitHub Models?**
 Ja, se [Lokal LLM](#lokal-llm-valfritt) — funkar med Ollama, LM Studio och llama.cpp.

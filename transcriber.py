@@ -9,7 +9,6 @@ from pathlib import Path
 import numpy as np
 from faster_whisper import WhisperModel
 
-import corrections as corr_module
 
 log = logging.getLogger("freewispr")
 
@@ -265,26 +264,19 @@ _INITIAL_PROMPTS = {
 def _load_hotwords() -> str | None:
     """Build a comma-separated hotwords string for faster-whisper.
 
-    Sources (combined, deduplicated):
-      1. The *correct* values from the personal corrections dictionary.
-         These are proper nouns, names, and terms the user cares about.
-      2. An optional hotwords.txt file at ~/.freewispr-swedish/hotwords.txt
-         (one word or phrase per line, blank lines and # comments ignored).
+    Loaded from an optional hotwords.txt file at
+    ~/.freewispr-swedish/hotwords.txt (one word or phrase per line, blank
+    lines and # comments ignored). Returns None if the file is missing
+    or empty.
 
-    Returns None if no hotwords are available.
+    Note: prior versions also pulled the *correct* values from
+    corrections.json. That feature was retired together with the
+    correction dictionary — personal vocabulary now lives in the
+    personal_context.json LLM prompt instead, which is more flexible
+    and works for remote transcription providers too.
     """
     words: set[str] = set()
 
-    # 1. Correction dictionary → the "right" (target) values
-    try:
-        for _wrong, right in corr_module.load().items():
-            term = right.strip()
-            if term:
-                words.add(term)
-    except Exception as e:
-        log.debug("Kunde inte läsa ordlista för hotwords: %s", e)
-
-    # 2. hotwords.txt (optional)
     if HOTWORDS_FILE.exists():
         try:
             for line in HOTWORDS_FILE.read_text(encoding="utf-8").splitlines():
@@ -304,22 +296,20 @@ def _load_hotwords() -> str | None:
 
 
 # In-memory hotwords cache — avoids re-reading disk on every transcription.
-# Invalidated when corrections.json or hotwords.txt change (checked by mtime).
+# Invalidated when hotwords.txt changes (checked by mtime).
 _hotwords_cache: str | None = None
-_hotwords_mtime: tuple[float, float] = (0.0, 0.0)  # (corrections_mtime, hotwords_mtime)
+_hotwords_mtime: float = 0.0
 
 
 def _get_hotwords_cached() -> str | None:
-    """Return cached hotwords string, reloading only if source files changed."""
+    """Return cached hotwords string, reloading only if hotwords.txt changed."""
     global _hotwords_cache, _hotwords_mtime
 
-    corr_mt = corr_module.mtime()
     hw_mt = HOTWORDS_FILE.stat().st_mtime if HOTWORDS_FILE.exists() else 0.0
-    current = (corr_mt, hw_mt)
 
-    if current != _hotwords_mtime:
+    if hw_mt != _hotwords_mtime:
         _hotwords_cache = _load_hotwords()
-        _hotwords_mtime = current
+        _hotwords_mtime = hw_mt
         log.debug("Hotwords-cache uppdaterad (mtime ändrad)")
 
     return _hotwords_cache
@@ -521,7 +511,6 @@ class Transcriber:
         def _run():
             import time as _time
             from llm_polish import polish
-            from auto_learn import record_correction
 
             # Track whether we've delivered exactly one callback. ``polish()``
             # has its own 8 s urllib timeout, but we also belt-and-braces:
@@ -582,10 +571,6 @@ class Transcriber:
                     )
 
                 if result.changed:
-                    try:
-                        record_correction(text, result.text)
-                    except Exception as rec_err:
-                        log.debug("record_correction misslyckades: %s", rec_err)
                     self.last_polish_state = "llm_changed"
                     log.info("Resultat (LLM) klart (%dms, %s)",
                              result.latency_ms, _text_meta(result.text))
@@ -698,7 +683,6 @@ class Transcriber:
         # Strip noise/placeholder tokens. _postprocess handles whitespace
         # collapsing further down — no need to do it twice.
         text = _NOISE_PLACEHOLDERS.sub("", raw)
-        text = corr_module.apply(text)
         text = _postprocess(text)
         log.info("Resultat (lokal) klart (%s)", _text_meta(text))
         return text
@@ -740,7 +724,6 @@ class Transcriber:
 
         log.info("Rå text mottagen (%s)", _text_meta(raw))
         text = _NOISE_PLACEHOLDERS.sub("", raw)
-        text = corr_module.apply(text)
         text = _postprocess(text)
         log.info("Resultat (remote) klart (%s)", _text_meta(text))
         return text

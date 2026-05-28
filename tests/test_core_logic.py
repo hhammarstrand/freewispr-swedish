@@ -31,34 +31,6 @@ def test_transcriber_postprocess_cleans_common_artifacts(fake_transcriber_deps):
     assert result == "Hej, du!"
 
 
-def test_corrections_apply_case_insensitive_whole_words(tmp_path):
-    corrections = reload_with_home("corrections", tmp_path)
-    corrections.save({"motte": "möte"})
-
-    result = corrections.apply("Motte idag, men motteplats ska vara kvar")
-
-    assert result == "möte idag, men motteplats ska vara kvar"
-
-
-def test_snippets_expand_exact_trigger_only(tmp_path):
-    snippets = reload_with_home("snippets", tmp_path)
-    snippets.save({"mvb": "Med vänliga hälsningar"})
-
-    assert snippets.expand(" MVB ") == "Med vänliga hälsningar"
-    assert snippets.expand("mvb tack") == "mvb tack"
-
-
-def test_auto_learn_extracts_same_length_word_diffs():
-    auto_learn = importlib.import_module("auto_learn")
-
-    diffs = auto_learn._extract_word_diffs(
-        "Jag gar till motte.",
-        "Jag går till möte.",
-    )
-
-    assert diffs == [("gar", "går"), ("motte", "möte")]
-
-
 def test_config_save_uses_keyring_and_excludes_secret(tmp_path, monkeypatch):
     config = importlib.reload(importlib.import_module("config"))
     secrets = {}
@@ -169,39 +141,6 @@ def test_llm_polish_resolves_github_token_from_gh_cli(monkeypatch):
 #  New regression tests for refactors landed in this round.
 # --------------------------------------------------------------------------- #
 
-def test_corrections_apply_cache_invalidates_on_mtime(tmp_path, monkeypatch):
-    """Editing the corrections file should invalidate the compiled-regex cache."""
-    corrections = reload_with_home("corrections", tmp_path)
-    corrections.save({"motte": "möte"})
-    assert corrections.apply("motte") == "möte"
-
-    # Save a new mapping; mtime advances so the cache must be rebuilt.
-    # Force a strictly newer mtime to defeat low filesystem resolution.
-    corrections.save({"gar": "går"})
-    new_mtime = corrections.mtime() + 1
-    import os
-    os.utime(corrections._store.path, (new_mtime, new_mtime))
-
-    assert corrections.apply("gar") == "går"
-    # Old mapping no longer applies after replacement.
-    assert corrections.apply("motte") == "motte"
-
-
-def test_auto_learn_extracts_single_word_replacements_only():
-    """Multi-word edits (insertions, deletions) must not yield bogus pairs."""
-    auto_learn = importlib.import_module("auto_learn")
-
-    # Length differs — naive zip would invent garbage; SequenceMatcher should
-    # only emit the genuine single-word replace.
-    diffs = auto_learn._extract_word_diffs(
-        "Jag gar till skolan idag",
-        "Jag går till skolan",
-    )
-    assert ("gar", "går") in diffs
-    # The trailing deletion of "idag" must not appear as a replacement.
-    assert all(b != "" for _, b in diffs)
-
-
 def test_dictation_parse_hotkey_splits_modifiers_and_trigger():
     """_parse_hotkey must return ("space", ("ctrl", "shift")) for chorded hotkeys."""
     dictation = importlib.import_module("dictation")
@@ -301,27 +240,6 @@ def test_audio_callback_rms_uses_loudest_channel(monkeypatch):
 
     assert recorder.level == pytest.approx(0.5)
     assert recorder.rms() == pytest.approx(0.5)
-
-
-def test_corrections_apply_master_regex_handles_many_entries(tmp_path):
-    """Master-regex path must apply all corrections in a single pass."""
-    corrections = reload_with_home("corrections", tmp_path)
-    mapping = {
-        "motte": "möte",
-        "gar": "går",
-        "fika rasten": "fikarasten",
-    }
-    corrections.save(mapping)
-    # Longest key first ensures multi-word "fika rasten" wins over individual
-    # words that might overlap.
-    result = corrections.apply("Jag gar pa motte under fika rasten idag")
-    assert result == "Jag går pa möte under fikarasten idag"
-
-
-def test_corrections_apply_empty_dictionary_is_noop(tmp_path):
-    corrections = reload_with_home("corrections", tmp_path)
-    corrections.save({})
-    assert corrections.apply("oförändrad text") == "oförändrad text"
 
 
 def test_indicator_push_level_throttles_redraws(monkeypatch):
@@ -610,8 +528,6 @@ def test_dictation_wait_mode_pastes_polished_not_raw(monkeypatch):
     mode.llm_enabled = True
     monkeypatch.setattr(dictation, "paste_text",
                         lambda text, active_modifiers=(): pasted.append(text))
-    monkeypatch.setattr(dictation, "snippet_module",
-                        SimpleNamespace(expand=lambda t: t))
 
     mode._transcribe(np.ones(16000, dtype=np.float32))
 
@@ -654,8 +570,6 @@ def test_dictation_wait_mode_watchdog_pastes_raw_on_timeout(monkeypatch):
     mode.llm_enabled = True
     monkeypatch.setattr(dictation, "paste_text",
                         lambda text, active_modifiers=(): pasted.append(text))
-    monkeypatch.setattr(dictation, "snippet_module",
-                        SimpleNamespace(expand=lambda t: t))
     # Shrink watchdog so the test doesn't wait 15 s.
     import threading as _threading_mod
     original_timer = _threading_mod.Timer
@@ -697,8 +611,6 @@ def test_dictation_no_llm_mode_pastes_raw_immediately(monkeypatch):
     mode.llm_enabled = False
     monkeypatch.setattr(dictation, "paste_text",
                         lambda text, active_modifiers=(): pasted.append(text))
-    monkeypatch.setattr(dictation, "snippet_module",
-                        SimpleNamespace(expand=lambda t: t))
 
     mode._transcribe(np.ones(16000, dtype=np.float32))
 
@@ -823,9 +735,7 @@ def test_transcriber_polish_async_calls_callback_with_polished_text(monkeypatch,
             text="hej!", changed=True, latency_ms=1
         )
     )
-    fake_auto = SimpleNamespace(record_correction=lambda before, after: None)
     monkeypatch.setitem(sys.modules, "llm_polish", fake_llm)
-    monkeypatch.setitem(sys.modules, "auto_learn", fake_auto)
 
     results = []
     done = threading.Event()
@@ -936,9 +846,7 @@ def test_polish_async_on_stage_parameter_isolates_overlapping_jobs(monkeypatch, 
             text=text, changed=False, latency_ms=1
         )
     )
-    fake_auto = SimpleNamespace(record_correction=lambda before, after: None)
     monkeypatch.setitem(sys.modules, "llm_polish", fake_llm)
-    monkeypatch.setitem(sys.modules, "auto_learn", fake_auto)
 
     inst = _make_inst()
     stages_a: list[str] = []

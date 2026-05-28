@@ -9,7 +9,6 @@ from audio import MicRecorder, finalize_audio
 from transcriber import Transcriber
 from paste import paste_text
 from modifiers import normalize_all, is_modifier
-import snippets as snippet_module
 import sounds
 
 log = logging.getLogger("freewispr")
@@ -318,8 +317,6 @@ class DictationMode:
                 if self.indicator:
                     self.indicator.show(f"Transkriberar {tr_label}…", state="transcribe")
             text = self.transcriber.transcribe(audio)
-            # Apply snippet expansion — if full text is a trigger, replace it
-            text = snippet_module.expand(text)
             log.info("Resultat klart (%s)", _text_meta(text))
             if text.strip():
                 if self._worker_stop.is_set() or not self._active:
