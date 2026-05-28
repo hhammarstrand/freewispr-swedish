@@ -547,12 +547,24 @@ class Transcriber:
 
             try:
                 try:
+                    # Load personal context fresh every call. JsonCache uses
+                    # mtime-based invalidation internally so this is cheap
+                    # when nothing has changed, and picks up Settings saves
+                    # immediately without restarting dictation.
+                    try:
+                        from personal_context import load as _load_context
+                        ctx = _load_context()
+                    except Exception as ctx_err:
+                        log.debug("Kunde inte ladda personlig kontext: %s", ctx_err)
+                        ctx = ""
+
                     result = polish(
                         text,
                         self.llm_api_key,
                         model=self.llm_model,
                         provider=self.llm_provider,
                         base_url_override=self.llm_base_url,
+                        context_text=ctx,
                     )
                 except Exception as e:
                     log.warning("LLM-polish kraschade: %s", e, exc_info=True)

@@ -233,6 +233,29 @@ _SYSTEM_PROMPT = (
 )
 
 
+def _build_system_prompt(context_text: str = "") -> str:
+    """Compose the system prompt, optionally appending the user's personal context.
+
+    The context is wrapped in clear delimiters and given a brief instruction
+    so the model treats it as *background reference* — not as new content to
+    insert into the output. Empty / whitespace-only context returns the bare
+    base prompt unchanged (we never want to send a dangling "Användarens
+    kontext:" header that the model might react to).
+    """
+    ctx = (context_text or "").strip()
+    if not ctx:
+        return _SYSTEM_PROMPT
+    return (
+        f"{_SYSTEM_PROMPT}\n\n"
+        "Användarens personliga kontext (använd ENDAST som referens för "
+        "stavning av egennamn, facktermer, böjningar och tonalitet — lägg "
+        "INTE in innehåll härifrån i svaret):\n"
+        "---\n"
+        f"{ctx}\n"
+        "---"
+    )
+
+
 def _text_meta(text: str) -> str:
     return f"chars={len(text)}, words={len(text.split())}"
 
@@ -263,6 +286,7 @@ def _call_api(
     timeout_sec: float = 8.0,
     provider: str = DEFAULT_PROVIDER,
     base_url_override: str = "",
+    context_text: str = "",
 ) -> dict:
     p = _get_provider(provider)
     base = _resolve_base_url(provider, base_url_override)
@@ -274,7 +298,7 @@ def _call_api(
     payload = json.dumps({
         "model": normalized,
         "messages": [
-            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "system", "content": _build_system_prompt(context_text)},
             {"role": "user",   "content": user_text},
         ],
         "temperature": 0,
@@ -306,8 +330,14 @@ def polish(
     model: str = "",
     provider: str = DEFAULT_PROVIDER,
     base_url_override: str = "",
+    context_text: str = "",
 ) -> PolishResult:
     """Skicka text genom vald leverantör. Returnerar alltid något användbart.
+
+    ``context_text`` är användarens personliga kontext (egennamn, facktermer,
+    tonalitet) som injiceras i system-prompten. Tom/whitespace-bara text
+    behandlas som "ingen kontext" och utelämnas helt — vi vill aldrig skicka
+    ett dingelblock som modellen kan tolka som en instruktion.
 
     Vid valfritt fel returneras originaltexten oförändrad — diktering blockeras
     aldrig av LLM-problem.
@@ -330,7 +360,8 @@ def polish(
     t0 = time.perf_counter()
     try:
         data = _call_api(resolved_key, used_model, text,
-                         provider=provider, base_url_override=base_url_override)
+                         provider=provider, base_url_override=base_url_override,
+                         context_text=context_text)
         # Sanitise BEFORE length / equality checks so control bytes don't
         # skew the hallucination filter and don't reach the clipboard.
         from text_sanitize import sanitize_output

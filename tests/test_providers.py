@@ -116,7 +116,7 @@ def test_llm_polish_polish_sends_to_custom_url(monkeypatch):
     seen = {}
 
     def fake_call(api_key, model, user_text, timeout_sec=8.0,
-                  provider="github", base_url_override=""):
+                  provider="github", base_url_override="", context_text=""):
         seen["url"] = f"{base_url_override.rstrip('/')}/chat/completions"
         seen["model"] = model
         return {"choices": [{"message": {"content": "Hej!"}}]}
@@ -157,6 +157,23 @@ def test_llm_polish_fetch_models_parses_openai_list(monkeypatch):
     models = llm.fetch_models(api_key="tok", provider="staik")
     assert models["kb-whisper-large"] == "Audio (sv)"
     assert "gemma4:31b" in models
+
+
+def test_llm_polish_fetch_models_keeps_provider_fallbacks(monkeypatch):
+    llm = importlib.reload(importlib.import_module("llm_polish"))
+
+    def fake_request(url, headers, payload, method, timeout_sec):
+        assert url.endswith("/models")
+        return {"data": [
+            {"id": "gemma4:31b"},
+            {"id": "remote-only-model", "description": "Only in API"},
+        ]}
+
+    monkeypatch.setattr(llm, "_request_json", fake_request)
+    models = llm.fetch_models(api_key="tok", provider="staik")
+    assert "remote-only-model" in models
+    assert "qwen3.6:35b-a3b" in models
+    assert "qwen3.5:9b" in models
 
 
 # --------------------------------------------------------------------------- #

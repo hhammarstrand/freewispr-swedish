@@ -249,6 +249,18 @@ def _load_app():
 
     _config = cfg_module.load()
 
+    # One-shot migration of legacy snippets.json + corrections.json into the
+    # new personal_context.json. Idempotent: skipped once the context file
+    # exists. Originals are left on disk as a safety net.
+    try:
+        from migrate_context import migrate_if_needed
+        if migrate_if_needed():
+            log.info("Personlig kontext skapad från tidigare snippets/ordlista — "
+                     "se Inställningar > Kontext för att granska")
+    except Exception as mig_err:
+        log.warning("Migration av kontext misslyckades (ej blockerande): %s",
+                    mig_err)
+
     model_size = _config.get("model_size", "small")
     _set_tray_status("Laddar modell…")
     if _indicator:
