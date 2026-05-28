@@ -322,15 +322,14 @@ class DictationMode:
                     self.indicator.show(message, state="done")
 
                 if llm_enabled:
-                    # Fire off background LLM polish. The on_stage callback
-                    # updates the indicator while the request is in flight.
-                    old_stage = getattr(self.transcriber, "on_stage", None)
+                    # Per-job stage callback. Passed as a parameter to
+                    # polish_async so two overlapping jobs don't trample
+                    # each other's callbacks via a shared attribute.
                     def _on_stage(stage: str):
                         if stage == "llm_reviewing":
                             self.on_status("LLM-granskar…")
                             if self.indicator:
                                 self.indicator.show("LLM-granskar…", state="transcribe")
-                    self.transcriber.on_stage = _on_stage
 
                     # Watchdog: if the LLM polish callback fails to fire
                     # within 15 s (network hang, thread died, …) we force
@@ -352,12 +351,6 @@ class DictationMode:
                             "LLM-polish svarade inte inom 15 s — "
                             "tvingar indikatorn till 'Klistrad (lokal)'"
                         )
-                        # Clear on_stage so a late polish thread can't
-                        # bring the indicator back to "LLM-granskar…".
-                        try:
-                            self.transcriber.on_stage = old_stage
-                        except Exception:
-                            pass
                         if self._worker_stop.is_set() or not self._active:
                             return
                         self.on_status(
@@ -380,8 +373,6 @@ class DictationMode:
                                 return
                             polish_completed["done"] = True
                         watchdog.cancel()
-                        # Restore old on_stage callback
-                        self.transcriber.on_stage = old_stage
                         if self._worker_stop.is_set() or not self._active:
                             log.info("Hoppar över LLM-uppdatering efter stopp")
                             return
@@ -411,7 +402,8 @@ class DictationMode:
                     # cheap even if the timer hasn't started ticking yet.
                     watchdog.start()
                     try:
-                        self.transcriber.polish_async(text, _on_polish_done)
+                        self.transcriber.polish_async(text, _on_polish_done,
+                                                      on_stage=_on_stage)
                     except Exception as e:
                         log.error("polish_async kraschade synkront: %s",
                                   e, exc_info=True)

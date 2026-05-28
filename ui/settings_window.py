@@ -524,21 +524,8 @@ class SettingsWindow:
         threading.Thread(target=_run, daemon=True).start()
 
     def _show_llm_test_result(self, ok: bool, msg: str):
-        try:
-            self._llm_test_btn.configure(state="normal", text="Testa anslutning")
-        except Exception:
-            pass
-        prefix = "✓ " if ok else "✗ "
-        try:
-            if _CTK_AVAILABLE:
-                color = ("#27ae60", "#2ecc71") if ok else ("#c0392b", "#e74c3c")
-                self._llm_test_result.configure(text=prefix + msg, text_color=color)
-            else:
-                self._llm_test_result.configure(
-                    text=prefix + msg, fg="#27ae60" if ok else "#c0392b"
-                )
-        except Exception:
-            self._llm_test_result.configure(text=prefix + msg)
+        self._render_test_result(self._llm_test_btn, self._llm_test_result,
+                                 ok, msg)
 
     # ------- Tab: Transkribering ------------------------------------------- #
 
@@ -738,21 +725,32 @@ class SettingsWindow:
         threading.Thread(target=_run, daemon=True).start()
 
     def _show_tr_test_result(self, ok: bool, msg: str):
+        self._render_test_result(self._tr_test_btn, self._tr_test_result,
+                                 ok, msg)
+
+    def _render_test_result(self, button, label, ok: bool, msg: str) -> None:
+        """Shared renderer for the LLM and transcription 'Testa anslutning' results.
+
+        Both tabs need the same behaviour: re-enable the button, prefix the
+        message with ✓/✗, and colour it green/red. Extracted from two
+        verbatim copies so a future tweak (e.g. fading the colour, swapping
+        symbols) only lives in one place.
+        """
         try:
-            self._tr_test_btn.configure(state="normal", text="Testa anslutning")
+            button.configure(state="normal", text="Testa anslutning")
         except Exception:
             pass
         prefix = "✓ " if ok else "✗ "
         try:
             if _CTK_AVAILABLE:
                 color = ("#27ae60", "#2ecc71") if ok else ("#c0392b", "#e74c3c")
-                self._tr_test_result.configure(text=prefix + msg, text_color=color)
+                label.configure(text=prefix + msg, text_color=color)
             else:
-                self._tr_test_result.configure(
+                label.configure(
                     text=prefix + msg, fg="#27ae60" if ok else "#c0392b"
                 )
         except Exception:
-            self._tr_test_result.configure(text=prefix + msg)
+            label.configure(text=prefix + msg)
 
     # -- save ---------------------------------------------------------------- #
 

@@ -778,3 +778,54 @@ def test_transcriber_polish_async_handles_exception(monkeypatch, fake_transcribe
     assert done.wait(timeout=2.0)
     assert results == [("Hej", "Hej")]
     assert inst.last_polish_state == "local"
+
+
+def test_polish_async_on_stage_parameter_isolates_overlapping_jobs(monkeypatch, fake_transcriber_deps):
+    """Two overlapping polish_async jobs must not steal each other's on_stage callbacks.
+
+    Regression for the race where dictation.py mutated self.transcriber.on_stage
+    per job: job B's callback could be overwritten by job A's "restore old_stage"
+    when A's polish finally completed.
+    """
+    import threading
+    transcriber = importlib.reload(importlib.import_module("transcriber"))
+
+    def _make_inst() -> object:
+        inst = object.__new__(transcriber.Transcriber)
+        inst.model_size = "small"
+        inst.language = "sv"
+        inst.llm_enabled = True
+        inst.llm_api_key = ""
+        inst.llm_model = "m"
+        inst.llm_provider = "github"
+        inst.llm_base_url = ""
+        inst.on_stage = None
+        return inst
+
+    fake_llm = SimpleNamespace(
+        polish=lambda text, key, model=None, provider=None, base_url_override=None: SimpleNamespace(
+            text=text, changed=False, latency_ms=1
+        )
+    )
+    fake_auto = SimpleNamespace(record_correction=lambda before, after: None)
+    monkeypatch.setitem(sys.modules, "llm_polish", fake_llm)
+    monkeypatch.setitem(sys.modules, "auto_learn", fake_auto)
+
+    inst = _make_inst()
+    stages_a: list[str] = []
+    stages_b: list[str] = []
+    done_a = threading.Event()
+    done_b = threading.Event()
+
+    inst.polish_async("A", lambda o, p: done_a.set(),
+                      on_stage=lambda s: stages_a.append(s))
+    inst.polish_async("B", lambda o, p: done_b.set(),
+                      on_stage=lambda s: stages_b.append(s))
+
+    assert done_a.wait(timeout=2.0)
+    assert done_b.wait(timeout=2.0)
+    # Each job's on_stage must fire exactly once with "llm_reviewing"
+    # and they must be independent — A's callback never receives B's stage.
+    assert stages_a == ["llm_reviewing"], f"job A got: {stages_a}"
+    assert stages_b == ["llm_reviewing"], f"job B got: {stages_b}"
+

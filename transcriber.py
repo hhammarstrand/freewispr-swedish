@@ -348,7 +348,6 @@ class Transcriber:
         self.transcription_model = transcription_model
         self.transcription_base_url = transcription_base_url
         self.on_stage = None
-        self.last_transcribe_error: str | None = None
 
         # When the user has opted into a remote transcription provider, the
         # local Whisper model is *not* loaded. This saves 0.5–3 GB of RAM/VRAM
@@ -481,7 +480,6 @@ class Transcriber:
         Sets ``last_polish_state`` to ``"local"`` unconditionally.
         """
         self.last_polish_state = "local"
-        self.last_transcribe_error = None
         log.info("Transkriberar: %d samples, peak=%.4f, modell=%s, lang=%s, provider=%s",
                  len(audio), max(abs(float(audio.min())), abs(float(audio.max()))) if audio.size else 0.0,
                  self.model_size, self.language, self.transcription_provider)
@@ -494,7 +492,8 @@ class Transcriber:
         return text
 
     def polish_async(self, text: str,
-                     callback: Callable[[str, str], None]) -> None:
+                     callback: Callable[[str, str], None],
+                     on_stage: Callable[[str], None] | None = None) -> None:
         """Run LLM polish in a background thread.
 
         When finished, calls ``callback(original_text, polished_text)``
@@ -502,11 +501,17 @@ class Transcriber:
         the callback receives ``(text, text)``.
 
         Updates ``self.last_polish_state`` to reflect the outcome.
-        The ``on_stage`` callback is fired with ``"llm_reviewing"``
-        immediately so the indicator can show the reviewing state.
+
+        ``on_stage`` is fired with ``"llm_reviewing"`` immediately. Prefer
+        passing it as a parameter rather than mutating ``self.on_stage`` —
+        per-job callbacks avoid a race when two jobs overlap (the older
+        job's polish completion would otherwise overwrite the newer job's
+        callback on the shared attribute). The ``self.on_stage`` fallback
+        is kept for legacy callers and remote transcription.
         """
         self.last_polish_state = "llm_reviewing"
-        on_stage = getattr(self, "on_stage", None)
+        if on_stage is None:
+            on_stage = getattr(self, "on_stage", None)
         if on_stage is not None:
             try:
                 on_stage("llm_reviewing")
@@ -689,9 +694,9 @@ class Transcriber:
     def _transcribe_remote(self, audio: np.ndarray) -> str:
         """Skicka ljud till remote-leverantör.
 
-        Inget fallback till lokal modell — vi sätter ``last_transcribe_error``
-        så att UI:t kan visa ett kort meddelande och returnerar tom sträng.
-        Dictation-pipelinen ska inte klistra in tom text, vilket är önskat.
+        Inget fallback till lokal modell — vid fel loggas det och tom sträng
+        returneras. Dictation-pipelinen klistrar inte in tom text, så
+        användaren ser bara en felsignal i indikatorn (via on_status).
         """
         import remote_transcribe as rt
 
@@ -713,7 +718,6 @@ class Transcriber:
                 base_url_override=self.transcription_base_url,
             )
         except rt.RemoteTranscribeError as e:
-            self.last_transcribe_error = str(e)
             log.warning("Remote-transkribering misslyckades: %s", e)
             if on_stage is not None:
                 try:
