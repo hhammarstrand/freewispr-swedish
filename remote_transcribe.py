@@ -249,7 +249,11 @@ def transcribe(
         log.warning("Remote transcribe returnerade HTML istället för text")
         return ""
 
-    text = text.strip()
+    # Sanitise control bytes before logging length / returning to the
+    # dictation pipeline. A hostile provider could embed ANSI escapes
+    # that would otherwise land on the user's clipboard verbatim.
+    from text_sanitize import sanitize_output
+    text = sanitize_output(text.strip())
     log.info("Remote transcribe ok (%s, %d chars)", provider, len(text))
     return text
 

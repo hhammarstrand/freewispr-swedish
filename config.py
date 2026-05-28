@@ -1,6 +1,7 @@
 """App configuration with keyring-backed secrets and migration."""
 import logging
 from pathlib import Path
+from threading import Lock
 
 from json_store import load_json, save_json_atomic
 
@@ -17,6 +18,15 @@ _KEYRING_SERVICE = "freewispr-swedish"
 
 # Legacy single-key entry. Migreras till provider-specifika nycklar vid load().
 _LEGACY_KEYRING_USERNAME = "llm_api_key"
+
+# Serialise save() across threads. The function performs N keyring writes
+# *and* an atomic JSON write; if two Settings-save calls land concurrently
+# (e.g. user smashes Spara twice while the first run is still flushing),
+# the keyring entries from save A and the JSON snapshot from save B can
+# end up describing different worlds — keyring would hold A's keys while
+# the file remembers B's provider id. Holding _save_lock for the full
+# critical section makes the pair atomic from any caller's point of view.
+_save_lock = Lock()
 
 # Provider-IDn som matchar PROVIDERS i llm_polish.py och remote_transcribe.py.
 # Hardkodade här eftersom dessa tupler används vid import-tid för att bygga
@@ -242,6 +252,11 @@ def _read_existing_secrets() -> dict[str, str]:
 
 
 def save(cfg):
+    with _save_lock:
+        _save_locked(cfg)
+
+
+def _save_locked(cfg):
     CONFIG_DIR.mkdir(exist_ok=True)
     data = cfg.copy()
 

@@ -330,7 +330,12 @@ def polish(
     try:
         data = _call_api(resolved_key, used_model, text,
                          provider=provider, base_url_override=base_url_override)
-        result = data["choices"][0]["message"]["content"].strip()
+        # Sanitise BEFORE length / equality checks so control bytes don't
+        # skew the hallucination filter and don't reach the clipboard.
+        from text_sanitize import sanitize_output
+        result = sanitize_output(
+            data["choices"][0]["message"]["content"].strip()
+        )
         latency = int((time.perf_counter() - t0) * 1000)
 
         # Hallucinationsfilter: en korrigering ska inte förändra texten radikalt.
