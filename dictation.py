@@ -301,10 +301,16 @@ class DictationMode:
                 return
             log.info("Transkriberar %d samples...", len(audio))
             llm_enabled = getattr(self.transcriber, "llm_enabled", False)
+            # The status message shown while transcription runs reflects
+            # whether the user opted into a remote provider. Saying "lokalt"
+            # when the audio is being shipped to e.g. KBLab's API is both
+            # wrong and erodes trust about where the data is going.
+            tr_provider = getattr(self.transcriber, "transcription_provider", "local")
+            tr_label = "lokalt" if tr_provider == "local" else f"via {tr_provider}"
             if llm_enabled:
-                self.on_status("Transkriberar lokalt…")
+                self.on_status(f"Transkriberar {tr_label}…")
                 if self.indicator:
-                    self.indicator.show("Transkriberar lokalt…", state="transcribe")
+                    self.indicator.show(f"Transkriberar {tr_label}…", state="transcribe")
             text = self.transcriber.transcribe(audio)
             # Apply snippet expansion — if full text is a trigger, replace it
             text = snippet_module.expand(text)
@@ -313,10 +319,11 @@ class DictationMode:
                 if self._worker_stop.is_set() or not self._active:
                     log.info("Hoppar över paste från stale transkribering")
                     return
-                # Paste the local result immediately — user gets text without
-                # waiting for the LLM round-trip.
+                # Paste the transcribed result immediately — user gets text
+                # without waiting for the LLM round-trip. "Rå" here means
+                # "not yet polished", not "from the local model".
                 paste_text(text, active_modifiers=self._modifier_keys)
-                message = "Klistrad (lokal)"
+                message = "Klistrad (rå)"
                 self.on_status(f"{message} — håll {self.hotkey.upper()} igen")
                 if self.indicator:
                     self.indicator.show(message, state="done")
@@ -349,15 +356,15 @@ class DictationMode:
                             polish_completed["done"] = True
                         log.warning(
                             "LLM-polish svarade inte inom 15 s — "
-                            "tvingar indikatorn till 'Klistrad (lokal)'"
+                            "tvingar indikatorn till 'Klistrad (rå)'"
                         )
                         if self._worker_stop.is_set() or not self._active:
                             return
                         self.on_status(
-                            f"Klistrad (lokal) — håll {self.hotkey.upper()} igen"
+                            f"Klistrad (rå) — håll {self.hotkey.upper()} igen"
                         )
                         if self.indicator:
-                            self.indicator.show("Klistrad (lokal)", state="done")
+                            self.indicator.show("Klistrad (rå)", state="done")
                             self.indicator.hide(delay_ms=1800)
 
                     watchdog = threading.Timer(15.0, _finalize_local_fallback)
@@ -389,8 +396,8 @@ class DictationMode:
                             if state == "llm_unchanged":
                                 msg = "Klistrad (LLM-granskad)"
                             else:
-                                # polish failed or returned local
-                                msg = "Klistrad (lokal)"
+                                # polish failed or returned the raw transcript
+                                msg = "Klistrad (rå)"
                         self.on_status(f"{msg} — håll {self.hotkey.upper()} igen")
                         if self.indicator:
                             self.indicator.show(msg, state="done")
