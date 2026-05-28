@@ -54,7 +54,16 @@ def _friendly_mic_error(exc: Exception) -> str:
 
 def _friendly_transcribe_error(exc: Exception) -> str:
     """Convert raw transcription exception to a user-friendly Swedish message."""
-    msg = str(exc).lower()
+    raw = str(exc)
+    msg = raw.lower()
+    # If the transcriber already raised a Swedish, user-facing message
+    # (e.g. CUDA OOM recovery or corrupt-model detection), pass it through
+    # verbatim instead of overwriting it with a generic one.
+    if (
+        "gpu-minne slut" in msg
+        or "modellen verkar korrupt" in msg
+    ):
+        return raw
     if "out of memory" in msg or "cuda" in msg and "memory" in msg:
         return "GPU-minne slut — byt till en mindre modell i Inställningar"
     if "no module named" in msg:
@@ -324,7 +333,54 @@ class DictationMode:
                                 self.indicator.show("LLM-granskar…", state="transcribe")
                     self.transcriber.on_stage = _on_stage
 
+                    # Watchdog: if the LLM polish callback fails to fire
+                    # within 15 s (network hang, thread died, …) we force
+                    # the indicator back to a final state so the user
+                    # isn't left staring at "LLM-granskar…" forever. The
+                    # _polish_completed flag is the single source of truth
+                    # for "callback already ran"; both paths use it under
+                    # the lock so we never run the cleanup twice.
+                    polish_lock = threading.Lock()
+                    polish_completed = {"done": False}
+
+                    def _finalize_local_fallback() -> None:
+                        """Run from the watchdog timer when polish hangs."""
+                        with polish_lock:
+                            if polish_completed["done"]:
+                                return
+                            polish_completed["done"] = True
+                        log.warning(
+                            "LLM-polish svarade inte inom 15 s — "
+                            "tvingar indikatorn till 'Klistrad (lokal)'"
+                        )
+                        # Clear on_stage so a late polish thread can't
+                        # bring the indicator back to "LLM-granskar…".
+                        try:
+                            self.transcriber.on_stage = old_stage
+                        except Exception:
+                            pass
+                        if self._worker_stop.is_set() or not self._active:
+                            return
+                        self.on_status(
+                            f"Klistrad (lokal) — håll {self.hotkey.upper()} igen"
+                        )
+                        if self.indicator:
+                            self.indicator.show("Klistrad (lokal)", state="done")
+                            self.indicator.hide(delay_ms=1800)
+
+                    watchdog = threading.Timer(15.0, _finalize_local_fallback)
+                    watchdog.daemon = True
+                    watchdog.name = "llm-polish-watchdog"
+
                     def _on_polish_done(original: str, polished: str):
+                        # First-come-first-served vs. the watchdog. If the
+                        # watchdog already fired we silently no-op so we
+                        # don't yank the indicator back to a stale state.
+                        with polish_lock:
+                            if polish_completed["done"]:
+                                return
+                            polish_completed["done"] = True
+                        watchdog.cancel()
                         # Restore old on_stage callback
                         self.transcriber.on_stage = old_stage
                         if self._worker_stop.is_set() or not self._active:
@@ -350,7 +406,18 @@ class DictationMode:
                             self.indicator.show(msg, state="done")
                             self.indicator.hide(delay_ms=1800)
 
-                    self.transcriber.polish_async(text, _on_polish_done)
+                    # Start the watchdog *before* kicking off polish — if
+                    # polish_async raises synchronously we want the timer
+                    # to still cover us, and the cancel() above remains
+                    # cheap even if the timer hasn't started ticking yet.
+                    watchdog.start()
+                    try:
+                        self.transcriber.polish_async(text, _on_polish_done)
+                    except Exception as e:
+                        log.error("polish_async kraschade synkront: %s",
+                                  e, exc_info=True)
+                        watchdog.cancel()
+                        _finalize_local_fallback()
                 else:
                     # No LLM — hide the indicator after a short delay.
                     if self.indicator:
