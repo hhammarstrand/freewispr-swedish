@@ -15,13 +15,27 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <meta property="og:title" content="freewispr-swedish - svensk diktering för Windows">
 <meta property="og:description" content="Lokal svensk Whisper-diktering för Windows. Valfri LLM-granskning via GitHub Models.">
-<meta property="og:image" content="https://hhammarstrand.github.io/freewispr-swedish/og-image.png">
+<!--
+  og:image is versioned with ?v=2 because Microsoft / Teams / LinkedIn
+  aggressively cache preview images per-URL. When the artwork changes
+  (purple → Swedish blue) we have to change the URL itself so their
+  crawlers re-fetch instead of serving a stale thumbnail.
+-->
+<meta property="og:image" content="https://hhammarstrand.github.io/freewispr-swedish/og-image.png?v=2">
+<meta property="og:image:secure_url" content="https://hhammarstrand.github.io/freewispr-swedish/og-image.png?v=2">
+<meta property="og:image:type" content="image/png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="freewispr-swedish — gul mikrofon på Sverigeblå bakgrund">
 <meta property="og:url" content="https://hhammarstrand.github.io/freewispr-swedish/">
 <meta property="og:type" content="website">
+<meta property="og:site_name" content="freewispr-swedish">
+<meta property="og:locale" content="sv_SE">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="freewispr-swedish - svensk diktering för Windows">
 <meta name="twitter:description" content="Lokal svensk Whisper-diktering, clipboard-fallback och valfri LLM-granskning.">
-<meta name="twitter:image" content="https://hhammarstrand.github.io/freewispr-swedish/og-image.png">
+<meta name="twitter:image" content="https://hhammarstrand.github.io/freewispr-swedish/og-image.png?v=2">
+<meta name="twitter:image:alt" content="freewispr-swedish — gul mikrofon på Sverigeblå bakgrund">
 <meta name="author" content="Henrik Hammarstrand">
 <style>
 :root {
