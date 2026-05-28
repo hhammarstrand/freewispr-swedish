@@ -92,13 +92,14 @@ Appen använder [KBLab:s Whisper-modeller](https://huggingface.co/KBLab), träna
 
 Modellerna sparas i `~/.freewispr-swedish/models/` och hämtas automatiskt första gången de används.
 
-Medium och large kan behöva konverteras till CTranslate2-format:
+Du kan ladda ner ytterligare modeller manuellt:
 
 ```bash
-pip install ctranslate2 transformers
 python convert_model.py medium
 python convert_model.py large
 ```
+
+KBLab publicerar pre-konverterade modeller, så ingen extra konvertering behövs.
 
 ## Inställningar
 
@@ -208,15 +209,14 @@ Tester som behöver `sounddevice`, `keyboard` eller `pyperclip` kräver att dess
 
 CI kör `ruff check . --select E,F,W --ignore E501` vid varje push.
 
-### Modellkonvertering
-
-Medium- och large-modeller kan behöva konverteras till CTranslate2-format:
+### Modellnedladdning
 
 ```bash
-pip install ctranslate2 transformers
 python convert_model.py medium
 python convert_model.py large
 ```
+
+Filerna hämtas via `huggingface_hub` som redan ingår i `requirements.txt`. Ingen extra konvertering behövs — KBLab publicerar pre-konverterade ct2-modeller.
 
 ### Release-flöde
 

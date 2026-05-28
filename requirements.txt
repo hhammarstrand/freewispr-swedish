@@ -10,6 +10,8 @@ pyperclip>=1.8.2,<2.0
 pystray>=0.19.5,<0.20
 Pillow>=10.0.0,<12.0
 keyring>=25.0.0,<26.0
+# Used directly for first-run model downloads (also transitive from faster-whisper).
+huggingface-hub>=0.20,<1.0
 # Modern Windows-look UI på topp av Tk. ~1 MB. Inga bilder/native deps.
 customtkinter>=5.2.2,<6.0
 
