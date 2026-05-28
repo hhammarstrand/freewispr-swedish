@@ -28,7 +28,10 @@ Senaste lyckade bygge från `master` publiceras automatiskt som pre-release:
 1. Öppna [Releases](https://github.com/hhammarstrand/freewispr-swedish/releases/tag/latest).
 2. Ladda ner `freewispr-swedish-windows.zip`.
 3. Packa upp zippen och kör `freewispr-swedish.exe`.
-4. Håll `Ctrl+Space`, prata, släpp.
+4. Första gången: välj Whisper-modell i välkomstdialogen (~500 MB nedladdning, tar några minuter).
+5. Håll `Ctrl+Space`, prata, släpp.
+
+> **Windows SmartScreen-varning?** Eftersom appen inte är kodsignerad ($300/år i certifikat) flaggar Windows den som "okänd utgivare". Klicka **Mer information** → **Kör ändå**. All källkod finns på GitHub och bygget sker via GitHub Actions så du kan verifiera vad som finns i exe:n.
 
 Vill du se loggarna från bygget, eller bygga själv? Se [Build Windows EXE](https://github.com/hhammarstrand/freewispr-swedish/actions/workflows/build-windows.yml).
 
@@ -267,6 +270,32 @@ git remote add upstream https://github.com/x26prakhar/freewispr.git
 git fetch upstream
 git merge upstream/master
 ```
+
+## Vanliga frågor
+
+**Varför varnar Windows att appen kommer från okänd utgivare?**
+Appen är inte kodsignerad. Klicka *Mer information → Kör ändå*. Du kan verifiera bygget i [Actions](https://github.com/hhammarstrand/freewispr-swedish/actions).
+
+**Hur stänger jag av automatisk paste?**
+Inte stöttat just nu — texten klistras alltid in. Den ligger kvar i urklipp så du kan klistra in den manuellt om paste inte gick fram.
+
+**Fungerar det utan internet?**
+Ja, helt — så länge du har laddat ned en modell (`python convert_model.py small`). LLM-granskning och remote-transkribering kräver internet, men är avstängda som standard.
+
+**Min mikrofon hittas inte.**
+Öppna *Inställningar → Mikrofon* och välj din mikrofon manuellt. Om listan är tom: kolla att Windows har gett appen åtkomst i *Inställningar → Sekretess → Mikrofon*.
+
+**Texten innehåller fel ord.**
+Lägg till en korrigering via *Tray → Personlig ordlista*. Eller slå på LLM-granskning så lär sig appen automatiskt av rättningarna.
+
+**Kan jag använda en lokal LLM istället för GitHub Models?**
+Ja, se [Lokal LLM](#lokal-llm-valfritt) — funkar med Ollama, LM Studio och llama.cpp.
+
+**Vilken hotkey ska jag välja?**
+`Ctrl+Space` fungerar för de flesta men krockar med en del editorer (autocompletion). `Alt+Space` är vanligt på Mac-vana användare. `F9`/`F10` om du vill ha en dedikerad tangent.
+
+**Texten blir bättre om jag pratar tydligt?**
+Whisper är trimmat på naturligt svenskt tal — det fungerar bra med vanligt tempo och uttal. Långsamt och övertydligt tal kan faktiskt bli sämre eftersom modellen tränades på naturligt språk.
 
 ## Ändringslogg
 
