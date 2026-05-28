@@ -252,24 +252,24 @@ class SettingsWindow:
             self._tabs.pack(fill="both", expand=True)
             tab_general = self._tabs.add("Allmänt")
             tab_llm = self._tabs.add("LLM-granskning")
-            tab_ctx = self._tabs.add("Kontext")
             tab_tr = self._tabs.add("Transkribering")
+            tab_ctx = self._tabs.add("Kontext")
         else:
             self._tabs = ttk.Notebook(outer)
             self._tabs.pack(fill="both", expand=True)
             tab_general = ttk.Frame(self._tabs)
             tab_llm = ttk.Frame(self._tabs)
-            tab_ctx = ttk.Frame(self._tabs)
             tab_tr = ttk.Frame(self._tabs)
+            tab_ctx = ttk.Frame(self._tabs)
             self._tabs.add(tab_general, text="Allmänt")
             self._tabs.add(tab_llm, text="LLM-granskning")
-            self._tabs.add(tab_ctx, text="Kontext")
             self._tabs.add(tab_tr, text="Transkribering")
+            self._tabs.add(tab_ctx, text="Kontext")
 
         self._build_general(tab_general)
         self._build_llm(tab_llm)
-        self._build_context(tab_ctx)
         self._build_transcription(tab_tr)
+        self._build_context(tab_ctx)
 
         # Bottom button row
         btn_row = self._frame(outer)
