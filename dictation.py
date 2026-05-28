@@ -227,7 +227,6 @@ class DictationMode:
         except Exception as e:
             log.error("Audio stop error: %s", e, exc_info=True)
             sounds.play_error()
-            sounds.play_error()
             if self.indicator:
                 self.indicator.show("Mikrofonfel", state="error")
                 self.indicator.hide(delay_ms=2500)

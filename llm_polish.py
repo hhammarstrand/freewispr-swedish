@@ -164,6 +164,14 @@ def _get_provider(provider: str) -> _Provider:
 def _resolve_base_url(provider: str, base_url_override: str = "") -> str:
     p = _get_provider(provider)
     url = (base_url_override or p.base_url or "").strip().rstrip("/")
+    if not url:
+        return url
+    # LLM endpoints are commonly pointed at local Ollama / LM Studio over
+    # plaintext loopback. Accept that, reject everything else non-HTTPS.
+    from url_security import validate_base_url
+    ok, msg = validate_base_url(url, allow_plaintext_loopback=True)
+    if not ok:
+        raise ValueError(msg)
     return url
 
 

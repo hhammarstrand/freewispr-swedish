@@ -88,6 +88,14 @@ def _resolve_base_url(provider: str, base_url_override: str = "") -> str:
     url = (base_url_override or p.base_url or "").strip().rstrip("/")
     if not url:
         raise RemoteTranscribeError("Ingen base_url för custom-leverantören")
+    # Hard requirement for transcription: TLS only. The payload is microphone
+    # audio plus a bearer token — even loopback HTTP is too leaky because any
+    # local process can sniff the recording. Built-in providers use https://
+    # so this only ever rejects misconfigured custom endpoints.
+    from url_security import validate_base_url
+    ok, msg = validate_base_url(url, allow_plaintext_loopback=False)
+    if not ok:
+        raise RemoteTranscribeError(msg)
     return url
 
 

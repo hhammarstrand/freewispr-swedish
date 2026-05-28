@@ -32,15 +32,20 @@ KBLAB_MODELS = {
     "large": "KBLab/kb-whisper-large",
 }
 
-# Pin specific HuggingFace revisions for reproducible downloads.
-# Set to a commit SHA from the model's HF page to lock to that version.
-# None = use latest (current behavior).
+# Pin specific HuggingFace revisions for reproducible & integrity-checkable
+# downloads. The KBLab repos are public and unsigned, so the best we can do
+# without shipping a CA-bundle is to lock to a known commit SHA. If KBLab
+# rotates a model we'll bump these manually after reviewing the diff.
+#
+# Last verified: 2026-05-28 against https://huggingface.co/KBLab/kb-whisper-*
+# To refresh:
+#   curl -s https://huggingface.co/api/models/KBLab/kb-whisper-<size> | jq .sha
 KBLAB_REVISIONS: dict[str, str | None] = {
-    "tiny": None,
-    "base": None,
-    "small": None,
-    "medium": None,
-    "large": None,
+    "tiny":   "76d796af43a50fa34321efa562c9b9887a187463",
+    "base":   "1499d2d2f0c7ed545bd6f2eec85287cf8d8c8b38",
+    "small":  "3564d61a42fc210ceaa55a22a96dd64478959c78",
+    "medium": "0abe10b9d7f75d0902656e5c06c5c4d549604dc5",
+    "large":  "d5d5984b4d8f7c4847a8ea203f1976285fb28300",
 }
 
 # Files we actually need to run inference. KBLab publishes pre-converted
