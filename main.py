@@ -154,7 +154,6 @@ def _make_dictation(transcriber):
         indicator=_indicator,
         mic_device=_config.get("mic_device"),
         min_rms=float(_config.get("min_rms", DEFAULT_MIN_RMS)),
-        mic_prewarm=bool(_config.get("mic_prewarm_enabled", True)),
     )
 
 
@@ -588,9 +587,11 @@ def _rebuild_menu():
 def _build_menu():
     startup_label = "✓ Starta med Windows" if _is_startup_enabled() else "Starta med Windows"
     return pystray.Menu(
+        # default=True makes this the action that runs on left double-click
+        # of the tray icon (in addition to being the bold first menu entry).
+        pystray.MenuItem("Inställningar", _open_settings, default=True),
         pystray.MenuItem("Snippets", _open_snippets),
         pystray.MenuItem("Personlig ordlista", _open_dictionary),
-        pystray.MenuItem("Inställningar", _open_settings),
         pystray.MenuItem(startup_label, _toggle_startup),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Avsluta freewispr-swedish", _quit),

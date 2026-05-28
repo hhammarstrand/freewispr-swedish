@@ -101,9 +101,6 @@ class SettingsWindow:
         self._indicator_follow_var = tk.BooleanVar(
             value=c.get("indicator_follow_mouse", True)
         )
-        self._mic_prewarm_var = tk.BooleanVar(
-            value=c.get("mic_prewarm_enabled", True)
-        )
         self._model_var = tk.StringVar(value=c.get("model_size", "small"))
         self._cuda_var = tk.BooleanVar(value=c.get("use_cuda", True))
         self._mic_var = tk.StringVar()  # filled in _build_general
@@ -331,16 +328,6 @@ class SettingsWindow:
         self._mic_info = self._hint(parent, "")
         self._mic_info.pack(anchor="w", padx=6, pady=(2, 8))
         self._update_mic_info()
-
-        self._switch(parent, "Förvärm mikrofonen", self._mic_prewarm_var).pack(
-            anchor="w", padx=6, pady=(4, 0)
-        )
-        self._hint(
-            parent,
-            "Håller mikrofonströmmen öppen så första svaret kommer snabbare "
-            "och de allra första stavelserna inte tappas. Kräver omstart av "
-            "lyssnaren (sker automatiskt när du sparar)."
-        ).pack(anchor="w", padx=6, pady=(2, 8))
 
     def _update_mic_info(self):
         name = self._mic_var.get()
@@ -863,7 +850,6 @@ class SettingsWindow:
         new_cfg["model_size"] = self._model_var.get()
         new_cfg["use_cuda"] = self._cuda_var.get()
         new_cfg["indicator_follow_mouse"] = self._indicator_follow_var.get()
-        new_cfg["mic_prewarm_enabled"] = self._mic_prewarm_var.get()
 
         mic = self._mic_var.get()
         if mic == "Auto":
