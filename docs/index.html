@@ -202,9 +202,14 @@ h1 {
   margin: 22px 0 22px;
   max-width: 760px;
   font-size: clamp(3.4rem, 7vw, 6.6rem);
-  line-height: 0.94;
+  /* line-height >= 1.05 så svenska diakritiska tecken (å, ä, ö) inte
+     beskärs av background-clip: text på smala viewports. */
+  line-height: 1.05;
   letter-spacing: -0.075em;
   font-weight: 760;
+  /* Liten topp-padding ger background-clip-glyferna utrymme att rendera
+     prickarna utan beskärning i Chromium. */
+  padding-top: 0.08em;
   background: linear-gradient(135deg, var(--ink) 0%, var(--accent-dark) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
