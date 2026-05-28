@@ -3,6 +3,7 @@ name: Build Windows EXE
 on:
   push:
     branches: [master]
+    tags: ['v*']
   pull_request:
     branches: [master]
   workflow_dispatch:
@@ -92,7 +93,7 @@ jobs:
           retention-days: 14
 
       - name: Package release zip
-        if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+        if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
         shell: pwsh
         run: |
           $zip = "freewispr-swedish-windows.zip"
@@ -118,3 +119,23 @@ jobs:
           files: freewispr-swedish-windows.zip
           prerelease: true
           target_commitish: ${{ github.sha }}
+
+      - name: Publish versioned release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0
+        with:
+          name: ${{ github.ref_name }}
+          body: |
+            Versionerad release ${{ github.ref_name }}.
+
+            - Commit: ${{ github.sha }}
+            - Workflow: [Build Windows EXE](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+
+            Se [CHANGELOG.md](${{ github.server_url }}/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md)
+            för fullständiga ändringar i denna release.
+
+            Zippen nedan innehåller `freewispr-swedish.exe` plus alla beroenden.
+            Packa upp och kör `freewispr-swedish.exe`.
+          files: freewispr-swedish-windows.zip
+          prerelease: false
+          draft: false
