@@ -6,7 +6,7 @@ from tkinter import ttk, messagebox
 
 import corrections as corr_module
 
-from ui.styles import BG, _style
+from ui.styles import BG, _style, apply_window_icon
 from ui._ctk import ctk, _CTK_AVAILABLE
 from ui.pair_dialog import _PairDialog
 
@@ -29,6 +29,7 @@ class DictionaryWindow:
             self.root = tk.Toplevel()
         self.root.title("freewispr-swedish — Personlig ordlista")
         self.root.geometry("600x420")
+        apply_window_icon(self.root)
         if not _CTK_AVAILABLE:
             self.root.configure(bg=BG)
         _style(self.root)

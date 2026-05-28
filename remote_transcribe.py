@@ -52,7 +52,7 @@ PROVIDERS: dict[str, _Provider] = {
         user_configurable_url=False,
     ),
     "berget": _Provider(
-        label="Berget AI (EU)",
+        label="Berget AI (SE)",
         base_url="https://api.berget.ai/v1",
         key_env_vars=("BERGET_API_KEY",),
         default_model="KBLab/kb-whisper-large",

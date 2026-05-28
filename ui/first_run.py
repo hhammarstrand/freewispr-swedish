@@ -15,7 +15,7 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
-from ui.styles import BG, BG3, FG, FG2, ACC, ACC2, FONT, _style
+from ui.styles import BG, BG3, FG, FG2, ACC, ACC2, FONT, _style, apply_window_icon
 from ui._ctk import ctk, _CTK_AVAILABLE
 
 log = logging.getLogger("freewispr")
@@ -61,6 +61,7 @@ class FirstRunDialog:
         self.root.geometry("520x540")
         self.root.minsize(480, 500)
         self.root.resizable(False, False)
+        apply_window_icon(self.root)
 
         if not _CTK_AVAILABLE:
             self.root.configure(bg=BG)

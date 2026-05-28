@@ -6,7 +6,7 @@ from tkinter import ttk, messagebox
 
 import snippets as snippet_module
 
-from ui.styles import BG, _style
+from ui.styles import BG, _style, apply_window_icon
 from ui._ctk import ctk, _CTK_AVAILABLE
 from ui.pair_dialog import _PairDialog
 
@@ -32,6 +32,7 @@ class SnippetsWindow:
             self.root = tk.Toplevel()
         self.root.title("freewispr-swedish — Snippets")
         self.root.geometry("640x440")
+        apply_window_icon(self.root)
         if not _CTK_AVAILABLE:
             self.root.configure(bg=BG)
         _style(self.root)

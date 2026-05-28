@@ -7,7 +7,8 @@ Inbyggda leverantörer:
 - ``github`` — GitHub Models (`models.github.ai/inference`). Token från sparad
   nyckel, ``GITHUB_TOKEN``/``GH_TOKEN`` eller ``gh auth token``.
 - ``staik``  — staik.se (`api.staik.se/v1`). Nyckel ``sk-st-...``.
-- ``berget`` — berget.ai (`api.berget.ai/v1`). EU-hostad öppen-modell-inferens.
+- ``berget`` — berget.ai (`api.berget.ai/v1`). Svenskt företag (grundat 2024)
+  som hostar öppna modeller på datacenter i Sverige.
 - ``openai`` — OpenAI (`api.openai.com/v1`).
 - ``custom`` — användardefinierad ``base_url`` för valfri OpenAI-kompatibel
   server (lokal llama.cpp, Groq, OpenRouter, Together, Mistral, m.fl.).
@@ -87,7 +88,7 @@ PROVIDERS: dict[str, _Provider] = {
         user_configurable_url=False,
     ),
     "berget": _Provider(
-        label="Berget AI (EU)",
+        label="Berget AI (SE)",
         base_url="https://api.berget.ai/v1",
         api_version="",
         accept="application/json",
@@ -485,7 +486,7 @@ def fetch_models(
     if not isinstance(items, list) or not items:
         return dict(p.fallback_models)
 
-    result: dict[str, str] = {}
+    result: dict[str, str] = dict(p.fallback_models)
     for item in items:
         if not isinstance(item, dict):
             continue

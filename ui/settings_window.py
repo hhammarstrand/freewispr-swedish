@@ -7,7 +7,7 @@ import threading
 
 import config as cfg_module
 
-from ui.styles import BG, BG2, BG3, FG, FG2, ACC, ACC2, FONT, _style
+from ui.styles import BG, BG2, BG3, FG, FG2, ACC, ACC2, FONT, _style, apply_window_icon
 from ui._ctk import ctk, _CTK_AVAILABLE
 from ui.hotkey_capture import _HotkeyCapture
 
@@ -82,6 +82,7 @@ class SettingsWindow:
         self.root.title("freewispr-swedish — Inställningar")
         self.root.geometry("560x720")
         self.root.minsize(540, 600)
+        apply_window_icon(self.root)
 
         if not _CTK_AVAILABLE:
             self.root.configure(bg=BG)
@@ -111,6 +112,12 @@ class SettingsWindow:
         self._llm_key_var = tk.StringVar()    # filled when provider chosen
         self._llm_base_url_var = tk.StringVar(
             value=c.get("llm_custom_base_url", "")
+        )
+        # Visible consent switch on the LLM tab, mirroring the transcription
+        # tab. Defaults to whatever the user previously accepted so the modal
+        # popup at save-time stays as a backstop but isn't the primary surface.
+        self._llm_consent_var = tk.BooleanVar(
+            value=c.get("llm_privacy_accepted", False)
         )
 
         # Transcription
@@ -409,6 +416,23 @@ class SettingsWindow:
             parent,
             "T.ex. http://localhost:11434/v1 (Ollama) eller http://localhost:1234/v1 (LM Studio)."
         )
+
+        # Consent switch. Symmetrical with the transcription tab so the user
+        # sees up-front that enabling LLM polish sends text off-device, rather
+        # than only finding out via the modal popup at save.
+        self._llm_consent_switch = self._switch(
+            parent,
+            "Jag samtycker till att texten skickas till vald leverantör",
+            self._llm_consent_var,
+        )
+        self._llm_consent_switch.pack(anchor="w", padx=6, pady=(12, 0))
+        self._llm_consent_hint = self._hint(
+            parent,
+            "Krävs när LLM-granskning är aktiv mot en extern leverantör. "
+            "Lokala körningar via Custom + http://localhost (Ollama, "
+            "LM Studio) lämnar inte datorn och kräver inget samtycke.",
+        )
+        self._llm_consent_hint.pack(anchor="w", padx=6, pady=(2, 8))
 
         # Initialise dependent widgets (model list, key field, base URL row)
         self._on_llm_provider_change()
@@ -768,10 +792,20 @@ class SettingsWindow:
 
         llm_enabled = self._llm_enabled_var.get()
         llm_key = self._llm_key_var.get().strip()
-        llm_was_enabled = self.cfg.get("llm_enabled", False)
-        llm_privacy_accepted = self.cfg.get("llm_privacy_accepted", False)
-        needs_llm_consent = llm_enabled and (
-            not llm_was_enabled or not llm_privacy_accepted
+        llm_consent = self._llm_consent_var.get()
+        # For "custom" with a loopback URL we can skip consent — the request
+        # never leaves the machine. All other providers (github, staik,
+        # berget, openai, custom-with-remote-URL) hit the network and require
+        # explicit acceptance.
+        try:
+            from url_security import is_plaintext_loopback
+            base_url = self._llm_base_url_var.get().strip()
+            llm_local = (llm_pid == "custom" and bool(base_url)
+                         and is_plaintext_loopback(base_url))
+        except Exception:
+            llm_local = False
+        needs_llm_consent = (
+            llm_enabled and not llm_local and not llm_consent
         )
 
         # Sanity: can we store the secret?
@@ -789,10 +823,16 @@ class SettingsWindow:
                 "Aktivera LLM-granskning?",
                 "LLM-granskning skickar din transkriberade text till vald "
                 "leverantör för korrigering.\n\nAktivera bara detta om du "
-                "accepterar att texten lämnar datorn.",
+                "accepterar att texten lämnar datorn. Du kan också bocka i "
+                "samtyckesrutan på fliken LLM-granskning för att slippa "
+                "denna fråga.",
             )
             if not ok:
                 return
+            # Reflect the accepted consent in the switch so future saves
+            # don't re-prompt.
+            llm_consent = True
+            self._llm_consent_var.set(True)
 
         # Transcription consent — only required when leaving "local".
         if tr_pid != "local" and not self._tr_consent_var.get():
@@ -835,7 +875,7 @@ class SettingsWindow:
         new_cfg[f"llm_api_key_{llm_pid}"] = llm_key
         new_cfg["llm_custom_base_url"] = self._llm_base_url_var.get().strip()
         new_cfg["llm_privacy_accepted"] = bool(
-            llm_enabled and (llm_privacy_accepted or needs_llm_consent)
+            llm_enabled and (llm_local or llm_consent)
         )
 
         # Transcription

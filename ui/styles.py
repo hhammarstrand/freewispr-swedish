@@ -1,7 +1,39 @@
 """
 Shared colour constants, font, and ttk style setup for freewispr-swedish UI.
 """
+import logging
+from pathlib import Path
 from tkinter import ttk
+
+log = logging.getLogger(__name__)
+
+# Resolve once at import time. The .ico lives in the repo at assets/icon.ico
+# and is bundled into the frozen app under the same relative assets path.
+_ICON_PATH = Path(__file__).resolve().parent.parent / "assets" / "icon.ico"
+
+
+def apply_window_icon(window) -> None:
+    """Set the taskbar / titlebar icon on a Toplevel window.
+
+    Tkinter defaults to the Python interpreter's icon which surfaces as
+    a generic Python logo in the Windows taskbar. We override with the
+    bundled freewispr-swedish .ico on every Toplevel so settings,
+    snippets, dictionary, and first-run windows all show the brand mark.
+
+    CustomTkinter applies its own default Windows icon after 200 ms, so set
+    ours immediately and once more after that delayed override has run.
+    Failures are logged at debug level and never raised — a wrong icon must
+    not break the UI.
+    """
+    def _set_icon() -> None:
+        if _ICON_PATH.exists():
+            window.iconbitmap(default=str(_ICON_PATH))
+
+    try:
+        _set_icon()
+        window.after(300, _set_icon)
+    except Exception as exc:  # pragma: no cover - tk raises platform specific
+        log.debug("Kunde inte sätta fönsterikon: %s", exc)
 
 BG = "#111318"
 BG2 = "#1a1d24"
