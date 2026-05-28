@@ -149,14 +149,7 @@ ollama pull gemma3:12b
 
 I appen: Inställningar → LLM-granskning → Leverantör: **Custom** → Base URL: `http://localhost:11434/v1` → Modell: `gemma3:12b`.
 
-### Rekommenderade modeller
-
-| Modell | VRAM | Kommentar |
-|--------|------|-----------|
-| `gemma3:4b` | ~3 GB | Snabbast, enklare korrigeringar |
-| `gemma3:12b` | ~8 GB | Bra balans, ryms i de flesta GPU:er |
-| `qwen3:14b` | ~9 GB | Stark på korrigering, kräver offload till RAM |
-| `mistral-small:24b` | ~16 GB | Bäst kvalitet, kräver mycket RAM |
+Vilken modell som passar dig beror på din hårdvara och hur petig du vill vara på korrigeringen. Prova ett par och jämför.
 
 > **Tips:** När LLM-granskning är aktiverad körs appen i vänta-läge — texten klistras inte in förrän polishen är klar (eller 15 s timeout). Du får alltid polerad text i ett enda steg, så du slipper trycka Ctrl+V två gånger eller skicka rå text av misstag.
 
