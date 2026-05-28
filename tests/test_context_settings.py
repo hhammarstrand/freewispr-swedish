@@ -14,11 +14,8 @@ This catches the regressions we care about most:
 from __future__ import annotations
 
 import importlib
-import json
 from pathlib import Path
-from types import SimpleNamespace
 
-import pytest
 
 
 # --------------------------------------------------------------------------- #
