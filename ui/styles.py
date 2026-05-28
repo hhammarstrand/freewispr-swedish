@@ -15,25 +15,58 @@ _ICON_PATH = Path(__file__).resolve().parent.parent / "assets" / "icon.ico"
 def apply_window_icon(window) -> None:
     """Set the taskbar / titlebar icon on a Toplevel window.
 
-    Tkinter defaults to the Python interpreter's icon which surfaces as
-    a generic Python logo in the Windows taskbar. We override with the
-    bundled freewispr-swedish .ico on every Toplevel so settings,
-    snippets, dictionary, and first-run windows all show the brand mark.
+    Tkinter defaults to the Python interpreter's icon and CustomTkinter's
+    ``CTkToplevel`` actively overrides it with its own blue rounded-square
+    after a ~200 ms ``after()`` callback. We need to win that race.
 
-    CustomTkinter applies its own default Windows icon after 200 ms, so set
-    ours immediately and once more after that delayed override has run.
-    Failures are logged at debug level and never raised — a wrong icon must
-    not break the UI.
+    Strategy:
+      1. Set the icon immediately (covers plain tk.Toplevel).
+      2. Re-set it at 500 ms — comfortably after CustomTkinter's 200 ms
+         override has fired — to take the final word on CTk windows.
+      3. Both calls use the per-window form ``iconbitmap(path)`` (not the
+         ``default=`` form, which only acts as a process-wide fallback that
+         CTk happily overwrites again).
+
+    Failures are logged at debug level and never raised — a wrong icon
+    must not break the UI.
     """
-    def _set_icon() -> None:
-        if _ICON_PATH.exists():
-            window.iconbitmap(default=str(_ICON_PATH))
+    if not _ICON_PATH.exists():
+        log.debug("Ikon saknas: %s", _ICON_PATH)
+        return
 
+    path_str = str(_ICON_PATH)
+
+    def _set_icon() -> None:
+        try:
+            # Per-window binding wins over the process-wide default that
+            # CustomTkinter sets via wm_iconbitmap(default=...).
+            window.iconbitmap(path_str)
+        except Exception as exc:  # pragma: no cover - tk raises platform specific
+            log.debug("iconbitmap misslyckades: %s", exc)
+
+    _set_icon()
     try:
-        _set_icon()
-        window.after(300, _set_icon)
-    except Exception as exc:  # pragma: no cover - tk raises platform specific
-        log.debug("Kunde inte sätta fönsterikon: %s", exc)
+        # CTk schedules its own icon override at ~200 ms after window init.
+        # 500 ms lands well after it, before the user has time to notice.
+        window.after(500, _set_icon)
+    except Exception as exc:  # pragma: no cover
+        log.debug("after() för ikon-reset misslyckades: %s", exc)
+
+
+def apply_root_icon(root) -> None:
+    """Set the process-wide default icon on the hidden tk root.
+
+    This bubbles down to any new Toplevel that doesn't explicitly set its
+    own. We call ``apply_window_icon`` on the user-visible Toplevels
+    anyway because CustomTkinter will steamroll this default, but having
+    it on the root covers any window we don't manually decorate.
+    """
+    if not _ICON_PATH.exists():
+        return
+    try:
+        root.iconbitmap(default=str(_ICON_PATH))
+    except Exception as exc:  # pragma: no cover
+        log.debug("Kunde inte sätta default-ikon på root: %s", exc)
 
 BG = "#111318"
 BG2 = "#1a1d24"

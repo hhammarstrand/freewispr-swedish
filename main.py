@@ -625,6 +625,10 @@ def main():
     _tk_root = tk.Tk()
     _tk_root.withdraw()
     _style(_tk_root)
+    # Set the process-wide default icon now so any Toplevel that doesn't
+    # explicitly decorate itself still picks up the freewispr brand.
+    from ui.styles import apply_root_icon
+    apply_root_icon(_tk_root)
 
     _status_var = tk.StringVar(value="Startar...")
     _indicator = FloatingIndicator(_tk_root, follow_mouse=True)
