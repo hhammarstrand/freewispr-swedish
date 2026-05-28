@@ -94,6 +94,7 @@ def _setup_migration(tmp_path: Path):
     mc._DIR = tmp_path
     mc._SNIPPETS_PATH = tmp_path / "snippets.json"
     mc._CORRECTIONS_PATH = tmp_path / "corrections.json"
+    mc._LEARNED_PATH = tmp_path / "learned.json"
     return pc, mc
 
 
@@ -168,3 +169,64 @@ def test_migration_is_idempotent(tmp_path):
     # Second call must not change anything.
     assert mc.migrate_if_needed() is False
     assert pc.load() == first
+
+
+def test_migration_includes_learned_observations(tmp_path):
+    pc, mc = _setup_migration(tmp_path)
+    (tmp_path / "learned.json").write_text(json.dumps({
+        "motte": {"correct": "möte", "count": 5, "promoted": False},
+        "pratchar": {"correct": "Prakhar", "count": 2, "promoted": False},
+        "x": {"correct": "y", "count": 1, "promoted": False},
+    }), encoding="utf-8")
+    assert mc.migrate_if_needed() is True
+    text = pc.load()
+    assert "motte -> möte" in text
+    assert "(observerad 5 gånger)" in text
+    assert "pratchar -> Prakhar" in text
+    assert "(observerad 2 gånger)" in text
+    # count==1 entries get no parenthetical annotation.
+    assert "x -> y" in text
+    assert "1 gånger" not in text
+
+
+def test_migration_explicit_corrections_win_over_learned(tmp_path):
+    pc, mc = _setup_migration(tmp_path)
+    (tmp_path / "corrections.json").write_text(
+        json.dumps({"motte": "Möte"}), encoding="utf-8")  # capitalised
+    (tmp_path / "learned.json").write_text(json.dumps({
+        "motte": {"correct": "möte", "count": 9, "promoted": False},
+    }), encoding="utf-8")
+    assert mc.migrate_if_needed() is True
+    text = pc.load()
+    # Explicit value wins, no count annotation.
+    assert "motte -> Möte" in text
+    assert "möte" not in text.replace("Möte", "")
+    assert "9 gånger" not in text
+
+
+def test_migration_skips_when_only_promoted_learned_with_no_corrections(tmp_path):
+    """A learned-only file with valid entries should still trigger migration."""
+    pc, mc = _setup_migration(tmp_path)
+    (tmp_path / "learned.json").write_text(json.dumps({
+        "fel": {"correct": "rätt", "count": 4, "promoted": True},
+    }), encoding="utf-8")
+    assert mc.migrate_if_needed() is True
+    assert "fel -> rätt" in pc.load()
+
+
+def test_migration_handles_malformed_learned_entries(tmp_path):
+    pc, mc = _setup_migration(tmp_path)
+    (tmp_path / "learned.json").write_text(json.dumps({
+        "ok": {"correct": "bra", "count": 2},
+        "no_correct": {"count": 5},
+        "empty_correct": {"correct": "", "count": 3},
+        "not_dict": "string",
+        "": {"correct": "skipped", "count": 1},
+    }), encoding="utf-8")
+    assert mc.migrate_if_needed() is True
+    text = pc.load()
+    assert "ok -> bra" in text
+    assert "no_correct" not in text
+    assert "empty_correct" not in text
+    assert "not_dict" not in text
+    assert "skipped" not in text
