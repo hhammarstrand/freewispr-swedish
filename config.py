@@ -95,6 +95,12 @@ DEFAULTS = {
     # Explicit consent: ljudet skickas över nätet vid remote-transkribering.
     "transcription_privacy_accepted": False,
 
+    # Håller mikrofonströmmen öppen mellan diktat och behåller ~0.5 s
+    # rullande historik. Ger snabbare första svar och fångar de första
+    # stavelserna som annars klipps när användaren börjar prata direkt
+    # efter att hotkeyen tryckts ner.
+    "mic_prewarm_enabled": True,
+
     "indicator_follow_mouse": True,
     # Lägsta RMS-nivå (0.0-1.0) som räknas som tal. Se DEFAULT_MIN_RMS i dictation.py.
     "min_rms": 0.003,

@@ -1,6 +1,7 @@
 """Microphone recording, channel handling and resampling to 16 kHz."""
 import math
 import logging
+import threading
 import time as time_module
 import numpy as np
 import sounddevice as sd
@@ -176,6 +177,11 @@ def _try_start(device: int, rate: int, channels: int, callback) -> sd.InputStrea
 class MicRecorder:
     """Start/stop microphone recording with pre-allocated ring buffer."""
 
+    # How much audio to keep in the prewarm rolling buffer (seconds).
+    # 0.5 s covers the typical OS device-open + first-frame latency window
+    # without measurably increasing RAM (0.5 s * 48 kHz * 4 B ~= 96 KB).
+    PREWARM_SECONDS = 0.5
+
     def __init__(self, device: str | dict | None = None):
         """``device`` accepts:
           * ``None`` — auto-select first available input.
@@ -216,8 +222,50 @@ class MicRecorder:
             self._device_index = None
         self._last_status_log = 0.0
 
+        # Prewarm state. When ``self._prewarming`` is True the audio callback
+        # writes into ``self._prewarm_buf`` (a small rolling buffer that
+        # always holds the most-recent PREWARM_SECONDS of audio) and skips
+        # the main capture buffer. start() can then prepend that history
+        # into the main buffer to eliminate the user-perceived startup
+        # latency of opening the audio device.
+        #
+        # Sized lazily once we know the device samplerate. Storage is a flat
+        # mono float32 array; if the device runs in stereo we downmix in the
+        # callback before writing so the prepend stays cheap regardless of
+        # channel count.
+        self._prewarming = False
+        self._prewarm_buf: np.ndarray | None = None
+        self._prewarm_capacity = 0
+        # Write head — wraps modulo capacity. Total samples ever written is
+        # tracked separately so we know how many of the buffer's slots
+        # actually contain real data on the first few writes.
+        self._prewarm_write = 0
+        self._prewarm_written = 0
+        self._prewarm_lock = threading.Lock()
+        # Set by prewarm_start(); stop_fast() reads it to decide whether to
+        # close the stream or just flip back into prewarming mode.
+        self._prewarm_requested = False
+
     def start(self):
         """Start recording. Tries multiple device/channel combos until one works."""
+        # Fast path: the stream is already open from prewarm_start(). Just
+        # flip the flag and prepend the cached prewarm history into the
+        # main buffer so the worker sees ~PREWARM_SECONDS of audio that
+        # was already captured before the user pressed the hotkey.
+        if self._stream is not None and self._prewarming:
+            with self._prewarm_lock:
+                self._prewarming = False
+                self._ensure_buffer(self._rate, self._buffer_channels)
+                self._buffer_offset = 0
+                self._sumsq = 0.0
+                self._sumsq_count = 0
+                self._buffer_overflow = False
+                self.recording = True
+                self._prepend_prewarm_locked()
+            log.debug("start(): återanvänd öppen stream + prepend %d prewarm-samples",
+                      self._buffer_offset)
+            return
+
         # Defensive: if a previous start() never reached stop() (e.g. exception
         # in the caller), close the leaked stream before opening a new one.
         if self._stream is not None:
@@ -234,6 +282,7 @@ class MicRecorder:
         self._buffer_offset = 0
         self._buffer_overflow = False
         self.recording = True
+        self._prewarming = False
 
         candidates = self._build_candidates()
         last_err = None
@@ -320,6 +369,36 @@ class MicRecorder:
             if now - self._last_status_log > 5.0:
                 log.warning("Audio callback-status: %s", status)
                 self._last_status_log = now
+
+        # Prewarm path: write a downmixed mono copy into the rolling buffer
+        # so start() can prepend it. We deliberately don't touch the level
+        # callback here — it would cause the indicator equalizer to dance
+        # while idle, which is misleading (nothing is being transcribed).
+        if self._prewarming and self._prewarm_buf is not None:
+            n = indata.shape[0]
+            if n <= 0:
+                return
+            # Downmix to mono for compactness. The main buffer's channel
+            # count may differ but the prepended history doesn't need stereo
+            # — Whisper transcribes mono anyway.
+            if indata.ndim > 1 and indata.shape[1] > 1:
+                mono = _to_mono(indata[:n])
+            else:
+                mono = indata[:n].ravel() if indata.ndim > 1 else indata[:n]
+            cap = self._prewarm_capacity
+            w = self._prewarm_write
+            # Wrap-around write. At most two contiguous slices.
+            first = min(n, cap - w)
+            self._prewarm_buf[w:w + first] = mono[:first]
+            rest = n - first
+            if rest > 0:
+                self._prewarm_buf[:rest] = mono[first:first + rest]
+                self._prewarm_write = rest
+            else:
+                self._prewarm_write = (w + n) % cap
+            self._prewarm_written = min(cap, self._prewarm_written + n)
+            return
+
         if not self.recording or self._buffer is None:
             return
         n = indata.shape[0]
@@ -379,8 +458,34 @@ class MicRecorder:
 
         Keeps the keyboard-hook thread responsive (Windows can disable a
         low-level hook that blocks > ~300 ms).
+
+        Behaviour depends on whether prewarm mode is requested:
+          * ``self._prewarm_requested`` (set by ``prewarm_start``): keep the
+            stream open and flip back into prewarming so the next start()
+            still benefits from the rolling history.
+          * Otherwise: abort and close the stream as before.
         """
         self.recording = False
+        rate = getattr(self, "_rate", TARGET_RATE)
+        view_offset = self._buffer_offset
+        if self._buffer is None or view_offset == 0:
+            captured = np.empty(0, dtype=np.float32)
+        else:
+            view = self._buffer[:view_offset]
+            # Copy so the worker can safely process while a new recording
+            # starts. Contiguous, ~23 MB worst case (120 s @ 48 kHz mono).
+            captured = view.copy()
+
+        if self._prewarm_requested and self._stream is not None:
+            # Keep stream open, drop history that overlapped with the
+            # captured segment so we don't double-count it next time.
+            with self._prewarm_lock:
+                self._prewarming = True
+                self._prewarm_write = 0
+                self._prewarm_written = 0
+            return captured, self._buffer_channels, rate
+
+        # Closing path — same as before prewarm existed.
         if self._stream:
             try:
                 self._stream.abort()
@@ -388,13 +493,6 @@ class MicRecorder:
             except Exception:
                 pass
             self._stream = None
-        rate = getattr(self, "_rate", TARGET_RATE)
-        if self._buffer is None or self._buffer_offset == 0:
-            return np.empty(0, dtype=np.float32), self._buffer_channels, rate
-        view = self._buffer[:self._buffer_offset]
-        # Copy so the worker can safely process while a new recording starts.
-        # The copy is contiguous and ~23 MB worst case (120 s @ 48 kHz mono).
-        captured = view.copy()
         return captured, self._buffer_channels, rate
 
     def stop(self) -> np.ndarray:
@@ -405,6 +503,105 @@ class MicRecorder:
         """
         audio, channels, rate = self.stop_fast()
         return finalize_audio(audio, channels, rate)
+
+    # -- prewarm ------------------------------------------------------------- #
+
+    def prewarm_start(self) -> bool:
+        """Open the audio stream now and start filling the prewarm buffer.
+
+        Returns True on success, False if no device could be opened. Failure
+        is non-fatal — the next start() call will open the stream on demand
+        the old way. Used by main.py at boot and after Settings save when
+        the user has opted into prewarm.
+        """
+        if self._stream is not None:
+            # Already open. Ensure we're in the right mode.
+            with self._prewarm_lock:
+                self._prewarm_requested = True
+                if not self.recording:
+                    self._prewarming = True
+                    self._prewarm_write = 0
+                    self._prewarm_written = 0
+            return True
+
+        candidates = self._build_candidates()
+        last_err = None
+        for dev_idx, rate, ch, label in candidates:
+            try:
+                self._ensure_buffer(rate, ch)
+                # Allocate the prewarm rolling buffer for this samplerate.
+                self._prewarm_capacity = max(1, int(rate * self.PREWARM_SECONDS))
+                self._prewarm_buf = np.zeros(self._prewarm_capacity,
+                                             dtype=np.float32)
+                self._prewarm_write = 0
+                self._prewarm_written = 0
+                self._prewarming = True
+                self._prewarm_requested = True
+                self._stream = _try_start(dev_idx, rate, ch, self._cb)
+                self._rate = rate
+                log.info("Prewarm-stream öppen: %s (dev=%d, %dHz, %dch, "
+                         "buffer=%.0f ms)",
+                         label, dev_idx, rate, ch,
+                         self.PREWARM_SECONDS * 1000)
+                return True
+            except Exception as e:
+                last_err = e
+
+        log.warning("Kunde inte öppna prewarm-stream: %s", last_err)
+        self._prewarming = False
+        self._prewarm_requested = False
+        return False
+
+    def _prepend_prewarm_locked(self) -> None:
+        """Copy the prewarm rolling buffer into the start of the main buffer.
+
+        Caller must hold ``self._prewarm_lock``. Idempotent on already-
+        flushed prewarm state (capacity 0 or no data written).
+        """
+        buf = self._prewarm_buf
+        if buf is None or self._prewarm_capacity == 0 or self._prewarm_written == 0:
+            return
+        written = self._prewarm_written
+        write = self._prewarm_write
+        cap = self._prewarm_capacity
+        # Read in chronological order. If we've wrapped, the oldest sample
+        # is at write%cap; otherwise it's at 0.
+        if written < cap:
+            history = buf[:written]
+        else:
+            history = np.concatenate((buf[write:], buf[:write]))
+
+        # Pre-warm is captured as mono. If the main buffer is stereo (rare
+        # for laptop mics but happens on USB interfaces) we duplicate the
+        # mono history into both channels — Whisper downmixes again later.
+        n = len(history)
+        target_remaining = self._buffer_capacity - self._buffer_offset
+        n = min(n, target_remaining)
+        if n <= 0:
+            return
+        if self._buffer_channels > 1 and self._buffer is not None and self._buffer.ndim > 1:
+            self._buffer[self._buffer_offset:self._buffer_offset + n, :] = \
+                history[:n, None]
+        elif self._buffer is not None:
+            self._buffer[self._buffer_offset:self._buffer_offset + n] = history[:n]
+        self._buffer_offset += n
+        # Reset the prewarm cursor — anything new from the callback after
+        # start() goes into the main buffer, not the prewarm rolling area.
+        self._prewarm_write = 0
+        self._prewarm_written = 0
+
+    def shutdown(self) -> None:
+        """Hard-close the stream regardless of prewarm state. Call at app exit."""
+        self._prewarm_requested = False
+        self._prewarming = False
+        self.recording = False
+        if self._stream is not None:
+            try:
+                self._stream.abort()
+                self._stream.close()
+            except Exception:
+                pass
+            self._stream = None
 
 
 def finalize_audio(audio: np.ndarray, channels: int, orig_rate: int) -> np.ndarray:

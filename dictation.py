@@ -103,11 +103,13 @@ class DictationMode:
     def __init__(self, transcriber: Transcriber, hotkey: str = "ctrl+space",
                  on_status=None, indicator=None,
                  mic_device: str | dict | None = None,
-                 min_rms: float = DEFAULT_MIN_RMS):
+                 min_rms: float = DEFAULT_MIN_RMS,
+                 mic_prewarm: bool = False):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
         self.recorder = MicRecorder(device=mic_device)
+        self.mic_prewarm = mic_prewarm
         self.on_status = on_status or (lambda msg: None)
         self.indicator = indicator
         self.min_rms = min_rms
@@ -146,6 +148,14 @@ class DictationMode:
             keyboard.on_press_key(self._trigger_key, self._on_press, suppress=False),
             keyboard.on_release_key(self._trigger_key, self._on_release, suppress=False),
         ]
+        # Open the audio stream now so the first hotkey press has zero
+        # device-open latency and ~0.5 s of pre-hotkey audio already
+        # captured. Non-fatal on failure — start() will open on demand.
+        if self.mic_prewarm:
+            try:
+                self.recorder.prewarm_start()
+            except Exception:
+                log.exception("Prewarm-start misslyckades — fortsätter utan")
         self.on_status(f"Klar — håll {self.hotkey.upper()} för att prata")
 
     def stop(self, wait: bool = True):
@@ -174,6 +184,12 @@ class DictationMode:
         if wait and worker and worker.is_alive():
             worker.join(timeout=5.0)
             self._worker_thread = None
+        # Close the audio stream — for the prewarm path it was being kept
+        # open between hotkey presses.
+        try:
+            self.recorder.shutdown()
+        except Exception:
+            log.debug("recorder.shutdown() under stop misslyckades", exc_info=True)
 
     # ----------------------------------------------------------------- private
 

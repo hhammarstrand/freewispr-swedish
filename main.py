@@ -154,6 +154,7 @@ def _make_dictation(transcriber):
         indicator=_indicator,
         mic_device=_config.get("mic_device"),
         min_rms=float(_config.get("min_rms", DEFAULT_MIN_RMS)),
+        mic_prewarm=bool(_config.get("mic_prewarm_enabled", True)),
     )
 
 
