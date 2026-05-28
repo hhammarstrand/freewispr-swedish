@@ -333,6 +333,25 @@ class SettingsWindow:
         self._mic_info.pack(anchor="w", padx=6, pady=(2, 8))
         self._update_mic_info()
 
+        # Starta med Windows
+        self._label(parent, "Uppstart",
+                    font=ctk.CTkFont(weight="bold") if _CTK_AVAILABLE else None
+                    ).pack(anchor="w", **pad)
+        try:
+            from main import _is_startup_enabled
+            initial_startup = _is_startup_enabled()
+        except Exception:
+            initial_startup = False
+        self._startup_var = tk.BooleanVar(value=initial_startup)
+        self._switch(parent, "Starta med Windows", self._startup_var).pack(
+            anchor="w", padx=6, pady=(6, 0)
+        )
+        self._hint(parent,
+                   "Lägger till appen i HKCU\\…\\Run. "
+                   "Samma toggle finns i tray-menyn.").pack(
+            anchor="w", padx=6, pady=(2, 8)
+        )
+
     def _update_mic_info(self):
         name = self._mic_var.get()
         if name == "Auto":
@@ -1036,6 +1055,21 @@ class SettingsWindow:
                 f"Kontexttexten kunde inte sparas: {ctx_err}",
             )
             return
+
+        # Starta med Windows — sync HKCU\...\Run with the switch state.
+        # Done after context save so an exception here doesn't block the
+        # rest of the save flow. Failure is logged but non-fatal.
+        try:
+            from main import _is_startup_enabled, _toggle_startup
+            want = bool(self._startup_var.get())
+            if want != _is_startup_enabled():
+                _toggle_startup()
+        except Exception as su_err:
+            messagebox.showwarning(
+                "Kunde inte ändra uppstart",
+                f"Inställningen 'Starta med Windows' kunde inte uppdateras: "
+                f"{su_err}",
+            )
 
         if self.on_save:
             if self.on_save(new_cfg) is False:
