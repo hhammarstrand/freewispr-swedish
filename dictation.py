@@ -38,6 +38,38 @@ DEFAULT_MIN_RMS = 0.003
 _QUEUE_MAX = 2
 
 
+def _friendly_mic_error(exc: Exception) -> str:
+    """Convert raw exception to a user-friendly Swedish message."""
+    msg = str(exc).lower()
+    if "device unavailable" in msg or "no device" in msg or "ingen mikrofon" in msg:
+        return "Ingen mikrofon hittades — kolla att din mikrofon är ansluten"
+    if "permission" in msg or "access" in msg or "behörighet" in msg:
+        return "Mikrofonen är blockerad — godkänn åtkomst i Inställningar → Sekretess"
+    if "in use" in msg or "busy" in msg or "upptagen" in msg:
+        return "Mikrofonen används av en annan app"
+    if "format" in msg or "rate" in msg or "samplerate" in msg:
+        return "Mikrofonen stöder inte detta format — välj en annan i Inställningar"
+    return "Mikrofonfel — se loggen för detaljer"
+
+
+def _friendly_transcribe_error(exc: Exception) -> str:
+    """Convert raw transcription exception to a user-friendly Swedish message."""
+    msg = str(exc).lower()
+    if "out of memory" in msg or "cuda" in msg and "memory" in msg:
+        return "GPU-minne slut — byt till en mindre modell i Inställningar"
+    if "no module named" in msg:
+        return "Modul saknas — kör 'pip install -r requirements.txt'"
+    if "filenotfound" in msg or "no such file" in msg:
+        return "Modellfil saknas — ladda ner via Inställningar"
+    if "network" in msg or "timeout" in msg or "connection" in msg or "nätverk" in msg:
+        return "Nätverksfel — kontrollera anslutningen"
+    if "401" in msg or "unauthorized" in msg or "ogiltig api-nyckel" in msg:
+        return "Ogiltig API-nyckel — kolla Inställningar → LLM"
+    if "429" in msg or "rate limit" in msg:
+        return "För många anrop — vänta en stund"
+    return "Transkriberingsfel — se loggen för detaljer"
+
+
 def _parse_hotkey(hotkey: str) -> tuple[str, tuple[str, ...]]:
     """Split a hotkey string into (trigger, canonical_modifiers).
 
@@ -167,8 +199,9 @@ class DictationMode:
                 log.error("Mic start error: %s", e, exc_info=True)
                 sounds.play_error()
                 if self.indicator:
-                    self.indicator.show(f"Mikrofonfel: {e}", state="error")
-                    self.indicator.hide(delay_ms=3000)
+                    msg = _friendly_mic_error(e)
+                    self.indicator.show(msg, state="error")
+                    self.indicator.hide(delay_ms=4000)
 
     def _on_release(self, _):
         if not (self._active and self._recording):
@@ -184,7 +217,7 @@ class DictationMode:
             audio, channels, rate = self.recorder.stop_fast()
         except Exception as e:
             log.error("Audio stop error: %s", e, exc_info=True)
-            sounds.play_stop()
+            sounds.play_error()
             sounds.play_error()
             if self.indicator:
                 self.indicator.show("Mikrofonfel", state="error")
@@ -261,9 +294,9 @@ class DictationMode:
             log.info("Transkriberar %d samples...", len(audio))
             llm_enabled = getattr(self.transcriber, "llm_enabled", False)
             if llm_enabled:
-                self.on_status("Transkriberar lokalt...")
+                self.on_status("Transkriberar lokalt…")
                 if self.indicator:
-                    self.indicator.show("Transkriberar lokalt...", state="transcribe")
+                    self.indicator.show("Transkriberar lokalt…", state="transcribe")
             text = self.transcriber.transcribe(audio)
             # Apply snippet expansion — if full text is a trigger, replace it
             text = snippet_module.expand(text)
@@ -286,9 +319,9 @@ class DictationMode:
                     old_stage = getattr(self.transcriber, "on_stage", None)
                     def _on_stage(stage: str):
                         if stage == "llm_reviewing":
-                            self.on_status("LLM-granskar...")
+                            self.on_status("LLM-granskar…")
                             if self.indicator:
-                                self.indicator.show("LLM-granskar...", state="transcribe")
+                                self.indicator.show("LLM-granskar…", state="transcribe")
                     self.transcriber.on_stage = _on_stage
 
                     def _on_polish_done(original: str, polished: str):
@@ -331,5 +364,5 @@ class DictationMode:
             log.error("Transkribering misslyckades: %s", e, exc_info=True)
             self.on_status(f"Fel — håll {self.hotkey.upper()}")
             if self.indicator:
-                self.indicator.show(f"Fel: {e}", state="error")
+                self.indicator.show(_friendly_transcribe_error(e), state="error")
                 self.indicator.hide(delay_ms=5000)

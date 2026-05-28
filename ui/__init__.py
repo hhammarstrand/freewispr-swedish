@@ -4,6 +4,7 @@ Tkinter-based windows for freewispr-swedish.
 - SnippetsWindow    : manage trigger -> expansion pairs
 - DictionaryWindow  : manage word corrections (Whisper mistakes)
 - SettingsWindow    : hotkey, mic, model, LLM och transkribering
+- FirstRunDialog    : welcome dialog offering to download the Whisper model
 """
 
 from ui.styles import _style
@@ -14,6 +15,7 @@ __all__ = [
     "SettingsWindow",
     "SnippetsWindow",
     "DictionaryWindow",
+    "FirstRunDialog",
     "_style",
 ]
 
@@ -28,4 +30,7 @@ def __getattr__(name):
     if name == "DictionaryWindow":
         from ui.dictionary_window import DictionaryWindow
         return DictionaryWindow
+    if name == "FirstRunDialog":
+        from ui.first_run import FirstRunDialog
+        return FirstRunDialog
     raise AttributeError(f"module 'ui' has no attribute {name!r}")
