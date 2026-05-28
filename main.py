@@ -9,6 +9,20 @@ import logging
 from pathlib import Path
 
 # --------------------------------------------------------------------------- #
+#  AppUserModelID — must be set before *any* window is created (and ideally
+#  before tkinter is even imported by a transitive dependency), otherwise
+#  Windows groups our taskbar entry under pythonw.exe and shows the Python
+#  logo. Setting it here at module top is the earliest we can.
+# --------------------------------------------------------------------------- #
+if sys.platform == "win32":
+    try:
+        import ctypes
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
+            "se.freewispr.swedish.app")
+    except Exception:
+        pass
+
+# --------------------------------------------------------------------------- #
 #  Logging — basic config now, file handler is wired in main()
 # --------------------------------------------------------------------------- #
 
@@ -51,7 +65,7 @@ try:
     import config as cfg_module
     # Heavy modules are imported lazily via _make_transcriber/_make_dictation
     # so the tray icon appears in <1 second.
-    from ui import SettingsWindow, SnippetsWindow, DictionaryWindow, FloatingIndicator, _style
+    from ui import SettingsWindow, FloatingIndicator, _style
     log.info("Snabb-imports OK")
 except Exception:
     log.critical("Import kraschade", exc_info=True)
@@ -305,23 +319,37 @@ def _set_tray_status(msg: str):
 #  Tray menu callbacks                                                         #
 # --------------------------------------------------------------------------- #
 
-def _open_snippets(_=None):
-    if _tk_root:
-        _tk_root.after(0, lambda: SnippetsWindow())
-
-
-def _open_dictionary(_=None):
-    if _tk_root:
-        _tk_root.after(0, lambda: DictionaryWindow())
-
-
 def _open_settings(_=None):
     if _tk_root:
         _tk_root.after(0, _show_settings)
 
 
 def _show_settings():
-    SettingsWindow(_config, on_save=_apply_settings)
+    """Open Settings — or focus the existing window if one is already open.
+
+    Prevents the user from spawning unlimited Settings windows by mashing
+    the tray menu / double-clicking. Keeps a weak reference to the live
+    window; reopens fresh once the user has closed it.
+    """
+    global _settings_window
+    existing = _settings_window
+    if existing is not None:
+        root = getattr(existing, "root", None)
+        # `winfo_exists` returns "1"/"0" as a string in classic tk and an
+        # int in customtkinter — both truthy-check correctly.
+        try:
+            if root is not None and root.winfo_exists():
+                root.deiconify()
+                root.lift()
+                root.focus_force()
+                return
+        except Exception:
+            # Window was destroyed without us noticing; fall through to
+            # creating a fresh one.
+            pass
+        _settings_window = None
+
+    _settings_window = SettingsWindow(_config, on_save=_apply_settings)
 
 
 def _apply_settings(new_cfg: dict):
