@@ -294,9 +294,9 @@ class DictationMode:
             log.info("Transkriberar %d samples...", len(audio))
             llm_enabled = getattr(self.transcriber, "llm_enabled", False)
             if llm_enabled:
-                self.on_status("Transkriberar lokalt...")
+                self.on_status("Transkriberar lokalt…")
                 if self.indicator:
-                    self.indicator.show("Transkriberar lokalt...", state="transcribe")
+                    self.indicator.show("Transkriberar lokalt…", state="transcribe")
             text = self.transcriber.transcribe(audio)
             # Apply snippet expansion — if full text is a trigger, replace it
             text = snippet_module.expand(text)
@@ -319,9 +319,9 @@ class DictationMode:
                     old_stage = getattr(self.transcriber, "on_stage", None)
                     def _on_stage(stage: str):
                         if stage == "llm_reviewing":
-                            self.on_status("LLM-granskar...")
+                            self.on_status("LLM-granskar…")
                             if self.indicator:
-                                self.indicator.show("LLM-granskar...", state="transcribe")
+                                self.indicator.show("LLM-granskar…", state="transcribe")
                     self.transcriber.on_stage = _on_stage
 
                     def _on_polish_done(original: str, polished: str):

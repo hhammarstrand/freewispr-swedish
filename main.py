@@ -194,22 +194,85 @@ def _make_icon() -> Image.Image:
 #  App init                                                                    #
 # --------------------------------------------------------------------------- #
 
+def _run_first_run_dialog() -> str | None:
+    """Show the FirstRunDialog on the Tk main thread and block until closed.
+
+    Called from the background _load_app thread. We marshal the dialog onto
+    the Tk main thread (mandatory — Tk widgets aren't thread-safe), then
+    wait on an Event for the dialog to close, then read back the result.
+    Returns the chosen model size on success, ``None`` if the user cancelled.
+    """
+    if _tk_root is None:
+        log.warning("Kan inte visa first-run-dialog: ingen Tk-rot")
+        return None
+
+    from ui import FirstRunDialog
+
+    done = threading.Event()
+    result: dict[str, str | None] = {"size": None}
+
+    def _show():
+        try:
+            dlg = FirstRunDialog(_tk_root)
+            result["size"] = dlg.result
+        except Exception as e:
+            log.error("FirstRunDialog kraschade: %s", e, exc_info=True)
+        finally:
+            done.set()
+
+    _tk_root.after(0, _show)
+    done.wait()
+    return result["size"]
+
+
 def _load_app():
     global _config, _transcriber, _dictation
 
-    log.info("Laddar config och modell...")
+    log.info("Laddar config och modell…")
 
     _config = cfg_module.load()
 
     model_size = _config.get("model_size", "small")
-    _set_tray_status("Laddar modell...")
+    _set_tray_status("Laddar modell…")
     if _indicator:
         _indicator.set_follow_mouse(_config.get("indicator_follow_mouse", True))
     try:
-        _transcriber = _make_transcriber(model_size, _config.get("use_cuda", True))
+        try:
+            _transcriber = _make_transcriber(model_size, _config.get("use_cuda", True))
+        except FileNotFoundError as fnf:
+            # No local model cached. Offer the friendly first-run dialog
+            # instead of crashing with a cryptic tray status. Only surfaces
+            # when transcription_provider=="local" — remote configs never
+            # raise FileNotFoundError here.
+            log.info("Ingen lokal modell hittades (%s) — visar first-run-dialog", fnf)
+            _set_tray_status("Välkommen — välj modell att ladda ned")
+            chosen = _run_first_run_dialog()
+            if chosen:
+                log.info("First-run klar — användaren valde '%s'", chosen)
+                _config["model_size"] = chosen
+                try:
+                    cfg_module.save(_config)
+                except Exception as save_err:
+                    log.warning("Kunde inte spara vald modellstorlek: %s", save_err)
+                # Retry with the freshly-downloaded model. Honour the user's
+                # current use_cuda preference; _make_transcriber's outer
+                # try/except still handles GPU-fail-to-CPU fallback below.
+                _transcriber = _make_transcriber(chosen, _config.get("use_cuda", True))
+            else:
+                # User cancelled. Fall back to remote transcription if the
+                # config already has it wired up (consent + provider), else
+                # surface a clear instruction in the tray.
+                tr_provider, _, _, _ = _active_transcription_settings()
+                if tr_provider != "local":
+                    log.info("First-run avbruten — använder remote-transkribering (%s)", tr_provider)
+                    _transcriber = _make_transcriber(model_size, _config.get("use_cuda", True))
+                else:
+                    log.info("First-run avbruten och ingen remote-konfig — avslutar laddning")
+                    _set_tray_status("Avsluta och installera modell manuellt")
+                    return
     except Exception as e:
         log.error("Modellfel (%s): %s", model_size, e, exc_info=True)
-        log.info("Försöker fallback till 'small' med CPU...")
+        log.info("Försöker fallback till 'small' med CPU…")
         _set_tray_status("Modellfel — fallback till 'small'")
         try:
             _transcriber = _make_transcriber("small", False)
@@ -373,9 +436,9 @@ def _apply_settings_locked(new_cfg: dict):
                 _indicator.show("Vänta: modell laddas", state="error")
                 _indicator.hide(delay_ms=2000)
             return False
-        _set_tray_status(f"Laddar modell '{new_model}'...")
+        _set_tray_status(f"Laddar modell '{new_model}'…")
         if _indicator:
-            _indicator.show(f"Laddar modell '{new_model}'...", state="transcribe")
+            _indicator.show(f"Laddar modell '{new_model}'…", state="transcribe")
 
         def _reload():
             global _transcriber, _dictation
