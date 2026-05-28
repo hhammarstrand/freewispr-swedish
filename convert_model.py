@@ -1,17 +1,19 @@
-"""Convert KBLab Whisper models to CTranslate2 format.
+"""Download KBLab Whisper models for freewispr-swedish.
 
 Usage:
-    python convert_model.py medium
-    python convert_model.py large
+    python convert_model.py small
     python convert_model.py tiny base small medium large
 
-Requires: pip install transformers ctranslate2
+Downloads only the files faster-whisper actually needs:
+- model.bin (CTranslate2 weights — KBLab publishes pre-converted)
+- config.json, tokenizer.json, vocabulary.json, preprocessor_config.json
 
-The converted models are saved to:
+This avoids the heavy ctranslate2 + transformers conversion step that the
+older version of this script required, which kept dependencies small enough
+to fit in the bundled PyInstaller exe.
+
+Models are saved to:
     ~/.freewispr-swedish/models/kb-whisper-{size}-ct2/
-
-This fixes the vocabulary mismatch crash that affects some KBLab models
-when loaded directly by faster_whisper / CTranslate2.
 """
 import argparse
 import logging
@@ -41,8 +43,20 @@ KBLAB_REVISIONS: dict[str, str | None] = {
     "large": None,
 }
 
+# Files we actually need to run inference. KBLab publishes pre-converted
+# ct2 model.bin alongside the safetensors/onnx files; we only fetch what
+# faster-whisper expects.
+_REQUIRED_FILES = [
+    "model.bin",
+    "config.json",
+    "tokenizer.json",
+    "vocabulary.json",
+    "preprocessor_config.json",
+]
+
 
 def convert(size: str) -> None:
+    """Download the model files for *size* into MODEL_DIR/kb-whisper-{size}-ct2/."""
     repo = KBLAB_MODELS.get(size)
     if not repo:
         log.error("Okänd modellstorlek: %s (välj: %s)", size, ", ".join(KBLAB_MODELS))
@@ -50,53 +64,48 @@ def convert(size: str) -> None:
 
     output_dir = MODEL_DIR / f"kb-whisper-{size}-ct2"
     if output_dir.exists() and (output_dir / "model.bin").exists():
-        log.info("Redan konverterad: %s", output_dir)
+        log.info("Redan nedladdad: %s", output_dir)
         return
 
-    log.info("Konverterar %s (%s) -> %s ...", size, repo, output_dir)
+    log.info("Laddar ned %s (%s) → %s ...", size, repo, output_dir)
 
     try:
-        from ctranslate2.converters import TransformersConverter
+        from huggingface_hub import hf_hub_download
     except ImportError:
-        log.error("Saknar ctranslate2. Kör: pip install ctranslate2")
-        return
-
-    try:
-        import transformers  # noqa: F401
-    except ImportError:
-        log.error("Saknar transformers. Kör: pip install transformers")
+        log.error(
+            "Saknar huggingface_hub. Den ingår i faster-whisper-paketet — "
+            "kör 'pip install -r requirements.txt'."
+        )
         return
 
     output_dir.mkdir(parents=True, exist_ok=True)
-
     revision = KBLAB_REVISIONS.get(size)
-    converter_kwargs: dict = dict(
-        copy_files=["tokenizer.json", "preprocessor_config.json"],
-    )
     if revision is not None:
-        converter_kwargs["revision"] = revision
         log.info("Använder pinnad revision: %s", revision)
 
-    converter = TransformersConverter(repo, **converter_kwargs)
-    converter.convert(
-        output_dir=str(output_dir),
-        quantization="float16",
-        force=True,
-    )
+    for filename in _REQUIRED_FILES:
+        log.info("  - %s", filename)
+        hf_hub_download(
+            repo_id=repo,
+            filename=filename,
+            revision=revision,
+            local_dir=str(output_dir),
+        )
+
     log.info("Klar! Modell sparad i: %s", output_dir)
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Convert KBLab Whisper models to CTranslate2 format.",
-        epilog="Example: python convert_model.py medium large",
+        description="Download KBLab Whisper models for freewispr-swedish.",
+        epilog="Example: python convert_model.py small",
     )
     parser.add_argument(
         "sizes",
         nargs="+",
         choices=sorted(KBLAB_MODELS.keys()),
         metavar="SIZE",
-        help="One or more model sizes to convert "
+        help="One or more model sizes to download "
              f"({', '.join(sorted(KBLAB_MODELS.keys()))})",
     )
     args = parser.parse_args()
