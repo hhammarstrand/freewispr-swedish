@@ -358,6 +358,10 @@ class Transcriber:
         self._model_lock = threading.RLock()
         self.model = None
         self._warmed = False
+        # Set to True after a CUDA OOM so future transcriptions fail fast with
+        # a user-friendly message instead of repeatedly hitting OOM on a model
+        # that's now in a broken state. Cleared only by restarting the app.
+        self._cuda_oom = False
 
         if transcription_provider != "local":
             log.info("Remote-transkribering aktiv: provider=%s, model=%s",
@@ -510,38 +514,91 @@ class Transcriber:
                 pass
 
         def _run():
+            import time as _time
             from llm_polish import polish
             from auto_learn import record_correction
 
-            try:
-                result = polish(
-                    text,
-                    self.llm_api_key,
-                    model=self.llm_model,
-                    provider=self.llm_provider,
-                    base_url_override=self.llm_base_url,
-                )
-            except Exception as e:
-                log.warning("LLM-polish kraschade: %s", e, exc_info=True)
-                self.last_polish_state = "local"
-                callback(text, text)
-                return
+            # Track whether we've delivered exactly one callback. ``polish()``
+            # has its own 8 s urllib timeout, but we also belt-and-braces:
+            # log slow runs and guarantee the caller's callback fires even if
+            # *it* raises — otherwise the indicator stays on "LLM-granskar…"
+            # forever.
+            t0 = _time.monotonic()
+            delivered = False
 
-            if result.changed:
-                record_correction(text, result.text)
-                self.last_polish_state = "llm_changed"
-                log.info("Resultat (LLM) klart (%dms, %s)",
-                         result.latency_ms, _text_meta(result.text))
-                callback(text, result.text)
-            else:
-                self.last_polish_state = "llm_unchanged"
-                callback(text, text)
+            def _deliver(original: str, polished: str) -> None:
+                nonlocal delivered
+                if delivered:
+                    return
+                delivered = True
+                try:
+                    callback(original, polished)
+                except Exception as cb_err:
+                    # Swallow — we're in a daemon thread; if we let this
+                    # propagate, the indicator stays stuck because no other
+                    # code is going to clear it.
+                    log.error("LLM-polish callback kraschade: %s",
+                              cb_err, exc_info=True)
+
+            try:
+                try:
+                    result = polish(
+                        text,
+                        self.llm_api_key,
+                        model=self.llm_model,
+                        provider=self.llm_provider,
+                        base_url_override=self.llm_base_url,
+                    )
+                except Exception as e:
+                    log.warning("LLM-polish kraschade: %s", e, exc_info=True)
+                    self.last_polish_state = "local"
+                    _deliver(text, text)
+                    return
+
+                elapsed = _time.monotonic() - t0
+                if elapsed > 10.0:
+                    # polish() should have timed out at 8 s; anything past
+                    # ~10 s suggests the timeout was ignored (DNS hang, etc.).
+                    log.warning(
+                        "LLM-polish tog %.1f s (förväntat <8 s) — "
+                        "nätverkshicka eller långsam leverantör?", elapsed,
+                    )
+
+                if result.changed:
+                    try:
+                        record_correction(text, result.text)
+                    except Exception as rec_err:
+                        log.debug("record_correction misslyckades: %s", rec_err)
+                    self.last_polish_state = "llm_changed"
+                    log.info("Resultat (LLM) klart (%dms, %s)",
+                             result.latency_ms, _text_meta(result.text))
+                    _deliver(text, result.text)
+                else:
+                    self.last_polish_state = "llm_unchanged"
+                    _deliver(text, text)
+            finally:
+                # Last-resort safety net: if anything above slips through
+                # without delivering (e.g. BaseException, MemoryError),
+                # still fire the callback so the UI doesn't hang.
+                if not delivered:
+                    log.error("LLM-polish trådade ut utan callback — "
+                              "levererar fallback")
+                    self.last_polish_state = "local"
+                    _deliver(text, text)
 
         threading.Thread(target=_run, name="llm-polish", daemon=True).start()
 
     def _transcribe_local(self, audio: np.ndarray) -> str:
         prompt = _INITIAL_PROMPTS.get(self.language, "")
         hotwords = _get_hotwords_cached()
+
+        if getattr(self, "_cuda_oom", False):
+            # We already hit OOM in this session; refuse fast with the same
+            # message instead of re-tripping it on every subsequent press.
+            raise RuntimeError(
+                "GPU-minne slut — appen växlar till CPU. "
+                "Starta om för att försöka igen."
+            )
 
         raw = ""
         # Try with VAD first, fall back to without on error.
@@ -578,6 +635,43 @@ class Transcriber:
                     raw = " ".join(s.text.strip() for s in segments)
                 break
             except RuntimeError as e:
+                msg = str(e).lower()
+
+                # CUDA out-of-memory: the model is now in a poisoned state.
+                # Retrying with the same model (even without VAD) will just
+                # re-trip OOM. Empty the cache, set a sticky flag so future
+                # transcriptions fail fast, and surface a friendly message.
+                if "out of memory" in msg or (
+                    "cuda" in msg and ("memory" in msg or "oom" in msg)
+                ):
+                    log.error("CUDA out-of-memory under transkribering: %s", e)
+                    try:
+                        import torch
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                    except Exception as cache_err:
+                        log.debug("torch.cuda.empty_cache() misslyckades: %s",
+                                  cache_err)
+                    self._cuda_oom = True
+                    raise RuntimeError(
+                        "GPU-minne slut — appen växlar till CPU. "
+                        "Starta om för att försöka igen."
+                    ) from e
+
+                # Corrupt model file (vocabulary / tokenizer / JSON parse
+                # errors). VAD retry won't help — the model itself is broken.
+                if (
+                    "vocabulary" in msg
+                    or "tokenizer" in msg
+                    or "json.exception" in msg
+                ):
+                    log.error("Modellfilen verkar korrupt: %s", e)
+                    raise RuntimeError(
+                        "Modellen verkar korrupt — kör "
+                        "'python convert_model.py <size>' eller välj en annan "
+                        "storlek i Inställningar."
+                    ) from e
+
                 if use_vad:
                     log.warning("VAD-transkribering kraschade: %s — försöker utan VAD", e)
                     continue
