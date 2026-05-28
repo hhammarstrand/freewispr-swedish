@@ -33,7 +33,13 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stdout)],
 )
 log = logging.getLogger("freewispr")
-log.info("=== freewispr-swedish startar ===")
+
+# --------------------------------------------------------------------------- #
+#  Version - single source of truth. Bumpa här vid release och tagga git.
+# --------------------------------------------------------------------------- #
+__version__ = "1.0.0"
+
+log.info("=== freewispr-swedish %s startar ===", __version__)
 
 _LOG_DIR = Path.home() / ".freewispr-swedish"
 _LOG_FILE = _LOG_DIR / "freewispr.log"
