@@ -555,6 +555,121 @@ class SettingsWindow:
         self._render_test_result(self._llm_test_btn, self._llm_test_result,
                                  ok, msg)
 
+    # ------- Tab: Kontext --------------------------------------------------- #
+
+    _CTX_PLACEHOLDER = (
+        "Skriv fritt i svensk löpande text om dig själv, ditt arbete och "
+        "vanligt förekommande ord. LLM-granskaren använder detta som "
+        "referens när den polerar transkriberingen — den lägger inte in "
+        "texten i din diktering.\n\n"
+        "Exempel:\n\n"
+        "Jag heter Patrik och arbetar som molnarkitekt på Anomaly. Mina "
+        "kollegor heter Joakim och Prakhar. Vi pratar ofta om Azure, "
+        "Terraform, Kubernetes och GitHub Actions.\n\n"
+        "Korrekt stavning av ord jag ofta säger:\n"
+        "- kammar -> Kalmar\n"
+        "- motte -> möte"
+    )
+
+    def _build_context(self, parent):
+        pad = {"padx": 6, "pady": (10, 0)}
+
+        self._label(parent, "Personlig kontext",
+                    font=ctk.CTkFont(weight="bold") if _CTK_AVAILABLE else None
+                    ).pack(anchor="w", **pad)
+        self._hint(parent,
+                   "Skickas med varje LLM-granskning som referens. "
+                   "Hjälper modellen med namn, fackord och vanliga "
+                   "feltolkningar. Max 8000 tecken. "
+                   "Kräver att LLM-granskning är aktiverad.").pack(
+            anchor="w", padx=6, pady=(2, 6), fill="x"
+        )
+
+        # Load current text from disk so the user sees what's actually
+        # active (including any auto-migrated content).
+        try:
+            from personal_context import load as _ctx_load, MAX_LENGTH as _ctx_max
+            current_text = _ctx_load()
+        except Exception:
+            current_text = ""
+            _ctx_max = 8000
+        self._ctx_max_length = _ctx_max
+
+        if _CTK_AVAILABLE:
+            self._ctx_textbox = ctk.CTkTextbox(parent, height=300, wrap="word")
+        else:
+            self._ctx_textbox = tk.Text(parent, height=18, wrap="word")
+        self._ctx_textbox.pack(fill="both", expand=True, padx=6, pady=(0, 4))
+
+        if current_text:
+            self._ctx_textbox.insert("1.0", current_text)
+            self._ctx_is_placeholder = False
+        else:
+            # Show the placeholder visually but tag it so _save knows to
+            # treat it as empty. Tkinter's Text widget has no native
+            # placeholder, so we fake it with a focus-in handler that
+            # clears the hint on first interaction.
+            self._ctx_textbox.insert("1.0", self._CTX_PLACEHOLDER)
+            self._ctx_is_placeholder = True
+
+            def _clear_placeholder(_event=None):
+                if getattr(self, "_ctx_is_placeholder", False):
+                    self._ctx_textbox.delete("1.0", "end")
+                    self._ctx_is_placeholder = False
+                    if _CTK_AVAILABLE:
+                        self._ctx_textbox.configure(text_color=None)
+            self._ctx_textbox.bind("<FocusIn>", _clear_placeholder, add="+")
+            self._ctx_textbox.bind("<Key>", _clear_placeholder, add="+")
+            if _CTK_AVAILABLE:
+                # Visually mute the placeholder so it's clearly not real text.
+                try:
+                    self._ctx_textbox.configure(text_color="gray60")
+                except Exception:
+                    pass
+
+        # Character counter + warning if over MAX_LENGTH.
+        self._ctx_counter = self._hint(parent, "")
+        self._ctx_counter.pack(anchor="e", padx=6, pady=(0, 6))
+
+        def _update_counter(_event=None):
+            if getattr(self, "_ctx_is_placeholder", False):
+                self._ctx_counter.configure(text="")
+                return
+            n = len(self._ctx_textbox.get("1.0", "end-1c"))
+            if n > self._ctx_max_length:
+                self._ctx_counter.configure(
+                    text=f"{n} / {self._ctx_max_length} tecken — "
+                         f"sparas avkortat")
+            else:
+                self._ctx_counter.configure(
+                    text=f"{n} / {self._ctx_max_length} tecken")
+        self._ctx_textbox.bind("<KeyRelease>", _update_counter, add="+")
+        _update_counter()
+
+        # Disabled-state hint when LLM is off. Wired via trace below.
+        self._ctx_disabled_hint = self._hint(
+            parent,
+            "LLM-granskning är avstängd — kontexten används inte. "
+            "Aktivera under fliken LLM-granskning för att göra den verksam.",
+        )
+
+        def _refresh_ctx_state(*_):
+            enabled = bool(self._llm_enabled_var.get())
+            if enabled:
+                try:
+                    self._ctx_textbox.configure(state="normal")
+                except Exception:
+                    pass
+                self._ctx_disabled_hint.pack_forget()
+            else:
+                # Keep it editable so the user can still prepare text
+                # before enabling LLM, but show the explanatory hint.
+                self._ctx_disabled_hint.pack(
+                    anchor="w", padx=6, pady=(2, 0), fill="x"
+                )
+        self._llm_enabled_var.trace_add("write", _refresh_ctx_state)
+        _refresh_ctx_state()
+
     # ------- Tab: Transkribering ------------------------------------------- #
 
     def _build_transcription(self, parent):
@@ -896,6 +1011,31 @@ class SettingsWindow:
         for k in ("filter_fillers", "auto_punctuate", "language",
                   "llm_api_key", "llm_model"):
             new_cfg.pop(k, None)
+
+        # Personal context — save to its own JSON file, not to config.
+        # The textbox holds the placeholder text when the user never
+        # interacted with it; in that case we treat the field as empty
+        # and don't overwrite any existing context with the placeholder.
+        try:
+            if hasattr(self, "_ctx_textbox"):
+                if getattr(self, "_ctx_is_placeholder", False):
+                    ctx_text = ""
+                else:
+                    ctx_text = self._ctx_textbox.get("1.0", "end-1c")
+                # Only write when the user changed something or the
+                # existing file already had content — avoids creating
+                # an empty file on fresh installs.
+                from personal_context import (
+                    load as _ctx_load, save as _ctx_save,
+                )
+                if ctx_text.strip() or _ctx_load():
+                    _ctx_save(ctx_text)
+        except Exception as ctx_err:
+            messagebox.showerror(
+                "Kan inte spara personlig kontext",
+                f"Kontexttexten kunde inte sparas: {ctx_err}",
+            )
+            return
 
         if self.on_save:
             if self.on_save(new_cfg) is False:
