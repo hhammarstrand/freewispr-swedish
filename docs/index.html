@@ -92,6 +92,13 @@ body {
 }
 
 a { color: inherit; }
+.text-link {
+  color: var(--accent);
+  font-weight: 700;
+  text-underline-offset: 0.16em;
+  text-decoration-thickness: 1px;
+}
+.text-link:hover { color: var(--accent-dark); }
 .page { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
 
 /* ---- Nav with frosted glass ---- */
@@ -805,7 +812,7 @@ footer a:hover {
         <div>
           <span class="kicker">Open source för Windows</span>
           <h1>Svensk diktering utan omvägar.</h1>
-          <p class="lead">Håll en tangent, prata och få texten där markören redan står. Kör KBLab Whisper lokalt om du vill ha allt på datorn, eller välj en provider som staik.se för transkribering och LLM-granskning.</p>
+          <p class="lead">Håll en tangent, prata och få texten där markören redan står. Kör KBLab Whisper lokalt om du vill ha allt på datorn, eller välj en provider som <a class="text-link" href="https://staik.se/">staik.se</a> för transkribering och LLM-granskning.</p>
           <div class="actions">
             <a class="btn primary" href="https://github.com/hhammarstrand/freewispr-swedish/releases/tag/latest">Hämta senaste build</a>
             <a class="btn secondary" href="https://github.com/hhammarstrand/freewispr-swedish">Visa källkod</a>
@@ -825,7 +832,7 @@ footer a:hover {
             <div class="meta-grid">
               <div class="meta"><b>sv</b><span>optimerad för svenska</span></div>
               <div class="meta"><b>lokal</b><span>Whisper på datorn</span></div>
-              <div class="meta"><b>API</b><span>staik.se m.fl.</span></div>
+              <div class="meta"><b>API</b><span><a class="text-link" href="https://staik.se/">staik.se</a> m.fl.</span></div>
             </div>
           </div>
         </aside>
@@ -876,8 +883,8 @@ footer a:hover {
           <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></span><h3>Tydlig indikator</h3><p>Lyssnarrutan kan följa muspekaren över flera skärmar eller ligga fast på huvudskärmen.</p></article>
           <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg></span><h3>CLI-vänlig clipboard</h3><p>Texten stannar i urklipp även om automatisk paste inte fungerar i en terminal.</p></article>
           <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span><h3>Personlig kontext</h3><p>Beskriv namn, fackord och vanliga feltolkningar i fritext. Skickas som referens till LLM-granskaren vid varje pass.</p></article>
-          <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.09 6.26L20.18 9l-5 4.09L16.64 20 12 16.52 7.36 20l1.46-6.91-5-4.09 6.09-.74z"/></svg></span><h3>Valfri LLM</h3><p>Eftergranska text via GitHub Models, staik.se, Berget AI, OpenAI eller en lokal server som Ollama — se direkt om texten är rå, LLM-granskad eller LLM-polerad.</p></article>
-          <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></span><h3>Remote-transkribering</h3><p>Valfri molnbaserad transkribering via staik.se eller Berget AI med KB-Whisper Large — bättre svenska utan lokal GPU.</p></article>
+          <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2l2.09 6.26L20.18 9l-5 4.09L16.64 20 12 16.52 7.36 20l1.46-6.91-5-4.09 6.09-.74z"/></svg></span><h3>Valfri LLM</h3><p>Eftergranska text via GitHub Models, <a class="text-link" href="https://staik.se/">staik.se</a>, <a class="text-link" href="https://berget.ai/">Berget AI</a>, OpenAI eller en lokal server som Ollama — se direkt om texten är rå, LLM-granskad eller LLM-polerad.</p></article>
+          <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z"/></svg></span><h3>Remote-transkribering</h3><p>Valfri molnbaserad transkribering via <a class="text-link" href="https://staik.se/">staik.se</a> eller <a class="text-link" href="https://berget.ai/">Berget AI</a> med KB-Whisper Large — bättre svenska utan lokal GPU.</p></article>
           <article class="feature"><span class="icon-wrap"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/><circle cx="12" cy="5" r="1" fill="currentColor" stroke="none"/></svg></span><h3>Vänta-läge för LLM</h3><p>När LLM-granskning är på klistras texten först när poleringen är klar — du får alltid den slutgiltiga versionen i ett enda steg.</p></article>
         </div>
       </section>
@@ -885,7 +892,7 @@ footer a:hover {
       <section id="integritet">
         <div class="section-head">
           <div><p class="eyebrow">Integritet</p><h2>Lokalt när du vill. Provider när det passar bättre.</h2></div>
-          <p class="section-copy">Du kan köra transkribering med lokala KBLab-modeller på din egen dator. Vill du hellre slippa lokal modell eller GPU kan du välja en provider, till exempel staik.se eller Berget AI.</p>
+          <p class="section-copy">Du kan köra transkribering med lokala KBLab-modeller på din egen dator. Vill du hellre slippa lokal modell eller GPU kan du välja en provider, till exempel <a class="text-link" href="https://staik.se/">staik.se</a> eller <a class="text-link" href="https://berget.ai/">Berget AI</a>.</p>
         </div>
         <div class="privacy-panel">
           <div class="panel"><h3>Lokalt eller via provider</h3><p>I lokalt läge spelas ljud in, resamplas och transkriberas på din Windows-dator. Aktiverar du remote-transkribering skickas ljudet till vald provider; LLM-granskning skickar bara texten.</p></div>
