@@ -224,9 +224,11 @@ h1 {
   /* Balansera radbrytningar så vi inte får ett ord per rad i smala
      viewports (svenska sammansättningar är långa). */
   text-wrap: balance;
-  /* Liten topp-padding ger background-clip-glyferna utrymme att rendera
-     prickarna utan beskärning i Chromium. */
+  /* Liten topp- och bottenpadding ger background-clip-glyferna utrymme
+     att rendera prickar (å/ä/ö) och descenders (g/j/p/y) utan
+     beskärning i Chromium. */
   padding-top: 0.08em;
+  padding-bottom: 0.12em;
   background: linear-gradient(135deg, var(--ink) 0%, var(--accent-dark) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
