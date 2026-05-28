@@ -82,6 +82,9 @@ _tray_icon: pystray.Icon | None = None
 _tk_root: tk.Tk | None = None
 _status_var: tk.StringVar | None = None
 _indicator: FloatingIndicator | None = None
+# Singleton reference — _show_settings reuses the live window when one is
+# already open instead of spawning unlimited copies.
+_settings_window = None
 
 # Serializes settings-driven reloads. Without it, a user spamming Save
 # could spawn two _reload threads, double-loading the model into VRAM
@@ -618,8 +621,6 @@ def _build_menu():
         # default=True makes this the action that runs on left double-click
         # of the tray icon (in addition to being the bold first menu entry).
         pystray.MenuItem("Inställningar", _open_settings, default=True),
-        pystray.MenuItem("Snippets", _open_snippets),
-        pystray.MenuItem("Personlig ordlista", _open_dictionary),
         pystray.MenuItem(startup_label, _toggle_startup),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Avsluta freewispr-swedish", _quit),
