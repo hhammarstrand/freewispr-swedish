@@ -107,7 +107,8 @@ class DictationMode:
                  raw_mode: bool = False,
                  llm_timeout_sec: float = 15.0,
                  context_awareness: bool = True,
-                 learning_enabled: bool = True):
+                 learning_enabled: bool = True,
+                 app_profiles: dict | None = None):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
@@ -123,15 +124,19 @@ class DictationMode:
         self.llm_timeout_sec = llm_timeout_sec
         self.context_awareness = context_awareness
         self.learning_enabled = learning_enabled
+        self.app_profiles = app_profiles or {}
         self._active = False
         self._recording = False
         self._t_press = 0.0
         # AP2 learning loop: remember the last pasted text and read the focused
         # field's value before the next dictation to learn manual corrections.
-        # _field_reader is a best-effort callable returning the focused text
-        # (wired to context_win in AP3); None disables observation.
+        # The reader is context_win.get_focused_text (best-effort) and only
+        # wired when both context awareness and learning are on.
         self._last_pasted = ""
-        self._field_reader = None
+        self._field_reader = (
+            self._read_focused_text
+            if (context_awareness and learning_enabled) else None
+        )
         self._hook_handles: list = []
 
         # Bounded queue + dedicated worker thread. Replaces the old single-slot
@@ -201,6 +206,24 @@ class DictationMode:
             log.debug("recorder.shutdown() under stop misslyckades", exc_info=True)
 
     # ----------------------------------------------------------------- private
+
+    @staticmethod
+    def _read_focused_text() -> str:
+        """Best-effort read of the focused field (AP3 → AP2 learning)."""
+        try:
+            import context_win
+            return context_win.get_focused_text()
+        except Exception:
+            return ""
+
+    def _resolve_context(self):
+        """AP3: resolve active-app profile + on-screen names. Best-effort."""
+        try:
+            import context_win
+            return context_win.get_context(getattr(self, "app_profiles", None))
+        except Exception as e:
+            log.debug("Kontextmedvetenhet misslyckades: %s", e)
+            return None
 
     def _observe_corrections(self) -> None:
         """AP2: compare the previously pasted text against the focused field now.
@@ -377,6 +400,22 @@ class DictationMode:
                 getattr(self.transcriber, "llm_enabled", False)
                 and not getattr(self, "raw_mode", False)
             )
+
+            # AP3 context awareness: resolve app profile + on-screen names.
+            # A "code"-style profile disables polish and capitalisation; names
+            # bias the local decoder and (only when polishing) the LLM prompt.
+            profile_desc = ""
+            onscreen_names = ""
+            capitalize = True
+            if getattr(self, "context_awareness", False):
+                ctx = self._resolve_context()
+                if ctx is not None:
+                    profile_desc = ctx.profile_description
+                    onscreen_names = ctx.onscreen_names
+                    capitalize = ctx.capitalize
+                    if not ctx.polish:
+                        llm_enabled = False
+
             t_tx0 = time.monotonic()
             # The status message shown while transcription runs reflects
             # whether the user opted into a remote provider. Saying "lokalt"
@@ -391,7 +430,8 @@ class DictationMode:
                 self.on_status(f"Transkriberar {tr_label}…")
                 if self.indicator:
                     self.indicator.show(f"Transkriberar {tr_label}…", state="transcribe")
-            text = self.transcriber.transcribe(audio)
+            text = self.transcriber.transcribe(
+                audio, capitalize=capitalize, extra_hotwords=onscreen_names)
             transcribe_ms = (time.monotonic() - t_tx0) * 1000
             log.info("Resultat klart (%s)", _text_meta(text))
             if text.strip():
@@ -477,8 +517,10 @@ class DictationMode:
                     # keeps the transcriber's per-job slot clean.
                     watchdog.start()
                     try:
-                        self.transcriber.polish_async(text, _on_polish_done,
-                                                      on_stage=None)
+                        self.transcriber.polish_async(
+                            text, _on_polish_done, on_stage=None,
+                            app_profile=profile_desc,
+                            onscreen_names=onscreen_names)
                     except Exception as e:
                         log.error("polish_async kraschade synkront: %s",
                                   e, exc_info=True)

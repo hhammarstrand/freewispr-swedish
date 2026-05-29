@@ -109,6 +109,9 @@ DEFAULTS = {
     # ---- Kontextmedvetenhet (AP3) ----
     # Läs aktiv app + text nära markör för bättre egennamn/ton. Best-effort.
     "context_awareness_enabled": True,
+    # Egna app→profil-overrides (processnamn utan .exe → "casual"/"email"/
+    # "code"). Slås ihop ovanpå context_win.DEFAULT_APP_PROFILES. Tomt = inbyggda.
+    "app_profiles": {},
 
     "indicator_follow_mouse": True,
     # Lägsta RMS-nivå (0.0-1.0) som räknas som tal. Se DEFAULT_MIN_RMS i dictation.py.

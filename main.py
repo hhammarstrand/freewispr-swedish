@@ -181,6 +181,7 @@ def _make_dictation(transcriber):
         llm_timeout_sec=float(_config.get("llm_timeout_sec", 15.0)),
         context_awareness=bool(_config.get("context_awareness_enabled", True)),
         learning_enabled=bool(_config.get("learning_enabled", True)),
+        app_profiles=_config.get("app_profiles") or {},
     )
 
 

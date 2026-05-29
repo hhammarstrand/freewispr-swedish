@@ -480,7 +480,7 @@ def test_dictation_worker_does_not_paste_after_stop(monkeypatch):
 
     pasted = []
     mode = object.__new__(dictation.DictationMode)
-    mode.transcriber = SimpleNamespace(transcribe=lambda audio: "stale text")
+    mode.transcriber = SimpleNamespace(transcribe=lambda audio, **kw: "stale text")
     mode._worker_stop = __import__("threading").Event()
     mode._worker_stop.set()
     mode._active = False
@@ -506,7 +506,7 @@ def test_dictation_wait_mode_pastes_polished_not_raw(monkeypatch):
 
     pasted = []
 
-    def fake_polish_async(text, callback, on_stage=None):
+    def fake_polish_async(text, callback, on_stage=None, **kw):
         # Simulate the LLM thread: deliver polished text after a tiny delay.
         def _run():
             callback(text, "POLERAD: " + text)
@@ -514,7 +514,7 @@ def test_dictation_wait_mode_pastes_polished_not_raw(monkeypatch):
 
     mode = object.__new__(dictation.DictationMode)
     mode.transcriber = SimpleNamespace(
-        transcribe=lambda audio: "ra text",
+        transcribe=lambda audio, **kw: "ra text",
         polish_async=fake_polish_async,
         last_polish_state="llm_changed",
         llm_enabled=True,
@@ -550,13 +550,13 @@ def test_dictation_wait_mode_watchdog_pastes_raw_on_timeout(monkeypatch):
 
     pasted = []
 
-    def fake_polish_async_hang(text, callback, on_stage=None):
+    def fake_polish_async_hang(text, callback, on_stage=None, **kw):
         # Never calls back — simulating a hung LLM endpoint.
         pass
 
     mode = object.__new__(dictation.DictationMode)
     mode.transcriber = SimpleNamespace(
-        transcribe=lambda audio: "ra text",
+        transcribe=lambda audio, **kw: "ra text",
         polish_async=fake_polish_async_hang,
         last_polish_state="local",
         llm_enabled=True,
@@ -599,7 +599,7 @@ def test_dictation_no_llm_mode_pastes_raw_immediately(monkeypatch):
 
     mode = object.__new__(dictation.DictationMode)
     mode.transcriber = SimpleNamespace(
-        transcribe=lambda audio: "ra text",
+        transcribe=lambda audio, **kw: "ra text",
         polish_async=lambda *a, **kw: polish_called.append(True),
     )
     mode._worker_stop = threading.Event()

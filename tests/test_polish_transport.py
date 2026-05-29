@@ -188,7 +188,7 @@ def test_dictation_raw_mode_skips_polish(monkeypatch):
 
     mode = object.__new__(dictation.DictationMode)
     mode.transcriber = SimpleNamespace(
-        transcribe=lambda audio: "ra text",
+        transcribe=lambda audio, **kw: "ra text",
         polish_async=lambda *a, **k: polish_called.append(1),
         last_polish_state="local",
         llm_enabled=True,

@@ -178,7 +178,7 @@ _UNICODE_NORMALIZE = str.maketrans({
 })
 
 
-def _postprocess(text: str) -> str:
+def _postprocess(text: str, capitalize: bool = True) -> str:
     """Clean up Whisper output for better readability.
 
     Handles real issues that KBLab models produce:
@@ -187,6 +187,9 @@ def _postprocess(text: str) -> str:
     - Multiple punctuation in a row
     - Stray leading/trailing punctuation
     - Unicode normalization (smart quotes, dashes)
+
+    ``capitalize=False`` skips the leading-capital step — used for the AP3
+    "code/terminal" profile where forced versalisering is unwanted.
     """
     if not text:
         return text
@@ -216,8 +219,8 @@ def _postprocess(text: str) -> str:
     # 8. Collapse multiple spaces
     text = _RE_MULTISPACE.sub(' ', text).strip()
 
-    # 9. Capitalize first letter
-    if text:
+    # 9. Capitalize first letter (skipped for code/terminal profile)
+    if text and capitalize:
         text = text[0].upper() + text[1:]
 
     return text
@@ -463,11 +466,16 @@ class Transcriber:
         except Exception as e:
             log.debug("Kunde inte frigöra modell rent: %s", e)
 
-    def transcribe(self, audio: np.ndarray) -> str:
+    def transcribe(self, audio: np.ndarray, capitalize: bool = True,
+                   extra_hotwords: str = "") -> str:
         """Transcribe audio to text (local or remote) with postprocessing.
 
         Does NOT run LLM polish — use :meth:`polish_async` for that.
         Sets ``last_polish_state`` to ``"local"`` unconditionally.
+
+        ``capitalize`` / ``extra_hotwords`` come from AP3 context awareness:
+        the active app profile may disable leading-capitalisation, and on-screen
+        proper nouns are added to the local decoder's hotwords.
         """
         self.last_polish_state = "local"
         log.info("Transkriberar: %d samples, peak=%.4f, modell=%s, lang=%s, provider=%s",
@@ -475,9 +483,11 @@ class Transcriber:
                  self.model_size, self.language, self.transcription_provider)
 
         if self.transcription_provider != "local":
-            text = self._transcribe_remote(audio)
+            text = self._transcribe_remote(audio, capitalize=capitalize,
+                                           extra_prompt=extra_hotwords)
         else:
-            text = self._transcribe_local(audio)
+            text = self._transcribe_local(audio, capitalize=capitalize,
+                                          extra_hotwords=extra_hotwords)
 
         return text
 
@@ -604,9 +614,13 @@ class Transcriber:
 
         threading.Thread(target=_run, name="llm-polish", daemon=True).start()
 
-    def _transcribe_local(self, audio: np.ndarray) -> str:
+    def _transcribe_local(self, audio: np.ndarray, capitalize: bool = True,
+                          extra_hotwords: str = "") -> str:
         prompt = _INITIAL_PROMPTS.get(self.language, "")
         hotwords = _get_hotwords_cached()
+        # Merge AP3 on-screen proper nouns into the decoder hotwords.
+        if extra_hotwords:
+            hotwords = f"{hotwords}, {extra_hotwords}" if hotwords else extra_hotwords
 
         if getattr(self, "_cuda_oom", False):
             # We already hit OOM in this session; refuse fast with the same
@@ -697,11 +711,12 @@ class Transcriber:
         # Strip noise/placeholder tokens. _postprocess handles whitespace
         # collapsing further down — no need to do it twice.
         text = _NOISE_PLACEHOLDERS.sub("", raw)
-        text = _postprocess(text)
+        text = _postprocess(text, capitalize=capitalize)
         log.info("Resultat (lokal) klart (%s)", _text_meta(text))
         return text
 
-    def _transcribe_remote(self, audio: np.ndarray) -> str:
+    def _transcribe_remote(self, audio: np.ndarray, capitalize: bool = True,
+                           extra_prompt: str = "") -> str:
         """Skicka ljud till remote-leverantör.
 
         Inget fallback till lokal modell — vid fel loggas det och tom sträng
@@ -738,6 +753,6 @@ class Transcriber:
 
         log.info("Rå text mottagen (%s)", _text_meta(raw))
         text = _NOISE_PLACEHOLDERS.sub("", raw)
-        text = _postprocess(text)
+        text = _postprocess(text, capitalize=capitalize)
         log.info("Resultat (remote) klart (%s)", _text_meta(text))
         return text
