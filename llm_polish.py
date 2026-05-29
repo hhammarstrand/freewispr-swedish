@@ -467,6 +467,7 @@ def polish(
     corrections: dict[str, str] | None = None,
     app_profile: str = "",
     onscreen_names: str = "",
+    expect_english_terms: bool = False,
 ) -> PolishResult:
     """Skicka text genom vald leverantör. Returnerar alltid något användbart.
 
@@ -497,6 +498,12 @@ def polish(
     reference = build_reference_block(
         context_text, corrections, app_profile, onscreen_names,
     )
+    if expect_english_terms:
+        # AP7.5: keep English tech terms in correct English form.
+        directive = ("Behåll engelska facktermer i korrekt engelsk form "
+                     "(t.ex. \"deploy\", \"staging\", \"pull request\") — "
+                     "översätt dem inte till svenska.")
+        reference = f"{reference}\n\n{directive}" if reference else directive
 
     t0 = time.perf_counter()
     try:

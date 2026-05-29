@@ -284,6 +284,16 @@ def _get_device_and_compute(use_cuda: bool, compute_type_override: str = "") -> 
 # Initial prompts guide Whisper toward the right language and style.
 # This dramatically improves first-word accuracy and reduces hallucinations.
 # Include a few natural Swedish phrases to anchor the decoder.
+# AP7.5: common English tech terms to bias toward when expect_english_terms is
+# on (a mitigation — KBLab is Swedish-trained, so this can't fully fix English
+# acoustics, only nudge spelling/recognition).
+_ENGLISH_TERMS = (
+    "deploy, deploya, staging, production, pull request, commit, committa, "
+    "merge, mergea, branch, rebase, backend, frontend, framework, endpoint, "
+    "release, deadline, feature, bug, debugga, review, pipeline, container, "
+    "Kubernetes, Docker, Python, JavaScript, TypeScript, repository"
+)
+
 _INITIAL_PROMPTS = {
     "sv": (
         "Hej, det här är en diktering på svenska."
@@ -364,7 +374,8 @@ class Transcriber:
                  no_speech_threshold: float = 0.6,
                  compute_type: str = "",
                  kblab_revision: str = "default",
-                 transcription_temperature: float = 0.0):
+                 transcription_temperature: float = 0.0,
+                 expect_english_terms: bool = False):
         MODEL_DIR.mkdir(parents=True, exist_ok=True)
         self.language = language
         self.llm_enabled = llm_enabled
@@ -384,6 +395,7 @@ class Transcriber:
         self.compute_type_override = compute_type
         self.kblab_revision = kblab_revision or "default"
         self.transcription_temperature = transcription_temperature
+        self.expect_english_terms = expect_english_terms
         self.on_stage = None
 
         # L3: keep the LLM connection warm so the first polish doesn't pay a
@@ -646,6 +658,8 @@ class Transcriber:
                         corrections=corrections,
                         app_profile=app_profile,
                         onscreen_names=onscreen_names,
+                        expect_english_terms=getattr(
+                            self, "expect_english_terms", False),
                     )
                 except Exception as e:
                     log.warning("LLM-polish kraschade: %s", e, exc_info=True)
@@ -694,6 +708,9 @@ class Transcriber:
         # Merge AP3 on-screen proper nouns into the decoder hotwords.
         if extra_hotwords:
             hotwords = f"{hotwords}, {extra_hotwords}" if hotwords else extra_hotwords
+        # AP7.5: bias toward common English tech terms when opted in.
+        if getattr(self, "expect_english_terms", False):
+            hotwords = f"{hotwords}, {_ENGLISH_TERMS}" if hotwords else _ENGLISH_TERMS
 
         if getattr(self, "_cuda_oom", False):
             # We already hit OOM in this session; refuse fast with the same
@@ -827,6 +844,7 @@ class Transcriber:
             _INITIAL_PROMPTS.get(self.language, ""),
             _get_hotwords_cached() or "",
             extra_prompt or "",
+            _ENGLISH_TERMS if getattr(self, "expect_english_terms", False) else "",
         ]
         prompt = " ".join(p for p in bias_parts if p).strip()
         temperature = getattr(self, "transcription_temperature", 0.0)

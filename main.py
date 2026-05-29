@@ -172,6 +172,7 @@ def _make_transcriber(model_size: str, use_cuda: bool):
         compute_type=str(_config.get("whisper_compute_type", "")),
         kblab_revision=str(_config.get("kblab_revision", "default")),
         transcription_temperature=float(_config.get("transcription_temperature", 0.0)),
+        expect_english_terms=bool(_config.get("expect_english_terms", False)),
     )
 
 
@@ -201,6 +202,7 @@ def _make_dictation(transcriber):
         command_mode_enabled=bool(_config.get("command_mode_enabled", True)),
         llm_replace_mode=bool(_config.get("llm_replace_mode", False)),
         cancel_hotkey=_config.get("cancel_hotkey", "esc"),
+        snippets_enabled=bool(_config.get("snippets_enabled", True)),
     )
 
 
@@ -714,6 +716,12 @@ def _toggle_pause(_=None):
     _rebuild_menu()
 
 
+def _undo_last(_=None):
+    """AP7.7: erase the last pasted block."""
+    if _dictation is not None:
+        _dictation.undo_last()
+
+
 def _build_menu():
     startup_label = "✓ Starta med Windows" if _is_startup_enabled() else "Starta med Windows"
     items = [
@@ -725,6 +733,7 @@ def _build_menu():
     if _dictation is not None:
         pause_label = "Återuppta diktering" if _dictation_paused() else "Pausa diktering"
         items.append(pystray.MenuItem(pause_label, _toggle_pause))
+        items.append(pystray.MenuItem("Ångra senaste", _undo_last))
     if _config.get("flow_mode_enabled", False):
         flow_label = "✓ Flow-läge" if _flow_active() else "Flow-läge"
         items.append(pystray.MenuItem(flow_label, _toggle_flow))

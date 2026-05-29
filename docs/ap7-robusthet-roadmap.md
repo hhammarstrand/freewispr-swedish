@@ -1,6 +1,6 @@
 # FreeWispr-Swedish — AP7: robusthet & saknade funktioner
 
-> **Status: TODO / planerad.** Nästa pass efter AP1–AP6 (PR #25) och latens-passet
+> **Status: implementerad.** Nästa pass efter AP1–AP6 (PR #25) och latens-passet
 > L0–L4 (PR #26). Robusthet + funktioner som saknas mot ett komplett
 > dikteringsverktyg. Plockas i prioordning (7.1, 7.4, 7.8 först — hög nytta/låg
 > risk). Kodankare (`fil:funktion`) verifierade mot nuvarande `master`.
@@ -30,7 +30,7 @@ funktioner är **opt-in** där de ändrar nuvarande beteende.
 **Mål:** förhindra två samtidiga instanser (dubbla hotkeys, *två* Whisper-modeller
 i VRAM → OOM, urklippskonflikt).
 
-- [ ] I `main.py:main()` (~rad 723, före tray/dictation-init): ta ett
+- [x] I `main.py:main()` (~rad 723, före tray/dictation-init): ta ett
       single-instance-lås. Windows: namngiven mutex via
       `ctypes.windll.kernel32.CreateMutexW(None, False, "freewispr-swedish")` +
       kontrollera `GetLastError() == 183` (`ERROR_ALREADY_EXISTS`); alternativt
@@ -50,14 +50,14 @@ i VRAM → OOM, urklippskonflikt).
 **Mål:** sluta skriva över användarens urklipp permanent (nuvarande beteende
 lämnar dikterad text kvar — bekräftat avsiktligt som CLI-fallback).
 
-- [ ] `paste.py:_paste_and_keep_clipboard` (~rad 56): ny config
+- [x] `paste.py:_paste_and_keep_clipboard` (~rad 56): ny config
       `restore_clipboard` (bool). På: spara tidigare urklipp före
       `pyperclip.copy(...)` och återställ efter kort delay (~300–500 ms, så
       syntetisk Ctrl+V hinner landa). Av: nuvarande beteende oförändrat.
-- [ ] Hantera icke-text-urklipp (bilder) elegant: `pyperclip` är textbaserat — om
+- [x] Hantera icke-text-urklipp (bilder) elegant: `pyperclip` är textbaserat — om
       tidigare innehåll inte var text, hoppa över återställning (eller använd
       `win32clipboard` för full fidelitet). Best-effort, krascha aldrig.
-- [ ] Dokumentera att `restore_clipboard=on` tar bort "klistra manuellt"-fallbacken
+- [x] Dokumentera att `restore_clipboard=on` tar bort "klistra manuellt"-fallbacken
       i terminaler.
 
 **Acceptanskriterier**
@@ -75,7 +75,7 @@ lämnar dikterad text kvar — bekräftat avsiktligt som CLI-fallback).
 `int(len(text)*1.6)+64`). `len` är tecken men `max_tokens` är tokens → ~4–5× för
 stort för svenska.
 
-- [ ] Byt till token-uppskattning (t.ex. `tecken/3 * 1.3 + headroom`) eller ett
+- [x] Byt till token-uppskattning (t.ex. `tecken/3 * 1.3 + headroom`) eller ett
       vettigt absolut tak (`min(generöst_tak, uppskattning)`). Behåll marginal så
       legitim output aldrig trunkeras. Lämna `warm()`-anropets `max_tokens: 1`
       (~rad 568) orört.
@@ -91,11 +91,11 @@ stort för svenska.
 
 **Mål:** låt användaren slänga en diktering så inget transkriberas/klistras.
 
-- [ ] `dictation.py`: registrera en Esc-hanterare som bara är aktiv medan
+- [x] `dictation.py`: registrera en Esc-hanterare som bara är aktiv medan
       `_recording` (no-op annars, så normal Esc inte störs). Vid Esc: sätt
       `_cancel`-flagga, kasta ljudbufferten (`recorder.abort()`), köa **inget** jobb.
-- [ ] Avbryt under LLM-vänteläget avbryter watchdog + hoppar paste.
-- [ ] Indikator visar "Avbruten". Avbryt-tangenten konfigurerbar (default Esc).
+- [x] Avbryt under LLM-vänteläget avbryter watchdog + hoppar paste.
+- [x] Indikator visar "Avbruten". Avbryt-tangenten konfigurerbar (default Esc).
 
 **Acceptanskriterier**
 - Esc under inspelning → ingen paste och inget jobb köat; Esc utan inspelning →
@@ -109,7 +109,7 @@ stort för svenska.
 **Mål:** stäng av diktering tillfälligt utan att avsluta (lösenord, spel,
 skärmdelning).
 
-- [ ] `main.py:_build_menu` (~rad 686): ny post "Pausa diktering" / "Återuppta".
+- [x] `main.py:_build_menu` (~rad 686): ny post "Pausa diktering" / "Återuppta".
       Togglar `paused`-tillstånd på `DictationMode` (t.ex. `set_paused(bool)` som
       gör `_on_press` till no-op, eller av-/på-registrerar hotkeyen). Spegla i
       tray-etikett + indikator. Session-tillstånd, default igång (persistas inte).
@@ -127,12 +127,12 @@ skärmdelning).
 svensktränad → akustisk mangling av engelska kan inte elimineras helt; dokumentera
 det ärligt.
 
-- [ ] Ny config `expect_english_terms` (bool). På:
+- [x] Ny config `expect_english_terms` (bool). På:
   - förstärk `transcriber.py`-bias (`initial_prompt`/hotwords) med vanliga
     engelska facktermer,
   - utöka polish-prompten i `llm_polish.py` med instruktion att behålla engelska
     facktermer i korrekt form.
-- [ ] Valfritt: tillåt `language=None`/auto på *remote*-pathen för providers som
+- [x] Valfritt: tillåt `language=None`/auto på *remote*-pathen för providers som
       stödjer autodetektering (skopa till remote/custom; lokal KBLab gynnas inte).
 
 **Acceptanskriterier**
@@ -147,12 +147,12 @@ det ärligt.
 **Mål:** dynamisk trigger→expansion (t.ex. "min signatur" → mejlfot), borttaget i
 commit `8ed9942`.
 
-- [ ] Ny `snippets.py`: trigger→expansion-par i
+- [x] Ny `snippets.py`: trigger→expansion-par i
       `~/.freewispr-swedish/snippets.json` (atomärt via `json_store`). Applicera i
       pipelinen på **slutlig** text, exakt-/normaliserad matchning på ledande fras
       (förutsägbart, likt kommandoläget). Håll åtskilt från inlärningsloopen
       (rättelser) och `personal_context` (referenstext).
-- [ ] UI i Inställningar för att lägga till/redigera/ta bort.
+- [x] UI i Inställningar för att lägga till/redigera/ta bort.
 
 **Acceptanskriterier**
 - Konfigurerad snippet expanderar vid diktering; redigera/ta bort i Inställningar
@@ -165,10 +165,10 @@ commit `8ed9942`.
 
 **Mål:** (a) se/redigera/ta bort inlärda rättelser; (b) ångra senaste diktering.
 
-- [ ] Inställningar: flik som listar `learning.load_corrections()` (~rad 110) med
+- [x] Inställningar: flik som listar `learning.load_corrections()` (~rad 110) med
       radvis ta-bort + "rensa alla" (`learning.clear_learned()` ~rad 173) +
       lägg till/redigera. Mest UI-koppling till befintlig `learning.py`.
-- [ ] Ångra: spåra senaste blocket + dess längd; hotkey/tray-post "Ångra senaste"
+- [x] Ångra: spåra senaste blocket + dess längd; hotkey/tray-post "Ångra senaste"
       som backspacar senaste inklistrade blocket via `paste.py:replace_len` med tom
       ersättning. Best-effort (antar att markören står kvar efter pastet).
 

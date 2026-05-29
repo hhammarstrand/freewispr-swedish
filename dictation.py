@@ -166,7 +166,8 @@ class DictationMode:
                  app_profiles: dict | None = None,
                  command_mode_enabled: bool = True,
                  llm_replace_mode: bool = False,
-                 cancel_hotkey: str = "esc"):
+                 cancel_hotkey: str = "esc",
+                 snippets_enabled: bool = True):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
@@ -190,6 +191,7 @@ class DictationMode:
         # state, not persisted — hotkey becomes a no-op while paused).
         self.cancel_hotkey = cancel_hotkey
         self._cancel_trigger, _ = _parse_hotkey(cancel_hotkey)
+        self.snippets_enabled = snippets_enabled
         self._paused = False
         self._active = False
         self._recording = False
@@ -249,6 +251,23 @@ class DictationMode:
             except Exception as e:
                 log.debug("Kunde inte registrera avbryt-tangent: %s", e)
         self.on_status(f"Klar — håll {self.hotkey.upper()} för att prata")
+
+    def undo_last(self) -> bool:
+        """AP7.7: erase the most recently pasted block (best-effort)."""
+        block = getattr(self, "_last_block", "")
+        if not block:
+            return False
+        from paste import erase_last
+        # +1 for the trailing space paste_text appends.
+        erase_last(len(block) + 1)
+        self._last_block = ""
+        self._last_pasted = ""
+        self.on_status("Ångrade senaste")
+        if self.indicator:
+            self.indicator.show("Ångrade", state="done")
+            self.indicator.hide(delay_ms=1200)
+        log.info("Ångrade senaste blocket (%d tecken)", len(block))
+        return True
 
     def set_paused(self, paused: bool) -> None:
         """AP7.3: pause/resume dictation without quitting (session state)."""
@@ -402,6 +421,16 @@ class DictationMode:
                 app_profile=profile_desc, onscreen_names=onscreen_names)
         except Exception as e:
             log.error("polish_async (rå→ersätt) kraschade: %s", e, exc_info=True)
+
+    @staticmethod
+    def _expand_snippet(text: str) -> str:
+        """AP7.6: expand a leading snippet trigger. Returns text unchanged on
+        no match / any failure."""
+        try:
+            import snippets
+            return snippets.expand(text)
+        except Exception:
+            return text
 
     @staticmethod
     def _read_focused_text() -> str:
@@ -749,6 +778,25 @@ class DictationMode:
                         and getattr(self, "_last_block", "")
                         and self._try_command(text)):
                     return
+
+                # AP7.6 snippets: expand a leading trigger phrase. A canned
+                # expansion is pasted directly (no polish reformatting).
+                if getattr(self, "snippets_enabled", False):
+                    expanded = self._expand_snippet(text)
+                    if expanded != text:
+                        t_p0 = time.monotonic()
+                        paste_text(expanded, active_modifiers=self._modifier_keys)
+                        self._last_pasted = expanded
+                        self._last_block = expanded
+                        self._log_latency(record_ms, transcribe_ms, 0.0,
+                                          (time.monotonic() - t_p0) * 1000,
+                                          context_hotpath_ms=context_hotpath_ms,
+                                          uia_ms=uia_ms)
+                        self.on_status(f"Snippet — håll {self.hotkey.upper()} igen")
+                        if self.indicator:
+                            self.indicator.show("Snippet", state="done")
+                            self.indicator.hide(delay_ms=1500)
+                        return
 
                 # L3 "rå → ersätt": paste raw now, replace with polished later.
                 # Reaches here only for editable fields (code/terminal profiles

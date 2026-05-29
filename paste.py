@@ -137,6 +137,26 @@ def _paste_and_keep_clipboard_async(text: str, replace_len: int = 0):
     _paste_queue.put((text, replace_len))
 
 
+def erase_last(n: int) -> None:
+    """AP7.7 undo: backspace over the last pasted block (no re-paste).
+
+    Best-effort, assumes the caret is still right after the block. Runs on a
+    daemon thread so it never blocks the caller.
+    """
+    if n <= 0:
+        return
+
+    def _run():
+        with _PASTE_LOCK:
+            try:
+                for _ in range(n):
+                    keyboard.send("backspace")
+            except Exception as e:
+                log.warning("Kunde inte ångra senaste blocket: %s", e)
+
+    threading.Thread(target=_run, daemon=True, name="undo-erase").start()
+
+
 def paste_text(text: str, active_modifiers: tuple[str, ...] = (),
                replace_len: int = 0):
     """Paste text at the current cursor position.

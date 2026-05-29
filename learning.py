@@ -170,6 +170,20 @@ def learn_from_observation(pasted: str, observed: str) -> list[tuple[str, str]]:
     return pairs
 
 
+def set_corrections(mapping: dict[str, str]) -> None:
+    """Overwrite the learned corrections (AP7.7 settings editor).
+
+    Cleans empty/identity pairs. Used by the corrections UI to apply edits and
+    deletions; existing terms not in *mapping* are removed.
+    """
+    clean = {str(k).strip(): str(v).strip()
+             for k, v in (mapping or {}).items()
+             if str(k).strip() and str(v).strip()}
+    with _lock:
+        _store.save(clean)
+    log.info("Rättelser uppdaterade (%d par)", len(clean))
+
+
 def clear_learned() -> None:
     """Empty the learned corrections dictionary ("rensa inlärt").
 
