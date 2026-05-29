@@ -1,0 +1,23 @@
+# Code owners — auto-request review when matching files change.
+#
+# Solo project. Everything maps to @hhammarstrand so PRs auto-request
+# review even when someone else opens them later. Listed paths are
+# illustrative; the wildcard at the bottom is the actual catch-all.
+
+# Security-sensitive boundaries — anyone touching these should think twice.
+text_sanitize.py        @hhammarstrand
+url_security.py         @hhammarstrand
+config.py               @hhammarstrand
+
+# Hot path — latency-sensitive, used at every key-press.
+dictation.py            @hhammarstrand
+audio.py                @hhammarstrand
+transcriber.py          @hhammarstrand
+paste.py                @hhammarstrand
+
+# CI and build pipeline.
+.github/                @hhammarstrand
+build.bat               @hhammarstrand
+
+# Catch-all.
+*                       @hhammarstrand
