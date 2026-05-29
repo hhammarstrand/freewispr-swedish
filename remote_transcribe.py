@@ -178,11 +178,17 @@ def transcribe(
     language: str = "sv",
     base_url_override: str = "",
     timeout_sec: float = 60.0,
+    prompt: str = "",
+    temperature: float | None = None,
 ) -> str:
     """Skicka ljud till remote-leverantör. Returnerar transkriberad text.
 
     Höjer ``RemoteTranscribeError`` vid valfritt fel — anroparen ansvarar för
     att inte krascha appen.
+
+    AP4: ``prompt`` (biasing-sträng) och ``temperature`` skickas med när de
+    anges. OpenAI-kompatibla transkriberings-API:er stödjer dessa fält; en
+    leverantör som ignorerar dem gör helt enkelt no-op.
     """
     if audio is None or audio.size == 0:
         return ""
@@ -201,6 +207,14 @@ def transcribe(
     fields = {"model": used_model}
     if language:
         fields["language"] = language
+    if prompt:
+        # Whisper prompt budget is ~224 tokens; keep it short.
+        fields["prompt"] = prompt[:800]
+        log.info("Remote transcribe inkluderar prompt (%d tecken) — "
+                 "leverantörer som inte stödjer det ignorerar fältet",
+                 len(fields["prompt"]))
+    if temperature is not None:
+        fields["temperature"] = str(temperature)
 
     body, content_type = _build_multipart(fields, wav_bytes)
     headers = {

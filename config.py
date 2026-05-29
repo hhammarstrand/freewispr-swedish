@@ -101,6 +101,16 @@ DEFAULTS = {
     # Explicit consent: ljudet skickas över nätet vid remote-transkribering.
     "transcription_privacy_accepted": False,
 
+    # ---- Transkriberings-biasing (AP4) ----
+    # Lokal faster-whisper: avkodnings-/biaseringsparametrar.
+    "whisper_beam_size": 1,            # 1 = greedy (snabbast); 5 = noggrannare
+    "whisper_vad_filter": True,        # Silero VAD klipper tystnad/hallucination
+    "whisper_no_speech_threshold": 0.6,
+    "whisper_compute_type": "",        # "" = auto (float16 CUDA / int8 CPU)
+    "kblab_revision": "default",       # default | strict | subtitle (CT2-fallback)
+    # Remote OpenAI-kompatibel path: temperatur (prompt byggs automatiskt).
+    "transcription_temperature": 0.0,
+
     # ---- Inlärningsloop (AP2) ----
     # Lär dig term-par när användaren rättar inklistrad text. Påverkar bara
     # *inspelning* av nya rättelser; redan inlärda injiceras alltid i polish.

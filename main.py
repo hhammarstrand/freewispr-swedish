@@ -165,6 +165,12 @@ def _make_transcriber(model_size: str, use_cuda: bool):
         transcription_api_key=tr_key,
         transcription_model=tr_model,
         transcription_base_url=tr_base,
+        beam_size=int(_config.get("whisper_beam_size", 1)),
+        vad_filter=bool(_config.get("whisper_vad_filter", True)),
+        no_speech_threshold=float(_config.get("whisper_no_speech_threshold", 0.6)),
+        compute_type=str(_config.get("whisper_compute_type", "")),
+        kblab_revision=str(_config.get("kblab_revision", "default")),
+        transcription_temperature=float(_config.get("transcription_temperature", 0.0)),
     )
 
 

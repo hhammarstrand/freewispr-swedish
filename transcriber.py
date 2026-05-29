@@ -22,7 +22,7 @@ def _text_meta(text: str) -> str:
     return f"chars={len(text)}, words={words}"
 
 
-def _find_local_model(repo_name: str) -> str | None:
+def _find_local_model(repo_name: str, revision: str = "default") -> str | None:
     """Return local snapshot path if the model is already downloaded.
 
     Checks two locations in order:
@@ -33,10 +33,30 @@ def _find_local_model(repo_name: str) -> str | None:
       2. HuggingFace snapshot:
          MODEL_DIR/models--<org>--<name>/snapshots/<hash>/model.bin
          These may need vocabulary patching for large/medium models.
+
+    AP4: when ``revision`` is a KBLab style variant (``strict``/``subtitle``),
+    a separate CT2 build at ``{short_name}-{revision}-ct2`` is preferred. If
+    that build is missing we log and fall back to the default model — we never
+    silently use a different decode style than requested without the user's
+    converted artefact present.
     """
-    # 1. Check for manually converted ct2 model first
     # repo_name is e.g. "KBLab/kb-whisper-large" → extract "kb-whisper-large"
     short_name = repo_name.split("/")[-1] if "/" in repo_name else repo_name
+
+    revision = (revision or "default").strip().lower()
+    if revision in ("strict", "subtitle"):
+        rev_dir = MODEL_DIR / f"{short_name}-{revision}-ct2"
+        if rev_dir.exists() and (rev_dir / "model.bin").exists():
+            log.info("Använder KBLab-revision '%s' ct2-modell: %s",
+                     revision, rev_dir)
+            return str(rev_dir)
+        log.warning(
+            "CT2-bygge för revision '%s' saknas (%s) — faller tillbaka till "
+            "default. Kör 'python convert_model.py %s --revision %s' för att "
+            "skapa det.", revision, rev_dir, short_name, revision,
+        )
+
+    # 1. Check for manually converted ct2 model first
     ct2_dir = MODEL_DIR / f"{short_name}-ct2"
     if ct2_dir.exists() and (ct2_dir / "model.bin").exists():
         log.info("Hittade konverterad ct2-modell: %s", ct2_dir)
@@ -235,20 +255,24 @@ def _check_cuda() -> bool:
         return False
 
 
-def _get_device_and_compute(use_cuda: bool) -> tuple:
+def _get_device_and_compute(use_cuda: bool, compute_type_override: str = "") -> tuple:
     """
     Determine device and compute type based on CUDA setting.
     Returns (device, compute_type, cuda_used).
+
+    ``compute_type_override`` (AP4) lets the user pin e.g. ``int8_float16`` on
+    CUDA or ``int8`` on CPU. Empty string keeps the safe auto defaults.
     """
     cuda_available = _check_cuda()
+    override = (compute_type_override or "").strip()
 
     if use_cuda and cuda_available:
-        return ("cuda", "float16", True)
+        return ("cuda", override or "float16", True)
     elif use_cuda and not cuda_available:
         log.warning("CUDA begärt men ingen GPU hittades. Använder CPU.")
-        return ("cpu", "int8", False)
+        return ("cpu", override or "int8", False)
     else:
-        return ("cpu", "int8", False)
+        return ("cpu", override or "int8", False)
 
 
 # Initial prompts guide Whisper toward the right language and style.
@@ -328,7 +352,13 @@ class Transcriber:
                  transcription_provider: str = "local",
                  transcription_api_key: str = "",
                  transcription_model: str = "",
-                 transcription_base_url: str = ""):
+                 transcription_base_url: str = "",
+                 beam_size: int = 1,
+                 vad_filter: bool = True,
+                 no_speech_threshold: float = 0.6,
+                 compute_type: str = "",
+                 kblab_revision: str = "default",
+                 transcription_temperature: float = 0.0):
         MODEL_DIR.mkdir(parents=True, exist_ok=True)
         self.language = language
         self.llm_enabled = llm_enabled
@@ -340,6 +370,14 @@ class Transcriber:
         self.transcription_api_key = transcription_api_key
         self.transcription_model = transcription_model
         self.transcription_base_url = transcription_base_url
+        # AP4 backend-aware biasing/decoding knobs (local faster-whisper only;
+        # remote OpenAI-compatible path uses temperature + prompt).
+        self.beam_size = beam_size
+        self.vad_filter = vad_filter
+        self.no_speech_threshold = no_speech_threshold
+        self.compute_type_override = compute_type
+        self.kblab_revision = kblab_revision or "default"
+        self.transcription_temperature = transcription_temperature
         self.on_stage = None
 
         # When the user has opted into a remote transcription provider, the
@@ -366,8 +404,9 @@ class Transcriber:
 
         # ---- Local Whisper path ----
         model_name = KBLAB_MODELS.get(model_size, model_size)
-        model_path = _find_local_model(model_name)
-        device, compute_type, cuda_used = _get_device_and_compute(use_cuda)
+        model_path = _find_local_model(model_name, self.kblab_revision)
+        device, compute_type, cuda_used = _get_device_and_compute(
+            use_cuda, self.compute_type_override)
 
         # Fail-closed when the model isn't cached locally: faster-whisper would
         # otherwise silently reach out to huggingface.co. That's a privacy
@@ -630,11 +669,19 @@ class Transcriber:
                 "Starta om för att försöka igen."
             )
 
+        # AP4: configurable decoding/biasing (read via getattr so object.__new__
+        # test instances without these attributes keep the safe defaults).
+        beam_size = getattr(self, "beam_size", 1)
+        no_speech_threshold = getattr(self, "no_speech_threshold", 0.6)
+        vad_enabled = getattr(self, "vad_filter", True)
+        # When VAD is on, try it first then fall back to no-VAD on error; when
+        # off, only run the plain pass.
+        vad_attempts = (True, False) if vad_enabled else (False,)
+
         raw = ""
-        # Try with VAD first, fall back to without on error.
         # segments is a lazy generator, so the error surfaces during
         # iteration, not at the transcribe() call itself.
-        for use_vad in (True, False):
+        for use_vad in vad_attempts:
             try:
                 with self._model_lock:
                     model = self.model
@@ -645,7 +692,7 @@ class Transcriber:
                         language=self.language,
                         # Greedy decoding (beam_size=1) — ~2× faster than beam_size=5
                         # with negligible WER difference on short dictation utterances.
-                        beam_size=1,
+                        beam_size=beam_size,
                         best_of=1,
                         vad_filter=use_vad,
                         # 500 ms keeps legitimate natural pauses intact;
@@ -654,6 +701,9 @@ class Transcriber:
                         initial_prompt=prompt or None,
                         condition_on_previous_text=False,
                         without_timestamps=True,
+                        # Drop segments the model is confident are silence —
+                        # reduces hallucination on quiet/noisy audio.
+                        no_speech_threshold=no_speech_threshold,
                         # Decoder optimizations — zero latency cost:
                         # Mild penalty on repeated tokens (prevents "det det det")
                         repetition_penalty=1.1,
@@ -732,6 +782,17 @@ class Transcriber:
             except Exception:
                 pass
 
+        # AP4: bias the remote OpenAI-compatible decoder with a prompt built
+        # from the language anchor + hotwords + on-screen names. Providers that
+        # ignore `prompt` simply no-op on it.
+        bias_parts = [
+            _INITIAL_PROMPTS.get(self.language, ""),
+            _get_hotwords_cached() or "",
+            extra_prompt or "",
+        ]
+        prompt = " ".join(p for p in bias_parts if p).strip()
+        temperature = getattr(self, "transcription_temperature", 0.0)
+
         try:
             raw = rt.transcribe(
                 audio,
@@ -741,6 +802,8 @@ class Transcriber:
                 model=self.transcription_model,
                 language=self.language,
                 base_url_override=self.transcription_base_url,
+                prompt=prompt,
+                temperature=temperature,
             )
         except rt.RemoteTranscribeError as e:
             log.warning("Remote-transkribering misslyckades: %s", e)
