@@ -41,6 +41,8 @@ def test_local_transcribe_passes_configured_decode_params(transcriber):
     assert captured["beam_size"] == 5
     assert captured["vad_filter"] is False          # vad disabled → single pass
     assert captured["no_speech_threshold"] == 0.3
+    # L4: single-shot dictation must not condition on previous text.
+    assert captured["condition_on_previous_text"] is False
 
 
 def test_local_transcribe_merges_extra_hotwords(transcriber, monkeypatch):
@@ -69,12 +71,15 @@ def test_local_transcribe_merges_extra_hotwords(transcriber, monkeypatch):
 
 def test_compute_type_override(transcriber, monkeypatch):
     monkeypatch.setattr(transcriber, "_check_cuda", lambda: True)
-    device, compute, cuda = transcriber._get_device_and_compute(True, "int8_float16")
+    device, compute, cuda = transcriber._get_device_and_compute(True, "float16")
     assert device == "cuda"
-    assert compute == "int8_float16"
-    # Empty override keeps the safe default.
+    assert compute == "float16"
+    # Empty override → CUDA default is now int8_float16 (L4).
     _, compute2, _ = transcriber._get_device_and_compute(True, "")
-    assert compute2 == "float16"
+    assert compute2 == "int8_float16"
+    # CPU default stays int8.
+    _, compute3, cuda3 = transcriber._get_device_and_compute(False, "")
+    assert compute3 == "int8" and cuda3 is False
 
 
 def test_revision_falls_back_to_default_when_build_missing(transcriber, tmp_path,
@@ -108,21 +113,12 @@ def test_remote_transcribe_sends_prompt_and_temperature(monkeypatch):
     rt = importlib.reload(importlib.import_module("remote_transcribe"))
     captured = {}
 
-    class FakeResponse:
-        def __enter__(self):
-            return self
+    def fake_request(url, headers, payload=None, method="POST", timeout=8.0,
+                     stream=False, parse="json"):
+        captured["body"] = payload
+        return b'{"text": "hej"}'
 
-        def __exit__(self, *a):
-            return False
-
-        def read(self):
-            return b'{"text": "hej"}'
-
-    def fake_urlopen(req, timeout=None):
-        captured["body"] = req.data
-        return FakeResponse()
-
-    monkeypatch.setattr(rt.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(rt.http_pool, "request", fake_request)
 
     audio = np.ones(8000, dtype=np.float32) * 0.2
     out = rt.transcribe(audio, 16000, provider="staik", api_key="sk-st",

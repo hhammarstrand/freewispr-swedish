@@ -66,7 +66,8 @@ def test_call_api_payload_uses_token_budget_and_stream(monkeypatch):
     assert body["stream"] is True
     assert captured["stream"] is True
     assert body["max_tokens"] == max(64, int(len("hejsan") * 1.3) + 32)
-    assert "REF-BLOCK" in body["messages"][0]["content"]
+    # Reference is in its own message (static prefix stays cacheable, L3).
+    assert any("REF-BLOCK" in m["content"] for m in body["messages"])
     assert captured["url"] == "https://x.example/v1/chat/completions"
 
 
@@ -118,10 +119,14 @@ def test_polish_passes_full_reference_block(monkeypatch):
 # --------------------------------------------------------------------------- #
 
 def test_http_request_raises_httperror_on_4xx(monkeypatch):
-    llm = importlib.reload(importlib.import_module("llm_polish"))
+    import urllib.error
+    hp = importlib.reload(importlib.import_module("http_pool"))
 
     class Conn:
         timeout = 0
+
+        def connect(self):
+            pass
 
         def request(self, *a, **k):
             pass
@@ -132,22 +137,24 @@ def test_http_request_raises_httperror_on_4xx(monkeypatch):
         def close(self):
             pass
 
-    monkeypatch.setattr(llm, "_connection_for",
-                        lambda url, timeout: (("https", "x", 443), Conn()))
-    monkeypatch.setattr(llm, "_drop_connection", lambda key: None)
+    monkeypatch.setattr(hp, "connection_for",
+                        lambda url, timeout: (("https", "x", 443), Conn(), False))
+    monkeypatch.setattr(hp, "drop_connection", lambda key: None)
 
-    with pytest.raises(llm.urllib.error.HTTPError) as exc:
-        llm._http_request("https://x/v1/chat/completions", {}, b"{}",
-                          "POST", 5.0, stream=False)
+    with pytest.raises(urllib.error.HTTPError) as exc:
+        hp.request("https://x/v1/chat/completions", {}, b"{}", "POST", 5.0)
     assert exc.value.code == 401
 
 
 def test_http_request_retries_once_on_stale_connection(monkeypatch):
-    llm = importlib.reload(importlib.import_module("llm_polish"))
+    hp = importlib.reload(importlib.import_module("http_pool"))
     calls = {"n": 0}
 
     class Conn:
         timeout = 0
+
+        def connect(self):
+            pass
 
         def request(self, *a, **k):
             pass
@@ -163,14 +170,40 @@ def test_http_request_retries_once_on_stale_connection(monkeypatch):
             pass
 
     conn = Conn()
-    monkeypatch.setattr(llm, "_connection_for",
-                        lambda url, timeout: (("https", "x", 443), conn))
-    monkeypatch.setattr(llm, "_drop_connection", lambda key: None)
+    monkeypatch.setattr(hp, "connection_for",
+                        lambda url, timeout: (("https", "x", 443), conn, True))
+    monkeypatch.setattr(hp, "drop_connection", lambda key: None)
 
-    out = llm._http_request("https://x/v1/chat/completions", {}, b"{}",
-                            "POST", 5.0, stream=False)
+    out = hp.request("https://x/v1/chat/completions", {}, b"{}", "POST", 5.0)
     assert out == {"ok": 1}
     assert calls["n"] == 2
+
+
+def test_http_pool_records_conn_reused_stats(monkeypatch):
+    hp = importlib.reload(importlib.import_module("http_pool"))
+
+    class Conn:
+        timeout = 0
+
+        def connect(self):
+            pass
+
+        def request(self, *a, **k):
+            pass
+
+        def getresponse(self):
+            return _FakeResp(status=200, body=b'{"ok":1}')
+
+        def close(self):
+            pass
+
+    # reused=True → conn_ms stays 0 and connect() is skipped.
+    monkeypatch.setattr(hp, "connection_for",
+                        lambda url, timeout: (("https", "x", 443), Conn(), True))
+    monkeypatch.setattr(hp, "drop_connection", lambda key: None)
+    hp.request("https://x/v1/chat/completions", {}, b"{}", "POST", 5.0)
+    assert hp.last_stats()["conn_reused"] is True
+    assert hp.last_stats()["conn_ms"] == 0.0
 
 
 # --------------------------------------------------------------------------- #
@@ -178,9 +211,12 @@ def test_http_request_retries_once_on_stale_connection(monkeypatch):
 # --------------------------------------------------------------------------- #
 
 def test_dictation_raw_mode_skips_polish(monkeypatch):
+    import sys
     import threading
 
     import numpy as np
+    monkeypatch.setitem(sys.modules, "faster_whisper",
+                        SimpleNamespace(WhisperModel=object))
     dictation = importlib.reload(importlib.import_module("dictation"))
 
     pasted = []

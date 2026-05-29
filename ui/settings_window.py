@@ -135,6 +135,7 @@ class SettingsWindow:
 
         # Smart features (AP1/AP2/AP3/AP5/AP6)
         self._raw_mode_var = tk.BooleanVar(value=c.get("llm_raw_mode", False))
+        self._replace_mode_var = tk.BooleanVar(value=c.get("llm_replace_mode", False))
         self._learning_var = tk.BooleanVar(value=c.get("learning_enabled", True))
         self._context_var = tk.BooleanVar(
             value=c.get("context_awareness_enabled", True)
@@ -942,6 +943,12 @@ class SettingsWindow:
         self._hint(parent, "Klistrar in rå transkribering direkt, även om "
                    "LLM-granskning är på. Snabbast, ingen extra latens.").pack(
             anchor="w", padx=6, pady=(2, 8))
+        self._switch(parent, "Rå → ersätt (klistra rått, byt mot polerat)",
+                     self._replace_mode_var).pack(anchor="w", padx=6, pady=(0, 0))
+        self._hint(parent, "Visar texten direkt och byter ut den mot den "
+                   "polerade versionen när den är klar. Endast redigerbara "
+                   "fält — inte terminal/kod.").pack(
+            anchor="w", padx=6, pady=(2, 8))
 
         self._heading(parent, "Inlärning").pack(anchor="w", **pad)
         self._switch(parent, "Lär av mina rättelser",
@@ -1090,8 +1097,9 @@ class SettingsWindow:
             tr_pid != "local" and self._tr_consent_var.get()
         )
 
-        # Smart features (AP1/AP2/AP3/AP5/AP6)
+        # Smart features (AP1/AP2/AP3/AP5/AP6 + L3)
         new_cfg["llm_raw_mode"] = self._raw_mode_var.get()
+        new_cfg["llm_replace_mode"] = self._replace_mode_var.get()
         new_cfg["learning_enabled"] = self._learning_var.get()
         new_cfg["context_awareness_enabled"] = self._context_var.get()
         new_cfg["command_mode_enabled"] = self._command_var.get()

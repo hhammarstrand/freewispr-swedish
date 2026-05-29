@@ -18,17 +18,14 @@ UTAN att ändra fakta, namn, siffror eller meningens betydelse.
 """
 from __future__ import annotations
 
-import http.client
-import io
 import json
 import logging
 import os
 import subprocess
-import threading
 import urllib.error
-import urllib.request
 from typing import NamedTuple
-from urllib.parse import urlsplit
+
+import http_pool
 
 log = logging.getLogger("freewispr")
 
@@ -302,24 +299,48 @@ def build_reference_block(
     return "\n\n".join(blocks)
 
 
-def _build_system_prompt(reference_block: str = "") -> str:
-    """Compose the system prompt, optionally appending a reference block.
+# The static system prefix (role + few-shot) never changes between calls, so
+# it sits in its own message and providers with automatic prompt/prefix caching
+# (OpenAI, Anthropic-compatible) or a local KV cache (Ollama/llama.cpp) can
+# reuse it (L3). The dynamic reference block goes in a *separate* message so it
+# doesn't invalidate that cached prefix.
+_STATIC_PREFIX = _SYSTEM_PROMPT + _FEWSHOT
 
-    The reference is wrapped in clear delimiters and framed as *background
-    reference* — not content to insert into the output. Empty / whitespace-only
-    reference returns the bare base prompt (with few-shot) unchanged.
-    """
-    base = _SYSTEM_PROMPT + _FEWSHOT
+
+def _reference_message(reference_block: str) -> str:
+    """Wrap the dynamic reference block, or "" when empty."""
     ref = (reference_block or "").strip()
     if not ref:
-        return base
+        return ""
     return (
-        f"{base}\n\n"
         "Referensblock (använd ENDAST som referens, klistra INTE in härifrån):\n"
         "---\n"
         f"{ref}\n"
         "---"
     )
+
+
+def _build_system_prompt(reference_block: str = "") -> str:
+    """Compose the combined system prompt (static prefix + reference).
+
+    Kept for callers/tests that want a single string. The hot path
+    (:func:`_chat_messages`) keeps the prefix and reference in separate messages
+    so the static prefix stays cacheable.
+    """
+    ref = _reference_message(reference_block)
+    if not ref:
+        return _STATIC_PREFIX
+    return f"{_STATIC_PREFIX}\n\n{ref}"
+
+
+def _chat_messages(reference_block: str, user_text: str) -> list[dict]:
+    """Build chat messages with a stable, cacheable static prefix (L3)."""
+    messages = [{"role": "system", "content": _STATIC_PREFIX}]
+    ref = _reference_message(reference_block)
+    if ref:
+        messages.append({"role": "system", "content": ref})
+    messages.append({"role": "user", "content": user_text})
+    return messages
 
 
 def _text_meta(text: str) -> str:
@@ -350,110 +371,19 @@ def _build_headers(provider: _Provider, api_key: str) -> dict[str, str]:
 #  request retried once.
 # --------------------------------------------------------------------------- #
 
-_conn_lock = threading.Lock()
-_connections: dict[tuple[str, str, int], http.client.HTTPConnection] = {}
-
-
-def _connection_for(url: str, timeout: float) -> tuple[tuple[str, str, int],
-                                                       http.client.HTTPConnection]:
-    parts = urlsplit(url)
-    host = parts.hostname or ""
-    port = parts.port or (443 if parts.scheme == "https" else 80)
-    key = (parts.scheme, host, port)
-    conn = _connections.get(key)
-    if conn is None:
-        if parts.scheme == "https":
-            conn = http.client.HTTPSConnection(host, port, timeout=timeout)
-        else:
-            conn = http.client.HTTPConnection(host, port, timeout=timeout)
-        _connections[key] = conn
-    else:
-        conn.timeout = timeout
-    return key, conn
-
-
-def _drop_connection(key: tuple[str, str, int]) -> None:
-    conn = _connections.pop(key, None)
-    if conn is not None:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
 def reset_sessions() -> None:
     """Close all pooled connections. Call after settings changes / provider swap."""
-    with _conn_lock:
-        for key in list(_connections):
-            _drop_connection(key)
+    http_pool.reset()
 
 
-def _read_sse(resp: http.client.HTTPResponse) -> dict:
-    """Assemble a streamed chat-completion (SSE) into the legacy response dict.
-
-    Reading deltas as they arrive lets the caller begin paste-prep the moment
-    the final token lands instead of waiting on a buffered full-body read.
-    """
-    content_parts: list[str] = []
-    model = ""
-    for raw_line in resp:
-        line = raw_line.decode("utf-8", errors="replace").strip()
-        if not line or not line.startswith("data:"):
-            continue
-        data = line[len("data:"):].strip()
-        if data == "[DONE]":
-            break
-        try:
-            chunk = json.loads(data)
-        except Exception:
-            continue
-        model = chunk.get("model", model) or model
-        for choice in chunk.get("choices", []) or []:
-            delta = choice.get("delta", {}) or {}
-            piece = delta.get("content")
-            if piece:
-                content_parts.append(piece)
-    return {
-        "choices": [{"message": {"content": "".join(content_parts)}}],
-        "model": model,
-        "usage": {},
-    }
+# Back-compat alias — the SSE assembler now lives in the shared pool.
+_read_sse = http_pool.read_sse
 
 
 def _http_request(url: str, headers: dict[str, str], payload: bytes | None,
                   method: str, timeout_sec: float, stream: bool) -> dict:
-    parts = urlsplit(url)
-    path = parts.path or "/"
-    if parts.query:
-        path = f"{path}?{parts.query}"
-    with _conn_lock:
-        key, conn = _connection_for(url, timeout_sec)
-        attempts = 0
-        while True:
-            attempts += 1
-            try:
-                conn.request(method, path, body=payload, headers=headers)
-                resp = conn.getresponse()
-                if resp.status >= 400:
-                    err_body = resp.read()
-                    _drop_connection(key)
-                    raise urllib.error.HTTPError(
-                        url, resp.status, resp.reason,
-                        dict(resp.getheaders()), io.BytesIO(err_body),
-                    )
-                if stream:
-                    return _read_sse(resp)
-                raw = resp.read()
-                return json.loads(raw.decode("utf-8"))
-            except urllib.error.HTTPError:
-                raise
-            except (ConnectionError, http.client.HTTPException, OSError) as e:
-                _drop_connection(key)
-                if attempts < 2:
-                    # Stale keep-alive connection — reopen and retry once.
-                    key, conn = _connection_for(url, timeout_sec)
-                    continue
-                raise urllib.error.URLError(e) from e
+    """Pooled chat/JSON request (keep-alive). Delegates to http_pool."""
+    return http_pool.request(url, headers, payload, method, timeout_sec, stream)
 
 
 def _request_json(url: str, headers: dict[str, str], payload: bytes | None,
@@ -481,10 +411,7 @@ def _call_api(
         raise ValueError("inget modellnamn angivet")
     body = {
         "model": normalized,
-        "messages": [
-            {"role": "system", "content": _build_system_prompt(context_text)},
-            {"role": "user",   "content": user_text},
-        ],
+        "messages": _chat_messages(context_text, user_text),
         "temperature": 0,
         # Output is a cleaned-up version of the input, never much longer.
         # ~1.3× input chars + a small constant covers punctuation growth.
@@ -512,6 +439,10 @@ class PolishResult(NamedTuple):
     model: str
     latency_ms: int
     changed: bool
+    # L0/L2/L3 latency telemetry (best-effort; 0/None when unavailable).
+    first_token_ms: float = 0.0
+    conn_ms: float = 0.0
+    conn_reused: bool | None = None
 
 
 def polish(
@@ -567,6 +498,10 @@ def polish(
             data["choices"][0]["message"]["content"].strip()
         )
         latency = int((time.perf_counter() - t0) * 1000)
+        stats = http_pool.last_stats()
+        ftms = stats.get("first_token_ms", 0.0)
+        conn_ms = stats.get("conn_ms", 0.0)
+        conn_reused = stats.get("conn_reused")
 
         # Hallucinationsfilter: en korrigering ska inte förändra texten radikalt.
         if len(result) > len(text) * 2 or len(result) < len(text) * 0.5:
@@ -575,7 +510,8 @@ def polish(
                 len(result), len(text),
             )
             return PolishResult(text=text, model=used_model, latency_ms=latency,
-                                changed=False)
+                                changed=False, first_token_ms=ftms,
+                                conn_ms=conn_ms, conn_reused=conn_reused)
 
         changed = result != text
         if changed:
@@ -585,7 +521,8 @@ def polish(
             log.info("LLM: ingen ändring behövdes (%s/%s, %dms)",
                      provider, used_model, latency)
         return PolishResult(text=result, model=used_model, latency_ms=latency,
-                            changed=changed)
+                            changed=changed, first_token_ms=ftms,
+                            conn_ms=conn_ms, conn_reused=conn_reused)
 
     except urllib.error.HTTPError as e:
         latency = int((time.perf_counter() - t0) * 1000)
@@ -604,6 +541,42 @@ def polish(
         log.warning("LLM-fel (%s, %dms): %s", provider, latency, e)
         return PolishResult(text=text, model=used_model, latency_ms=latency,
                             changed=False)
+
+
+def warm(api_key: str = "", model: str = "", provider: str = DEFAULT_PROVIDER,
+         base_url_override: str = "") -> bool:
+    """Open/keep the pooled LLM connection warm with a tiny throwaway request (L3).
+
+    Sends a 1-token completion so the first real polish doesn't pay the TLS
+    handshake (and primes a provider cold-start). Best-effort: returns False on
+    any failure and never raises. Loggar aldrig nyckel eller innehåll.
+    """
+    p = _get_provider(provider)
+    resolved_key = resolve_api_key(api_key, provider)
+    if not resolved_key and provider != "custom":
+        return False
+    try:
+        base = _resolve_base_url(provider, base_url_override)
+    except Exception:
+        return False
+    used_model = normalize_model(model, provider) or p.default_model
+    if not base or not used_model:
+        return False
+    body = {
+        "model": used_model,
+        "messages": [{"role": "user", "content": "."}],
+        "max_tokens": 1,
+        "temperature": 0,
+    }
+    try:
+        _http_request(f"{base}/chat/completions", _build_headers(p, resolved_key),
+                      json.dumps(body).encode("utf-8"), method="POST",
+                      timeout_sec=8.0, stream=False)
+        log.debug("LLM-anslutning uppvärmd (%s)", provider)
+        return True
+    except Exception as e:
+        log.debug("LLM-warm misslyckades (%s): %s", provider, e)
+        return False
 
 
 _COMMAND_SYSTEM_PROMPT = (

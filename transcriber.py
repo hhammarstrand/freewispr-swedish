@@ -16,6 +16,10 @@ CONFIG_DIR = Path.home() / ".freewispr-swedish"
 MODEL_DIR = CONFIG_DIR / "models"
 HOTWORDS_FILE = CONFIG_DIR / "hotwords.txt"
 
+# How often to ping the LLM endpoint to keep the pooled connection alive (L3).
+# Comfortably under typical keep-alive idle timeouts (~60 s).
+_LLM_WARM_INTERVAL = 25.0
+
 
 def _text_meta(text: str) -> str:
     words = len(text.split())
@@ -267,7 +271,9 @@ def _get_device_and_compute(use_cuda: bool, compute_type_override: str = "") -> 
     override = (compute_type_override or "").strip()
 
     if use_cuda and cuda_available:
-        return ("cuda", override or "float16", True)
+        # int8_float16 (L4): faster than float16 on CUDA at negligible WER cost
+        # for short dictation. Override still wins.
+        return ("cuda", override or "int8_float16", True)
     elif use_cuda and not cuda_available:
         log.warning("CUDA begärt men ingen GPU hittades. Använder CPU.")
         return ("cpu", override or "int8", False)
@@ -380,6 +386,13 @@ class Transcriber:
         self.transcription_temperature = transcription_temperature
         self.on_stage = None
 
+        # L3: keep the LLM connection warm so the first polish doesn't pay a
+        # TLS handshake / provider cold-start. Only runs when LLM is enabled —
+        # offline base mode (LLM off) issues no network traffic.
+        self._llm_warm_stop = threading.Event()
+        if llm_enabled:
+            self._start_llm_warmer()
+
         # When the user has opted into a remote transcription provider, the
         # local Whisper model is *not* loaded. This saves 0.5–3 GB of RAM/VRAM
         # and skips the warmup pass. There is no fallback — if the remote
@@ -453,6 +466,17 @@ class Transcriber:
         threading.Thread(target=self._warmup, name="whisper-warmup",
                          daemon=True).start()
 
+    def _start_llm_warmer(self) -> None:
+        """Warm the LLM connection now + periodically (L3)."""
+        def _loop():
+            from llm_polish import warm
+            kw = dict(model=self.llm_model, provider=self.llm_provider,
+                      base_url_override=self.llm_base_url)
+            warm(self.llm_api_key, **kw)
+            while not self._llm_warm_stop.wait(_LLM_WARM_INTERVAL):
+                warm(self.llm_api_key, **kw)
+        threading.Thread(target=_loop, name="llm-warm", daemon=True).start()
+
     def _warmup(self) -> None:
         """Run a single silent inference to pre-allocate inference state."""
         try:
@@ -484,10 +508,15 @@ class Transcriber:
     def close(self) -> None:
         """Release the underlying WhisperModel to free VRAM/RAM.
 
+        Also stops the LLM warm-keeper thread (L3).
+
         Important on model reload: keeping two WhisperModels alive briefly
         can pin 2-3 GB of VRAM and OOM smaller CUDA devices.
         """
         import gc
+        warm_stop = getattr(self, "_llm_warm_stop", None)
+        if warm_stop is not None:
+            warm_stop.set()
         try:
             with self._model_lock:
                 model = getattr(self, "model", None)
@@ -624,6 +653,11 @@ class Transcriber:
                     _deliver(text, text)
                     return
 
+                # Stash polish telemetry for the latency log (L0/L2/L3).
+                self.last_polish_first_token_ms = getattr(result, "first_token_ms", 0.0)
+                self.last_polish_conn_ms = getattr(result, "conn_ms", 0.0)
+                self.last_polish_conn_reused = getattr(result, "conn_reused", None)
+
                 elapsed = _time.monotonic() - t0
                 if elapsed > 10.0:
                     # polish() should have timed out at 8 s; anything past
@@ -713,6 +747,10 @@ class Transcriber:
                         hotwords=hotwords,
                     )
                     raw = " ".join(s.text.strip() for s in segments)
+                # L4: log the effective decode knobs so the VAD on/off delta
+                # is visible in bench_latency / the latency log.
+                log.info("Lokal decode: vad=%s, beam=%d, no_speech=%.2f",
+                         use_vad, beam_size, no_speech_threshold)
                 break
             except RuntimeError as e:
                 msg = str(e).lower()
@@ -813,6 +851,15 @@ class Transcriber:
                 except Exception:
                     pass
             return ""
+
+        # Surface keep-alive connection telemetry for the latency log (L2).
+        try:
+            from http_pool import last_stats
+            st = last_stats()
+            self.last_transcribe_conn_ms = st.get("conn_ms", 0.0)
+            self.last_transcribe_conn_reused = st.get("conn_reused")
+        except Exception:
+            pass
 
         log.info("Rå text mottagen (%s)", _text_meta(raw))
         text = _NOISE_PLACEHOLDERS.sub("", raw)

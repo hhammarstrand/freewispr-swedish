@@ -28,6 +28,8 @@ from typing import NamedTuple
 
 import numpy as np
 
+import http_pool
+
 log = logging.getLogger("freewispr")
 
 
@@ -226,14 +228,15 @@ def transcribe(
         headers["Authorization"] = f"Bearer {resolved_key}"
 
     url = f"{base}/audio/transcriptions"
-    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
 
     log.info("Remote transcribe -> %s (%s, %d samples, %d sr)",
              provider, used_model, audio.size, sample_rate)
 
     try:
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-            raw = resp.read()
+        # Keep-alive pooled transport (L2): reuse the TCP/TLS connection across
+        # dictations instead of a fresh handshake each time.
+        raw = http_pool.request(url, headers, payload=body, method="POST",
+                                timeout=timeout_sec, parse="raw")
     except urllib.error.HTTPError as e:
         # Försök läsa kropp för bättre felmeddelande men logga inte audio.
         body_snippet = ""
