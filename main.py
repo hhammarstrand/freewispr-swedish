@@ -406,6 +406,8 @@ def _apply_settings_locked(new_cfg: dict):
     # validated (model loaded, dictation rebuilt, etc.). This way a failed
     # reload doesn't leave a broken config on disk for the next launch.
     _config.update(new_cfg)
+    # Reflect e.g. flow_mode_enabled visibility in the tray menu.
+    _rebuild_menu()
 
     def _persist() -> bool:
         try:

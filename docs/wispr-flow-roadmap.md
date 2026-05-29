@@ -51,24 +51,24 @@ tuning är en *villkorad* förbättring, inte grunden.
 **Mål:** behåll dagens wait-läge (terminalsäkert, en enda paste) men sänk både
 faktisk och upplevd latens och höj promptkvaliteten.
 
-- [ ] Återanvänd en HTTP-session (keep-alive) per provider — undvik nytt
+- [x] Återanvänd en HTTP-session (keep-alive) per provider — undvik nytt
       TLS-handslag per diktering. *Idag: `llm_polish.py:_request_json()` /
       `_call_api()` använder rå `urllib.request` utan pooling.*
-- [ ] `temperature=0`, `max_tokens ≈ len(input)*1.3 + 32`, `stream=True`; börja
+- [x] `temperature=0`, `max_tokens ≈ len(input)*1.3 + 32`, `stream=True`; börja
       paste-förberedelse så fort sista token kommit. *Idag:
       `llm_polish.py:polish()` (~rad 327), `max_tokens=max(100, len*1.5)`, ingen
       streaming.*
-- [ ] Ny stram svensk system-prompt (se **Polish-prompt** nedan) med few-shot på
+- [x] Ny stram svensk system-prompt (se **Polish-prompt** nedan) med few-shot på
       självrättelser. *Idag: `_SYSTEM_PROMPT` + `_build_system_prompt()`
       (`llm_polish.py` ~rad 225).*
-- [ ] Injektera referensblock: personlig kontext + inlärda rättelser (AP2) + ev.
+- [x] Injektera referensblock: personlig kontext + inlärda rättelser (AP2) + ev.
       on-screen-kontext (AP3). *Idag injiceras endast `personal_context` via
       `transcriber.py:polish_async()` (~rad 484).*
-- [ ] Mät och logga per-steg-latens: `record → transcribe → llm → paste`. *Idag:
+- [x] Mät och logga per-steg-latens: `record → transcribe → llm → paste`. *Idag:
       spridda `log.info` i `dictation.py` (~rad 279/307/323) + `result.latency_ms`.*
-- [ ] Gör 15 s-fallbacken till konfigurerbar tröskel. *Idag: hårdkodad
+- [x] Gör 15 s-fallbacken till konfigurerbar tröskel. *Idag: hårdkodad
       `threading.Timer(15.0, _watchdog_fallback)` i `dictation.py` (~rad 329–405).*
-- [ ] Lägg till global toggle "rå direkt" (ingen polish) + per app-profil (AP3).
+- [x] Lägg till global toggle "rå direkt" (ingen polish) + per app-profil (AP3).
       *Nytt fält i `config.py:DEFAULTS`; UI i `ui/settings_window.py`.*
 
 **Acceptanskriterier**
@@ -87,18 +87,18 @@ en fristående dynamisk loop bredvid `personal_context`.
 
 **Mål:** när användaren rättar inklistrad text ska systemet lära sig till nästa gång.
 
-- [ ] Ny modul `learning.py`.
-- [ ] Efter paste: läs målfältets värde via UIA (infra från AP3) eller urklippsdiff;
+- [x] Ny modul `learning.py`.
+- [x] Efter paste: läs målfältets värde via UIA (infra från AP3) eller urklippsdiff;
       jämför mot det som klistrades. *OBS: `paste.py` har idag ingen clipboard-diff —
       bygg det eller använd UIA.*
-- [ ] Heuristik: ordbyte (t.ex. Levenshtein-tröskel + ordpar) → spara term-paret.
-- [ ] Lokal backend: append unika rättade termer till
+- [x] Heuristik: ordbyte (t.ex. Levenshtein-tröskel + ordpar) → spara term-paret.
+- [x] Lokal backend: append unika rättade termer till
       `~/.freewispr-swedish/hotwords.txt`.
-- [ ] Alla backends: append `"X" → "Y"`-par till
+- [x] Alla backends: append `"X" → "Y"`-par till
       `~/.freewispr-swedish/corrections.json` (strukturerat, dedupliceras, atomiskt
       via `json_store.py:JsonCache` — samma mönster som `personal_context.py`).
-- [ ] Injicera rättelserna i polish-prompten (AP1) som "kända rättelser".
-- [ ] Inställning: av/på (default på) + knapp "rensa inlärt". *UI:
+- [x] Injicera rättelserna i polish-prompten (AP1) som "kända rättelser".
+- [x] Inställning: av/på (default på) + knapp "rensa inlärt". *UI:
       `ui/settings_window.py`; config-fält i `config.py:DEFAULTS`.*
 
 **Acceptanskriterier**
@@ -113,22 +113,22 @@ en fristående dynamisk loop bredvid `personal_context`.
 
 **Mål:** rätt egennamn/versalisering, och rätt ton/format per app.
 
-- [ ] Ny modul `context_win.py` (kräver `from __future__ import annotations`).
-- [ ] Aktiv app: `win32gui.GetForegroundWindow` +
+- [x] Ny modul `context_win.py` (kräver `from __future__ import annotations`).
+- [x] Aktiv app: `win32gui.GetForegroundWindow` +
       `win32process.GetWindowThreadProcessId` + `psutil` → processnamn +
       fönstertitel.
-- [ ] Fokuserat fält / omgivande text: UIA via `uiautomation` (eller `pywinauto`
+- [x] Fokuserat fält / omgivande text: UIA via `uiautomation` (eller `pywinauto`
       uia-backend) — fokuserat elements värde + ev. "Till"-fält. **Best-effort:**
       returnera tom sträng om inget går att läsa, krascha aldrig.
-- [ ] Konfigurerbar app→profil-mappning, t.ex.:
+- [x] Konfigurerbar app→profil-mappning, t.ex.:
   - `teams`, `slack`, `discord` → "ledig ton"
   - `outlook`, `mail` → "formell e-post"
   - `code`, `cursor`, `windowsterminal`, `cmd`, `powershell` → "kod / ingen
     formatering / ingen versalisering"
-- [ ] Polish-prompt (AP1): skicka app-profil + on-screen-namn som **referens**
+- [x] Polish-prompt (AP1): skicka app-profil + on-screen-namn som **referens**
       (uttryckligen "använd som referens, klistra inte in").
-- [ ] Lokal transkribering (AP4): lägg on-screen-namn i `hotwords`/`initial_prompt`.
-- [ ] Integritet: skärmtext används endast lokalt; skickas inte om LLM/remote är av.
+- [x] Lokal transkribering (AP4): lägg on-screen-namn i `hotwords`/`initial_prompt`.
+- [x] Integritet: skärmtext används endast lokalt; skickas inte om LLM/remote är av.
       Respektera "kontextmedvetenhet av"-toggle (default på).
 
 **Acceptanskriterier**
@@ -143,20 +143,20 @@ en fristående dynamisk loop bredvid `personal_context`.
 
 **Mål:** höj råprecisionen där det går, utan att anta lokal körning.
 
-- [ ] `transcriber.py:_transcribe_local()` (~rad 593) — gör konfigurerbart:
+- [x] `transcriber.py:_transcribe_local()` (~rad 593) — gör konfigurerbart:
       `hotwords` (från `hotwords.txt` + AP3-namn), `initial_prompt` (kort mening med
       fackord/namn), `vad_filter=True` (Silero), `beam_size`,
       `condition_on_previous_text=False`, `no_speech_threshold`. *Flera av dessa
       sätts redan men är hårdkodade.*
-- [ ] `compute_type` vid laddning (t.ex. `int8_float16` på CUDA). *Idag: i
+- [x] `compute_type` vid laddning (t.ex. `int8_float16` på CUDA). *Idag: i
       `Transcriber.__init__`/modell-laddning.*
-- [ ] Val av KBLab `revision` (default/strict/subtitle) med CT2-fallback enligt
+- [x] Val av KBLab `revision` (default/strict/subtitle) med CT2-fallback enligt
       premiss 1. *Idag: `transcriber.py:KBLAB_REVISIONS` (~rad 119) allt `None`.*
-- [ ] `remote_transcribe.py:transcribe()` (~rad 172) — skicka `language="sv"`,
+- [x] `remote_transcribe.py:transcribe()` (~rad 172) — skicka `language="sv"`,
       `prompt` (samma biasing-sträng), och `temperature` om providern stödjer det;
       annars no-op. Logga om providern uppenbart ignorerar `prompt`. *Idag skickas
       bara `model` + `language`.*
-- [ ] Gemensamt transkriberingsinterface så resten av appen är backend-agnostisk.
+- [x] Gemensamt transkriberingsinterface så resten av appen är backend-agnostisk.
 
 **Acceptanskriterier**
 - Lokal path: parametrar appliceras; VAD minskar hallucinering på tyst/brusigt ljud.
@@ -168,12 +168,12 @@ en fristående dynamisk loop bredvid `personal_context`.
 
 **Mål:** röststyrd redigering av senaste blocket (motsvarar Wispr Command Mode).
 
-- [ ] Ny modul `commands.py`: detektera ledande kommandofraser ("gör det kortare",
+- [x] Ny modul `commands.py`: detektera ledande kommandofraser ("gör det kortare",
       "punktlista", "ta bort sista meningen", "gör det formellt", "översätt till
       engelska" …).
-- [ ] Vid träff: skicka senaste polerade block + instruktion till LLM och
+- [x] Vid träff: skicka senaste polerade block + instruktion till LLM och
       ersätt/append enligt app-profil — utan ny inspelning/transkribering.
-- [ ] Konfigurerbar fraslista; av/på.
+- [x] Konfigurerbar fraslista; av/på.
 
 **Acceptanskriterier**
 - "gör det kortare" efter en diktering förkortar föregående text.
@@ -182,7 +182,7 @@ en fristående dynamisk loop bredvid `personal_context`.
 
 ### AP6 — Flow-läge *(valfritt, lägst prio)*
 
-- [ ] Kontinuerlig inspelning över pauser med chunkad transkribering och append.
+- [x] Kontinuerlig inspelning över pauser med chunkad transkribering och append.
       Endast lokal path initialt. Tydlig start/stopp-toggle.
 
 ---
@@ -215,14 +215,14 @@ System-prompt på **svenska**. Krav:
 
 ## Tvärgående krav
 
-- [ ] Bakåtkompatibel `config.json`: nya fält med säkra defaults i
+- [x] Bakåtkompatibel `config.json`: nya fält med säkra defaults i
       `config.py:DEFAULTS`.
-- [ ] Nycklar i Windows Credential Manager via `keyring` som idag; logga aldrig
+- [x] Nycklar i Windows Credential Manager via `keyring` som idag; logga aldrig
       nyckel eller textinnehåll.
-- [ ] `pytest`-tester för nya moduler (mocka UIA och HTTP); `ruff`-CI ska passera.
-- [ ] Ingen ny obligatorisk nätverksberoende i grundläget (lokal modell + LLM av =
+- [x] `pytest`-tester för nya moduler (mocka UIA och HTTP); `ruff`-CI ska passera.
+- [x] Ingen ny obligatorisk nätverksberoende i grundläget (lokal modell + LLM av =
       helt offline).
-- [ ] Per-steg-latens i loggen för felsökning.
+- [x] Per-steg-latens i loggen för felsökning.
 
 ### Test- och stub-noteringar
 
