@@ -267,7 +267,9 @@ def _get_device_and_compute(use_cuda: bool, compute_type_override: str = "") -> 
     override = (compute_type_override or "").strip()
 
     if use_cuda and cuda_available:
-        return ("cuda", override or "float16", True)
+        # int8_float16 (L4): faster than float16 on CUDA at negligible WER cost
+        # for short dictation. Override still wins.
+        return ("cuda", override or "int8_float16", True)
     elif use_cuda and not cuda_available:
         log.warning("CUDA begärt men ingen GPU hittades. Använder CPU.")
         return ("cpu", override or "int8", False)
@@ -718,6 +720,10 @@ class Transcriber:
                         hotwords=hotwords,
                     )
                     raw = " ".join(s.text.strip() for s in segments)
+                # L4: log the effective decode knobs so the VAD on/off delta
+                # is visible in bench_latency / the latency log.
+                log.info("Lokal decode: vad=%s, beam=%d, no_speech=%.2f",
+                         use_vad, beam_size, no_speech_threshold)
                 break
             except RuntimeError as e:
                 msg = str(e).lower()
