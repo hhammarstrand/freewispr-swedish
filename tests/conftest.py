@@ -54,3 +54,27 @@ if "winsound" not in sys.modules:
         SND_MEMORY=0,
         SND_ASYNC=0,
     )
+
+# AP3 context awareness deps are Windows-only. context_win imports them lazily
+# inside try/except, so these stubs are only a safety net for tests that import
+# them directly; individual tests monkeypatch return values as needed.
+if "win32gui" not in sys.modules:
+    sys.modules["win32gui"] = SimpleNamespace(
+        GetForegroundWindow=lambda: 0,
+        GetWindowText=lambda hwnd: "",
+    )
+
+if "win32process" not in sys.modules:
+    sys.modules["win32process"] = SimpleNamespace(
+        GetWindowThreadProcessId=lambda hwnd: (0, 0),
+    )
+
+if "psutil" not in sys.modules:
+    sys.modules["psutil"] = SimpleNamespace(
+        Process=lambda pid: SimpleNamespace(name=lambda: "python.exe"),
+    )
+
+if "uiautomation" not in sys.modules:
+    sys.modules["uiautomation"] = SimpleNamespace(
+        GetFocusedControl=lambda: None,
+    )

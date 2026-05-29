@@ -60,25 +60,44 @@ def test_exists_and_nonempty_treats_whitespace_as_empty(tmp_path):
 # llm_polish system-prompt injection
 # --------------------------------------------------------------------------- #
 
-def test_build_system_prompt_without_context_returns_base():
+def test_build_system_prompt_without_reference_returns_base():
     import llm_polish
-    base = llm_polish._SYSTEM_PROMPT
+    # Base prompt now includes the few-shot block (AP1).
+    base = llm_polish._SYSTEM_PROMPT + llm_polish._FEWSHOT
     assert llm_polish._build_system_prompt("") == base
     assert llm_polish._build_system_prompt("   \n  ") == base
     assert llm_polish._build_system_prompt(None) == base  # type: ignore[arg-type]
 
 
-def test_build_system_prompt_with_context_wraps_in_delimiters():
+def test_build_system_prompt_with_reference_wraps_in_delimiters():
     import llm_polish
-    prompt = llm_polish._build_system_prompt("Jag heter Patrik.")
+    ref = llm_polish.build_reference_block(personal_context="Jag heter Patrik.")
+    prompt = llm_polish._build_system_prompt(ref)
     # The base must still be present so the model knows its primary job.
     assert llm_polish._SYSTEM_PROMPT in prompt
-    # The context body must appear between the --- delimiters and be
+    # The reference body must appear between the --- delimiters and be
     # introduced as reference material, not new content to insert.
     assert "Jag heter Patrik." in prompt
+    assert "Personlig kontext:" in prompt
     assert "---" in prompt
-    assert "kontext" in prompt.lower()
-    assert "lägg" in prompt.lower() and "inte" in prompt.lower()
+    assert "referens" in prompt.lower()
+    assert "klistra" in prompt.lower() and "inte" in prompt.lower()
+
+
+def test_build_reference_block_omits_empty_and_formats_corrections():
+    import llm_polish
+    # Everything empty → empty string (no dangling headers).
+    assert llm_polish.build_reference_block() == ""
+    # Corrections render as "fel → rätt"; identity pairs are dropped.
+    block = llm_polish.build_reference_block(
+        corrections={"kammar": "Kalmar", "same": "same", "": "x"},
+        app_profile="formell e-post",
+        onscreen_names="Johan, Kalmar",
+    )
+    assert "kammar → Kalmar" in block
+    assert "same → same" not in block
+    assert "App-profil: formell e-post" in block
+    assert "Namn på skärmen: Johan, Kalmar" in block
 
 
 # --------------------------------------------------------------------------- #

@@ -84,6 +84,7 @@ except Exception:
 _config: dict = {}
 _transcriber = None   # Transcriber (lazy-imported)
 _dictation = None     # DictationMode (lazy-imported)
+_flow = None          # FlowMode (AP6, lazy-imported)
 _tray_icon: pystray.Icon | None = None
 _tk_root: tk.Tk | None = None
 _status_var: tk.StringVar | None = None
@@ -165,6 +166,12 @@ def _make_transcriber(model_size: str, use_cuda: bool):
         transcription_api_key=tr_key,
         transcription_model=tr_model,
         transcription_base_url=tr_base,
+        beam_size=int(_config.get("whisper_beam_size", 1)),
+        vad_filter=bool(_config.get("whisper_vad_filter", True)),
+        no_speech_threshold=float(_config.get("whisper_no_speech_threshold", 0.6)),
+        compute_type=str(_config.get("whisper_compute_type", "")),
+        kblab_revision=str(_config.get("kblab_revision", "default")),
+        transcription_temperature=float(_config.get("transcription_temperature", 0.0)),
     )
 
 
@@ -177,6 +184,12 @@ def _make_dictation(transcriber):
         indicator=_indicator,
         mic_device=_config.get("mic_device"),
         min_rms=float(_config.get("min_rms", DEFAULT_MIN_RMS)),
+        raw_mode=bool(_config.get("llm_raw_mode", False)),
+        llm_timeout_sec=float(_config.get("llm_timeout_sec", 15.0)),
+        context_awareness=bool(_config.get("context_awareness_enabled", True)),
+        learning_enabled=bool(_config.get("learning_enabled", True)),
+        app_profiles=_config.get("app_profiles") or {},
+        command_mode_enabled=bool(_config.get("command_mode_enabled", True)),
     )
 
 
@@ -393,6 +406,8 @@ def _apply_settings_locked(new_cfg: dict):
     # validated (model loaded, dictation rebuilt, etc.). This way a failed
     # reload doesn't leave a broken config on disk for the next launch.
     _config.update(new_cfg)
+    # Reflect e.g. flow_mode_enabled visibility in the tray menu.
+    _rebuild_menu()
 
     def _persist() -> bool:
         try:
@@ -633,19 +648,61 @@ def _rebuild_menu():
         _tray_icon.menu = _build_menu()
 
 
+def _flow_active() -> bool:
+    return bool(_flow and _flow.active)
+
+
+def _toggle_flow(_=None):
+    """AP6: start/stop continuous Flow-läge (local transcription only)."""
+    global _flow
+    if not _config.get("flow_mode_enabled", False):
+        return
+    if _transcriber is None:
+        _set_tray_status("Flow-läge: modellen laddas fortfarande")
+        return
+    try:
+        if _flow is None:
+            from flow import FlowMode
+            _flow = FlowMode(
+                _transcriber,
+                mic_device=_config.get("mic_device"),
+                on_status=_set_tray_status,
+                indicator=_indicator,
+                min_rms=float(_config.get("min_rms", 0.003)),
+            )
+        # Flow and push-to-talk shouldn't fight over the mic — pause dictation
+        # while Flow runs.
+        if not _flow.active and _dictation is not None:
+            _dictation.stop(wait=False)
+        _flow.toggle()
+        if not _flow.active and _dictation is not None:
+            _dictation.start()
+    except Exception as e:
+        log.error("Flow-läge fel: %s", e, exc_info=True)
+    _rebuild_menu()
+
+
 def _build_menu():
     startup_label = "✓ Starta med Windows" if _is_startup_enabled() else "Starta med Windows"
-    return pystray.Menu(
+    items = [
         # default=True makes this the action that runs on left double-click
         # of the tray icon (in addition to being the bold first menu entry).
         pystray.MenuItem("Inställningar", _open_settings, default=True),
         pystray.MenuItem(startup_label, _toggle_startup),
+    ]
+    if _config.get("flow_mode_enabled", False):
+        flow_label = "✓ Flow-läge" if _flow_active() else "Flow-läge"
+        items.append(pystray.MenuItem(flow_label, _toggle_flow))
+    items += [
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Avsluta freewispr-swedish", _quit),
-    )
+    ]
+    return pystray.Menu(*items)
 
 
 def _quit(_=None):
+    if _flow:
+        _flow.stop(wait=False)
     if _dictation:
         _dictation.stop()
     if _transcriber:

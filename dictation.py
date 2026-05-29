@@ -2,6 +2,7 @@
 import logging
 import queue
 import threading
+import time
 import keyboard
 import numpy as np
 
@@ -102,7 +103,13 @@ class DictationMode:
     def __init__(self, transcriber: Transcriber, hotkey: str = "ctrl+space",
                  on_status=None, indicator=None,
                  mic_device: str | dict | None = None,
-                 min_rms: float = DEFAULT_MIN_RMS):
+                 min_rms: float = DEFAULT_MIN_RMS,
+                 raw_mode: bool = False,
+                 llm_timeout_sec: float = 15.0,
+                 context_awareness: bool = True,
+                 learning_enabled: bool = True,
+                 app_profiles: dict | None = None,
+                 command_mode_enabled: bool = True):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
@@ -110,8 +117,31 @@ class DictationMode:
         self.on_status = on_status or (lambda msg: None)
         self.indicator = indicator
         self.min_rms = min_rms
+        # "Rå direkt": when True, paste the raw transcript and skip LLM polish
+        # even if the transcriber has LLM enabled. May be overridden per app
+        # profile (AP3) once context awareness resolves a "kod"-style profile.
+        self.raw_mode = raw_mode
+        # Watchdog threshold for the wait-mode polish fallback (configurable).
+        self.llm_timeout_sec = llm_timeout_sec
+        self.context_awareness = context_awareness
+        self.learning_enabled = learning_enabled
+        self.app_profiles = app_profiles or {}
+        self.command_mode_enabled = command_mode_enabled
         self._active = False
         self._recording = False
+        self._t_press = 0.0
+        # AP5 command mode: the last pasted/transformed block, edited in place
+        # by voice commands. Kept separate from _last_pasted (which AP2 clears).
+        self._last_block = ""
+        # AP2 learning loop: remember the last pasted text and read the focused
+        # field's value before the next dictation to learn manual corrections.
+        # The reader is context_win.get_focused_text (best-effort) and only
+        # wired when both context awareness and learning are on.
+        self._last_pasted = ""
+        self._field_reader = (
+            self._read_focused_text
+            if (context_awareness and learning_enabled) else None
+        )
         self._hook_handles: list = []
 
         # Bounded queue + dedicated worker thread. Replaces the old single-slot
@@ -182,6 +212,112 @@ class DictationMode:
 
     # ----------------------------------------------------------------- private
 
+    def _try_command(self, text: str) -> bool:
+        """AP5: if ``text`` is a command, transform the last block in place.
+
+        Returns True when the command ran and the result was pasted (replacing
+        the previous block); False when no command matched or it couldn't run,
+        so the caller falls back to normal dictation.
+        """
+        try:
+            import commands
+        except Exception:
+            return False
+        cmd = commands.detect_command(text)
+        if cmd is None:
+            return False
+
+        tr = self.transcriber
+
+        def _llm_transform(instruction: str, prev: str) -> str:
+            from llm_polish import instruct
+            return instruct(
+                prev, instruction,
+                api_key=getattr(tr, "llm_api_key", ""),
+                model=getattr(tr, "llm_model", ""),
+                provider=getattr(tr, "llm_provider", "github"),
+                base_url_override=getattr(tr, "llm_base_url", ""),
+            )
+
+        transform = _llm_transform if getattr(tr, "llm_enabled", False) else None
+        prev_block = self._last_block
+        result = commands.execute(cmd, prev_block, transform)
+        if not result:
+            # Recognised but couldn't run (e.g. LLM command with LLM off) —
+            # let the caller dictate the words normally instead.
+            return False
+        if self._worker_stop.is_set() or not self._active:
+            return True
+        # Replace the previous block: backspace over it (+1 for the trailing
+        # space paste_text adds), then paste the transformed text.
+        paste_text(result, active_modifiers=self._modifier_keys,
+                   replace_len=len(prev_block) + 1)
+        self._last_block = result
+        self._last_pasted = result
+        msg = f"Kommando: {cmd.phrase}"
+        self.on_status(f"{msg} — håll {self.hotkey.upper()} igen")
+        if self.indicator:
+            self.indicator.show(msg, state="done")
+            self.indicator.hide(delay_ms=1800)
+        log.info("Kommandoläge utförde '%s'", cmd.phrase)
+        return True
+
+    @staticmethod
+    def _read_focused_text() -> str:
+        """Best-effort read of the focused field (AP3 → AP2 learning)."""
+        try:
+            import context_win
+            return context_win.get_focused_text()
+        except Exception:
+            return ""
+
+    def _resolve_context(self):
+        """AP3: resolve active-app profile + on-screen names. Best-effort."""
+        try:
+            import context_win
+            return context_win.get_context(getattr(self, "app_profiles", None))
+        except Exception as e:
+            log.debug("Kontextmedvetenhet misslyckades: %s", e)
+            return None
+
+    def _observe_corrections(self) -> None:
+        """AP2: compare the previously pasted text against the focused field now.
+
+        Best-effort and silent on any failure — never blocks dictation. Reads
+        the field via the pluggable ``_field_reader`` (wired to context_win in
+        AP3); a no-op when learning is off or nothing was pasted yet.
+        """
+        if not getattr(self, "learning_enabled", True):
+            return
+        reader = getattr(self, "_field_reader", None)
+        last = getattr(self, "_last_pasted", "")
+        if reader is None or not last:
+            return
+        self._last_pasted = ""
+        try:
+            observed = reader() or ""
+        except Exception as e:
+            log.debug("Kunde inte läsa målfält för inlärning: %s", e)
+            return
+        if not observed:
+            return
+        try:
+            from learning import learn_from_observation
+            learn_from_observation(last, observed)
+        except Exception as e:
+            log.debug("Inlärning misslyckades: %s", e)
+
+    @staticmethod
+    def _log_latency(record_ms: float, transcribe_ms: float,
+                     llm_ms: float, paste_ms: float) -> None:
+        """Log the per-step latency breakdown for the hot path (AP1)."""
+        pipeline = transcribe_ms + llm_ms + paste_ms
+        log.info(
+            "Latens: record=%.0fms transcribe=%.0fms llm=%.0fms paste=%.0fms "
+            "(pipeline efter release=%.0fms)",
+            record_ms, transcribe_ms, llm_ms, paste_ms, pipeline,
+        )
+
     def _modifier_held(self) -> bool:
         """All required modifiers must be physically held right now."""
         if not self._modifiers:
@@ -195,6 +331,7 @@ class DictationMode:
         if self._active and not self._recording and self._modifier_held():
             try:
                 self._recording = True
+                self._t_press = time.monotonic()
                 # Wire the audio thread to push RMS levels directly to the
                 # UI indicator — replaces the 50 ms polling timer with an
                 # event-driven path. Cleared in _on_release.
@@ -240,13 +377,17 @@ class DictationMode:
 
         sounds.play_stop()
 
+        # Recording duration (press → release) — first leg of the latency
+        # breakdown logged in _transcribe.
+        record_ms = (time.monotonic() - self._t_press) * 1000 if self._t_press else 0.0
+
         # Reuse the running RMS maintained by the recorder — O(1).
         rms = self.recorder.rms()
 
         # Enqueue for the worker. Bounded queue: if full (previous job(s)
         # still being transcribed/polished), drop and tell the user.
         try:
-            self._jobs.put_nowait((audio, channels, rate, rms))
+            self._jobs.put_nowait((audio, channels, rate, rms, record_ms))
         except queue.Full:
             log.warning("Transkriberingskö full — hoppar över denna")
             self.on_status("Upptagen — vänta…")
@@ -274,9 +415,13 @@ class DictationMode:
                 log.error("Worker exception: %s", e, exc_info=True)
 
     def _process_job(self, audio_raw: np.ndarray, channels: int,
-                     rate: int, rms: float):
+                     rate: int, rms: float, record_ms: float = 0.0):
         n_raw = audio_raw.shape[0] if audio_raw.ndim >= 1 else 0
         log.info("Audio: %d raw samples, RMS=%.5f", n_raw, rms)
+
+        # AP2: learn from any manual edits the user made to the last paste
+        # before starting this new dictation (best-effort, never blocks).
+        self._observe_corrections()
 
         if rms < self.min_rms:
             log.info("Inspelning för tyst (RMS=%.5f < %.5f), ignorerar",
@@ -297,15 +442,36 @@ class DictationMode:
                 self.indicator.hide(delay_ms=0)
             return
 
-        self._transcribe(audio)
+        self._transcribe(audio, record_ms)
 
-    def _transcribe(self, audio: np.ndarray):
+    def _transcribe(self, audio: np.ndarray, record_ms: float = 0.0):
         try:
             if self._worker_stop.is_set() or not self._active:
                 log.info("Hoppar över stale transkribering efter stopp")
                 return
             log.info("Transkriberar %d samples...", len(audio))
-            llm_enabled = getattr(self.transcriber, "llm_enabled", False)
+            # "Rå direkt" disables polish even when the transcriber has LLM on.
+            llm_enabled = (
+                getattr(self.transcriber, "llm_enabled", False)
+                and not getattr(self, "raw_mode", False)
+            )
+
+            # AP3 context awareness: resolve app profile + on-screen names.
+            # A "code"-style profile disables polish and capitalisation; names
+            # bias the local decoder and (only when polishing) the LLM prompt.
+            profile_desc = ""
+            onscreen_names = ""
+            capitalize = True
+            if getattr(self, "context_awareness", False):
+                ctx = self._resolve_context()
+                if ctx is not None:
+                    profile_desc = ctx.profile_description
+                    onscreen_names = ctx.onscreen_names
+                    capitalize = ctx.capitalize
+                    if not ctx.polish:
+                        llm_enabled = False
+
+            t_tx0 = time.monotonic()
             # The status message shown while transcription runs reflects
             # whether the user opted into a remote provider. Saying "lokalt"
             # when the audio is being shipped to e.g. KBLab's API is both
@@ -319,11 +485,20 @@ class DictationMode:
                 self.on_status(f"Transkriberar {tr_label}…")
                 if self.indicator:
                     self.indicator.show(f"Transkriberar {tr_label}…", state="transcribe")
-            text = self.transcriber.transcribe(audio)
+            text = self.transcriber.transcribe(
+                audio, capitalize=capitalize, extra_hotwords=onscreen_names)
+            transcribe_ms = (time.monotonic() - t_tx0) * 1000
             log.info("Resultat klart (%s)", _text_meta(text))
             if text.strip():
                 if self._worker_stop.is_set() or not self._active:
                     log.info("Hoppar över paste från stale transkribering")
+                    return
+
+                # AP5 command mode: if this utterance is a command on the last
+                # block, edit that block in place instead of dictating new text.
+                if (getattr(self, "command_mode_enabled", False)
+                        and getattr(self, "_last_block", "")
+                        and self._try_command(text)):
                     return
 
                 if llm_enabled:
@@ -343,13 +518,20 @@ class DictationMode:
 
                     polish_lock = threading.Lock()
                     polish_completed = {"done": False}
+                    t_llm0 = time.monotonic()
 
                     def _paste_and_finalize(final_text: str, polished_label: bool) -> None:
                         """Paste once and update indicator. Must be called under lock."""
                         if self._worker_stop.is_set() or not self._active:
                             log.info("Hoppar över paste efter stopp")
                             return
+                        llm_ms = (time.monotonic() - t_llm0) * 1000
+                        t_p0 = time.monotonic()
                         paste_text(final_text, active_modifiers=self._modifier_keys)
+                        self._last_pasted = final_text
+                        self._last_block = final_text
+                        self._log_latency(record_ms, transcribe_ms, llm_ms,
+                                          (time.monotonic() - t_p0) * 1000)
                         if polished_label:
                             state = getattr(self.transcriber, "last_polish_state", "local")
                             if state == "llm_changed":
@@ -376,7 +558,9 @@ class DictationMode:
                         )
                         _paste_and_finalize(text, polished_label=False)
 
-                    watchdog = threading.Timer(15.0, _watchdog_fallback)
+                    watchdog = threading.Timer(
+                        getattr(self, "llm_timeout_sec", 15.0),
+                        _watchdog_fallback)
                     watchdog.daemon = True
                     watchdog.name = "llm-polish-watchdog"
 
@@ -396,8 +580,10 @@ class DictationMode:
                     # keeps the transcriber's per-job slot clean.
                     watchdog.start()
                     try:
-                        self.transcriber.polish_async(text, _on_polish_done,
-                                                      on_stage=None)
+                        self.transcriber.polish_async(
+                            text, _on_polish_done, on_stage=None,
+                            app_profile=profile_desc,
+                            onscreen_names=onscreen_names)
                     except Exception as e:
                         log.error("polish_async kraschade synkront: %s",
                                   e, exc_info=True)
@@ -405,7 +591,12 @@ class DictationMode:
                         _watchdog_fallback()
                 else:
                     # No LLM — paste immediately, this is the fast path.
+                    t_p0 = time.monotonic()
                     paste_text(text, active_modifiers=self._modifier_keys)
+                    self._last_pasted = text
+                    self._last_block = text
+                    self._log_latency(record_ms, transcribe_ms, 0.0,
+                                      (time.monotonic() - t_p0) * 1000)
                     message = "Klistrad"
                     self.on_status(f"{message} — håll {self.hotkey.upper()} igen")
                     if self.indicator:

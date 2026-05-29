@@ -18,13 +18,17 @@ UTAN att ändra fakta, namn, siffror eller meningens betydelse.
 """
 from __future__ import annotations
 
+import http.client
+import io
 import json
 import logging
 import os
 import subprocess
-import urllib.request
+import threading
 import urllib.error
+import urllib.request
 from typing import NamedTuple
+from urllib.parse import urlsplit
 
 log = logging.getLogger("freewispr")
 
@@ -222,36 +226,98 @@ def resolve_api_key(api_key: str = "", provider: str = DEFAULT_PROVIDER) -> str:
 #  HTTP
 # --------------------------------------------------------------------------- #
 
+# System prompt: the model is a *språkstädare* (language tidier), not an author.
+# KBLab Whisper already removes most filler, so the job is resolving
+# self-corrections, untangling run-on speech, applying known fixes/names, and
+# light formatting — never adding content or changing meaning. The few-shot
+# block anchors the four behaviours the spec calls out.
 _SYSTEM_PROMPT = (
-    "Du är en svensk textkorrigerare för dikterad text (speech-to-text). "
-    "Korrigera BARA uppenbara transkriptionsfel: felhörda ord, grammatik, "
-    "interpunktion och stavning. "
-    "ÄNDRA INTE: innehåll, årtal, namn, siffror, fakta eller meningens betydelse. "
-    "Behåll talspråkliga uttryck om de verkar avsiktliga (t.ex. 'ju', 'nog', 'väl'). "
-    "Om texten redan är korrekt, returnera den EXAKT som den är. "
-    "Returnera BARA den korrigerade texten, inget annat."
+    "Du är en svensk språkstädare för dikterad text (tal-till-text), inte en "
+    "författare. Ändra ALDRIG innebörden. Lägg ALDRIG till fakta, hälsningar "
+    "eller signaturer som inte sagts.\n"
+    "Uppgifter, i denna ordning:\n"
+    "1. Lös självrättelser och omstarter — behåll den slutliga avsikten "
+    "(t.ex. 'klockan fem, nej förresten sex' → 'klockan sex').\n"
+    "2. Bryt rörig talspråksföljd till läsbara meningar med korrekt interpunktion.\n"
+    "3. Tillämpa kända rättelser och fackord/egennamn från referensblocket om "
+    "det finns.\n"
+    "4. Lätt formatering enligt eventuell app-profil.\n"
+    "Gör INTE: jaga fyllnadsord utöver det uppenbara (modellen som "
+    "transkriberat har redan rensat det mesta), ompolera redan korrekt text, "
+    "eller fylla ut.\n"
+    "Om texten redan är korrekt, returnera den EXAKT som den är.\n"
+    "Returnera ENBART den färdiga texten — ingen förklaring, inga kodstaket, "
+    "inga citationstecken runt."
+)
+
+_FEWSHOT = (
+    "\n\nExempel:\n"
+    "In: jag tänkte vi ses klockan fem nej förresten sex\n"
+    "Ut: Jag tänkte vi ses klockan sex.\n"
+    "In: så vi måste alltså fixa det här och eh sen ringa kunden och sen så\n"
+    "Ut: Vi måste fixa det här och sedan ringa kunden.\n"
+    "In: jag pratade med johan på kammar igår (referens: kammar → Kalmar)\n"
+    "Ut: Jag pratade med Johan i Kalmar igår.\n"
+    "In: skapa en ny gren som heter feature snedstreck login (app-profil: "
+    "kod / ingen versalisering / ingen interpunktion)\n"
+    "Ut: skapa en ny gren som heter feature/login"
 )
 
 
-def _build_system_prompt(context_text: str = "") -> str:
-    """Compose the system prompt, optionally appending the user's personal context.
+def build_reference_block(
+    personal_context: str = "",
+    corrections: dict[str, str] | None = None,
+    app_profile: str = "",
+    onscreen_names: str = "",
+) -> str:
+    """Compose the reference block from its parts, omitting empty sections.
 
-    The context is wrapped in clear delimiters and given a brief instruction
-    so the model treats it as *background reference* — not as new content to
-    insert into the output. Empty / whitespace-only context returns the bare
-    base prompt unchanged (we never want to send a dangling "Användarens
-    kontext:" header that the model might react to).
+    Returns an empty string when everything is empty so the caller never sends
+    a dangling header the model might treat as an instruction. The block is
+    explicitly framed as *reference only* in :func:`_build_system_prompt`.
     """
-    ctx = (context_text or "").strip()
-    if not ctx:
-        return _SYSTEM_PROMPT
+    blocks: list[str] = []
+
+    ctx = (personal_context or "").strip()
+    if ctx:
+        blocks.append("Personlig kontext:\n" + ctx)
+
+    pairs = [
+        (str(k).strip(), str(v).strip())
+        for k, v in (corrections or {}).items()
+        if str(k).strip() and str(v).strip() and str(k).strip() != str(v).strip()
+    ]
+    if pairs:
+        lines = "\n".join(f"- {k} → {v}" for k, v in pairs)
+        blocks.append("Kända rättelser (vänster → höger):\n" + lines)
+
+    prof = (app_profile or "").strip()
+    if prof:
+        blocks.append("App-profil: " + prof)
+
+    names = (onscreen_names or "").strip()
+    if names:
+        blocks.append("Namn på skärmen: " + names)
+
+    return "\n\n".join(blocks)
+
+
+def _build_system_prompt(reference_block: str = "") -> str:
+    """Compose the system prompt, optionally appending a reference block.
+
+    The reference is wrapped in clear delimiters and framed as *background
+    reference* — not content to insert into the output. Empty / whitespace-only
+    reference returns the bare base prompt (with few-shot) unchanged.
+    """
+    base = _SYSTEM_PROMPT + _FEWSHOT
+    ref = (reference_block or "").strip()
+    if not ref:
+        return base
     return (
-        f"{_SYSTEM_PROMPT}\n\n"
-        "Användarens personliga kontext (använd ENDAST som referens för "
-        "stavning av egennamn, facktermer, böjningar och tonalitet — lägg "
-        "INTE in innehåll härifrån i svaret):\n"
+        f"{base}\n\n"
+        "Referensblock (använd ENDAST som referens, klistra INTE in härifrån):\n"
         "---\n"
-        f"{ctx}\n"
+        f"{ref}\n"
         "---"
     )
 
@@ -272,11 +338,128 @@ def _build_headers(provider: _Provider, api_key: str) -> dict[str, str]:
     return headers
 
 
+# --------------------------------------------------------------------------- #
+#  Keep-alive HTTP transport
+#
+#  Each polish reuses a persistent connection per origin to skip the TLS
+#  handshake (~50-150 ms saved per dictation). Connections are pooled by
+#  (scheme, host, port) and guarded by a single lock — polish runs one at a
+#  time on the hot path, so serialising HTTP here costs nothing in practice and
+#  keeps http.client (which is not thread-safe per connection) correct when a
+#  Settings "Testa"-call overlaps. A stale/closed connection is dropped and the
+#  request retried once.
+# --------------------------------------------------------------------------- #
+
+_conn_lock = threading.Lock()
+_connections: dict[tuple[str, str, int], http.client.HTTPConnection] = {}
+
+
+def _connection_for(url: str, timeout: float) -> tuple[tuple[str, str, int],
+                                                       http.client.HTTPConnection]:
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    key = (parts.scheme, host, port)
+    conn = _connections.get(key)
+    if conn is None:
+        if parts.scheme == "https":
+            conn = http.client.HTTPSConnection(host, port, timeout=timeout)
+        else:
+            conn = http.client.HTTPConnection(host, port, timeout=timeout)
+        _connections[key] = conn
+    else:
+        conn.timeout = timeout
+    return key, conn
+
+
+def _drop_connection(key: tuple[str, str, int]) -> None:
+    conn = _connections.pop(key, None)
+    if conn is not None:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def reset_sessions() -> None:
+    """Close all pooled connections. Call after settings changes / provider swap."""
+    with _conn_lock:
+        for key in list(_connections):
+            _drop_connection(key)
+
+
+def _read_sse(resp: http.client.HTTPResponse) -> dict:
+    """Assemble a streamed chat-completion (SSE) into the legacy response dict.
+
+    Reading deltas as they arrive lets the caller begin paste-prep the moment
+    the final token lands instead of waiting on a buffered full-body read.
+    """
+    content_parts: list[str] = []
+    model = ""
+    for raw_line in resp:
+        line = raw_line.decode("utf-8", errors="replace").strip()
+        if not line or not line.startswith("data:"):
+            continue
+        data = line[len("data:"):].strip()
+        if data == "[DONE]":
+            break
+        try:
+            chunk = json.loads(data)
+        except Exception:
+            continue
+        model = chunk.get("model", model) or model
+        for choice in chunk.get("choices", []) or []:
+            delta = choice.get("delta", {}) or {}
+            piece = delta.get("content")
+            if piece:
+                content_parts.append(piece)
+    return {
+        "choices": [{"message": {"content": "".join(content_parts)}}],
+        "model": model,
+        "usage": {},
+    }
+
+
+def _http_request(url: str, headers: dict[str, str], payload: bytes | None,
+                  method: str, timeout_sec: float, stream: bool) -> dict:
+    parts = urlsplit(url)
+    path = parts.path or "/"
+    if parts.query:
+        path = f"{path}?{parts.query}"
+    with _conn_lock:
+        key, conn = _connection_for(url, timeout_sec)
+        attempts = 0
+        while True:
+            attempts += 1
+            try:
+                conn.request(method, path, body=payload, headers=headers)
+                resp = conn.getresponse()
+                if resp.status >= 400:
+                    err_body = resp.read()
+                    _drop_connection(key)
+                    raise urllib.error.HTTPError(
+                        url, resp.status, resp.reason,
+                        dict(resp.getheaders()), io.BytesIO(err_body),
+                    )
+                if stream:
+                    return _read_sse(resp)
+                raw = resp.read()
+                return json.loads(raw.decode("utf-8"))
+            except urllib.error.HTTPError:
+                raise
+            except (ConnectionError, http.client.HTTPException, OSError) as e:
+                _drop_connection(key)
+                if attempts < 2:
+                    # Stale keep-alive connection — reopen and retry once.
+                    key, conn = _connection_for(url, timeout_sec)
+                    continue
+                raise urllib.error.URLError(e) from e
+
+
 def _request_json(url: str, headers: dict[str, str], payload: bytes | None,
                   method: str, timeout_sec: float) -> dict:
-    req = urllib.request.Request(url, data=payload, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    """Non-streaming JSON request over the keep-alive pool (used by fetch_models)."""
+    return _http_request(url, headers, payload, method, timeout_sec, stream=False)
 
 
 def _call_api(
@@ -287,6 +470,7 @@ def _call_api(
     provider: str = DEFAULT_PROVIDER,
     base_url_override: str = "",
     context_text: str = "",
+    stream: bool = True,
 ) -> dict:
     p = _get_provider(provider)
     base = _resolve_base_url(provider, base_url_override)
@@ -295,21 +479,27 @@ def _call_api(
     normalized = normalize_model(model, provider)
     if not normalized:
         raise ValueError("inget modellnamn angivet")
-    payload = json.dumps({
+    body = {
         "model": normalized,
         "messages": [
             {"role": "system", "content": _build_system_prompt(context_text)},
             {"role": "user",   "content": user_text},
         ],
         "temperature": 0,
-        "max_tokens": max(100, int(len(user_text) * 1.5)),
-    }).encode("utf-8")
-    return _request_json(
+        # Output is a cleaned-up version of the input, never much longer.
+        # ~1.3× input chars + a small constant covers punctuation growth.
+        "max_tokens": max(64, int(len(user_text) * 1.3) + 32),
+    }
+    if stream:
+        body["stream"] = True
+    payload = json.dumps(body).encode("utf-8")
+    return _http_request(
         f"{base}/chat/completions",
         _build_headers(p, api_key),
         payload,
         method="POST",
         timeout_sec=timeout_sec,
+        stream=stream,
     )
 
 
@@ -331,13 +521,17 @@ def polish(
     provider: str = DEFAULT_PROVIDER,
     base_url_override: str = "",
     context_text: str = "",
+    corrections: dict[str, str] | None = None,
+    app_profile: str = "",
+    onscreen_names: str = "",
 ) -> PolishResult:
     """Skicka text genom vald leverantör. Returnerar alltid något användbart.
 
     ``context_text`` är användarens personliga kontext (egennamn, facktermer,
-    tonalitet) som injiceras i system-prompten. Tom/whitespace-bara text
-    behandlas som "ingen kontext" och utelämnas helt — vi vill aldrig skicka
-    ett dingelblock som modellen kan tolka som en instruktion.
+    tonalitet). ``corrections`` är inlärda term-par (``fel → rätt``),
+    ``app_profile`` är aktiv app-profil (ton/format) och ``onscreen_names`` är
+    namn nära markören. Alla vävs in i ett *referensblock* i system-prompten —
+    tomma delar utelämnas helt så modellen aldrig får ett dingelblock.
 
     Vid valfritt fel returneras originaltexten oförändrad — diktering blockeras
     aldrig av LLM-problem.
@@ -357,11 +551,15 @@ def polish(
     if not used_model:
         return PolishResult(text=text, model=used_model, latency_ms=0, changed=False)
 
+    reference = build_reference_block(
+        context_text, corrections, app_profile, onscreen_names,
+    )
+
     t0 = time.perf_counter()
     try:
         data = _call_api(resolved_key, used_model, text,
                          provider=provider, base_url_override=base_url_override,
-                         context_text=context_text)
+                         context_text=reference)
         # Sanitise BEFORE length / equality checks so control bytes don't
         # skew the hallucination filter and don't reach the clipboard.
         from text_sanitize import sanitize_output
@@ -408,6 +606,65 @@ def polish(
                             changed=False)
 
 
+_COMMAND_SYSTEM_PROMPT = (
+    "Du är en svensk textredigerare. Användaren ger en instruktion och en text. "
+    "Utför instruktionen på texten och returnera ENBART den nya texten — ingen "
+    "förklaring, inga kodstaket, inga citationstecken runt."
+)
+
+
+def instruct(
+    text: str,
+    instruction: str,
+    api_key: str = "",
+    model: str = "",
+    provider: str = DEFAULT_PROVIDER,
+    base_url_override: str = "",
+    timeout_sec: float = 12.0,
+) -> str:
+    """Kommandoläge (AP5): kör en fri instruktion på ``text`` via LLM.
+
+    Returnerar den transformerade texten, eller originaltexten oförändrad vid
+    valfritt fel — kommandoläget får aldrig krascha dikteringen.
+    """
+    p = _get_provider(provider)
+    text = (text or "").strip()
+    instruction = (instruction or "").strip()
+    if not text or not instruction:
+        return text
+    resolved_key = resolve_api_key(api_key, provider)
+    if not resolved_key and provider != "custom":
+        return text
+    base = _resolve_base_url(provider, base_url_override)
+    used_model = normalize_model(model, provider) or p.default_model
+    if not base or not used_model:
+        return text
+
+    body = {
+        "model": used_model,
+        "messages": [
+            {"role": "system", "content": _COMMAND_SYSTEM_PROMPT},
+            {"role": "user",
+             "content": f"Instruktion: {instruction}\n\nText:\n{text}"},
+        ],
+        "temperature": 0,
+        "max_tokens": max(64, int(len(text) * 1.6) + 64),
+    }
+    payload = json.dumps(body).encode("utf-8")
+    try:
+        data = _http_request(
+            f"{base}/chat/completions",
+            _build_headers(p, resolved_key),
+            payload, method="POST", timeout_sec=timeout_sec, stream=False,
+        )
+        from text_sanitize import sanitize_output
+        out = sanitize_output(data["choices"][0]["message"]["content"].strip())
+        return out or text
+    except Exception as e:
+        log.warning("Kommando-LLM misslyckades (%s): %s", provider, e)
+        return text
+
+
 def test_connection(
     api_key: str,
     model: str = "",
@@ -441,7 +698,8 @@ def test_connection(
     t0 = time.perf_counter()
     try:
         data = _call_api(resolved_key, used_model, test_input, timeout_sec=10.0,
-                         provider=provider, base_url_override=base_url_override)
+                         provider=provider, base_url_override=base_url_override,
+                         stream=False)
         latency = int((time.perf_counter() - t0) * 1000)
         from text_sanitize import sanitize_output
         # Same threat model as polish(): the provider could embed ANSI/control
