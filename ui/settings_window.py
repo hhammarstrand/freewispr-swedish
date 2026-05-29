@@ -352,6 +352,111 @@ class SettingsWindow:
             anchor="w", padx=6, pady=(2, 8)
         )
 
+        # Om & uppdateringar
+        self._label(parent, "Om appen",
+                    font=ctk.CTkFont(weight="bold") if _CTK_AVAILABLE else None
+                    ).pack(anchor="w", **pad)
+
+        try:
+            from main import __version__ as _app_version
+        except Exception:
+            _app_version = "okänd"
+
+        self._version_label = self._hint(
+            parent, f"freewispr-swedish v{_app_version}"
+        )
+        self._version_label.pack(anchor="w", padx=6, pady=(4, 0))
+
+        self._update_status_label = self._hint(parent, "")
+        self._update_status_label.pack(anchor="w", padx=6, pady=(2, 4))
+
+        self._update_button = self._button(
+            parent, "Sök efter uppdateringar",
+            command=self._on_check_updates,
+        )
+        self._update_button.pack(anchor="w", padx=6, pady=(2, 8))
+
+        # Visa befintligt cachat resultat direkt om main redan hittat en
+        # uppdatering. Anropet är synkront och berör bara process-globaler.
+        self._refresh_update_status()
+
+    def _refresh_update_status(self):
+        """Uppdatera etiketten under versionen baserat på _pending_update i main."""
+        try:
+            from main import _pending_update
+        except Exception:
+            _pending_update = None
+        if _pending_update is not None:
+            self._update_status_label.configure(
+                text=f"Ny version v{_pending_update.version} finns att hämta — "
+                     f"klicka i tray-menyn för att öppna release-sidan."
+            )
+        else:
+            self._update_status_label.configure(text="Du har senaste versionen.")
+
+    def _on_check_updates(self):
+        """Knappen: kör en manuell update-check i bakgrunden och visa resultatet."""
+        import threading
+
+        try:
+            self._update_button.configure(state="disabled", text="Söker...")
+        except Exception:
+            pass
+        self._update_status_label.configure(text="Kontrollerar GitHub...")
+
+        def _worker():
+            info = None
+            try:
+                from updater import check_for_update
+                from main import __version__ as _v
+                info = check_for_update(_v, force=True)
+            except Exception as e:
+                err = str(e)
+                def _show_err():
+                    self._update_status_label.configure(
+                        text=f"Kunde inte söka: {err}"
+                    )
+                    try:
+                        self._update_button.configure(
+                            state="normal", text="Sök efter uppdateringar"
+                        )
+                    except Exception:
+                        pass
+                try:
+                    self.root.after(0, _show_err)
+                except Exception:
+                    pass
+                return
+
+            def _apply():
+                # Synka mot main._pending_update så tray-menyn och Settings
+                # visar samma sak.
+                try:
+                    import main as _main
+                    if info is not None:
+                        _main._pending_update = info
+                        try:
+                            _main._rebuild_menu()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                self._refresh_update_status()
+                try:
+                    self._update_button.configure(
+                        state="normal", text="Sök efter uppdateringar"
+                    )
+                except Exception:
+                    pass
+
+            try:
+                self.root.after(0, _apply)
+            except Exception:
+                pass
+
+        threading.Thread(target=_worker, name="settings-update-check",
+                         daemon=True).start()
+
     def _update_mic_info(self):
         name = self._mic_var.get()
         if name == "Auto":
