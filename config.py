@@ -78,6 +78,12 @@ DEFAULTS = {
     "llm_api_key_openai": "",
     "llm_api_key_custom": "",
     "llm_privacy_accepted": False,
+    # "Rå direkt": paste the raw transcript and skip LLM polish even when LLM
+    # is enabled (useful per-app via profiles, or as a global fast toggle).
+    "llm_raw_mode": False,
+    # Watchdog threshold (seconds): if polish hasn't returned by now, the raw
+    # transcript is pasted as a fallback so the indicator never hangs.
+    "llm_timeout_sec": 15.0,
 
     # ---- Remote transcription (audio leaves the machine) ----
     # local | staik | berget | custom

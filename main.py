@@ -177,6 +177,9 @@ def _make_dictation(transcriber):
         indicator=_indicator,
         mic_device=_config.get("mic_device"),
         min_rms=float(_config.get("min_rms", DEFAULT_MIN_RMS)),
+        raw_mode=bool(_config.get("llm_raw_mode", False)),
+        llm_timeout_sec=float(_config.get("llm_timeout_sec", 15.0)),
+        context_awareness=bool(_config.get("context_awareness_enabled", True)),
     )
 
 

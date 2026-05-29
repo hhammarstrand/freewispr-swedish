@@ -2,6 +2,7 @@
 import logging
 import queue
 import threading
+import time
 import keyboard
 import numpy as np
 
@@ -102,7 +103,10 @@ class DictationMode:
     def __init__(self, transcriber: Transcriber, hotkey: str = "ctrl+space",
                  on_status=None, indicator=None,
                  mic_device: str | dict | None = None,
-                 min_rms: float = DEFAULT_MIN_RMS):
+                 min_rms: float = DEFAULT_MIN_RMS,
+                 raw_mode: bool = False,
+                 llm_timeout_sec: float = 15.0,
+                 context_awareness: bool = True):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
@@ -110,8 +114,16 @@ class DictationMode:
         self.on_status = on_status or (lambda msg: None)
         self.indicator = indicator
         self.min_rms = min_rms
+        # "Rå direkt": when True, paste the raw transcript and skip LLM polish
+        # even if the transcriber has LLM enabled. May be overridden per app
+        # profile (AP3) once context awareness resolves a "kod"-style profile.
+        self.raw_mode = raw_mode
+        # Watchdog threshold for the wait-mode polish fallback (configurable).
+        self.llm_timeout_sec = llm_timeout_sec
+        self.context_awareness = context_awareness
         self._active = False
         self._recording = False
+        self._t_press = 0.0
         self._hook_handles: list = []
 
         # Bounded queue + dedicated worker thread. Replaces the old single-slot
@@ -182,6 +194,17 @@ class DictationMode:
 
     # ----------------------------------------------------------------- private
 
+    @staticmethod
+    def _log_latency(record_ms: float, transcribe_ms: float,
+                     llm_ms: float, paste_ms: float) -> None:
+        """Log the per-step latency breakdown for the hot path (AP1)."""
+        pipeline = transcribe_ms + llm_ms + paste_ms
+        log.info(
+            "Latens: record=%.0fms transcribe=%.0fms llm=%.0fms paste=%.0fms "
+            "(pipeline efter release=%.0fms)",
+            record_ms, transcribe_ms, llm_ms, paste_ms, pipeline,
+        )
+
     def _modifier_held(self) -> bool:
         """All required modifiers must be physically held right now."""
         if not self._modifiers:
@@ -195,6 +218,7 @@ class DictationMode:
         if self._active and not self._recording and self._modifier_held():
             try:
                 self._recording = True
+                self._t_press = time.monotonic()
                 # Wire the audio thread to push RMS levels directly to the
                 # UI indicator — replaces the 50 ms polling timer with an
                 # event-driven path. Cleared in _on_release.
@@ -240,13 +264,17 @@ class DictationMode:
 
         sounds.play_stop()
 
+        # Recording duration (press → release) — first leg of the latency
+        # breakdown logged in _transcribe.
+        record_ms = (time.monotonic() - self._t_press) * 1000 if self._t_press else 0.0
+
         # Reuse the running RMS maintained by the recorder — O(1).
         rms = self.recorder.rms()
 
         # Enqueue for the worker. Bounded queue: if full (previous job(s)
         # still being transcribed/polished), drop and tell the user.
         try:
-            self._jobs.put_nowait((audio, channels, rate, rms))
+            self._jobs.put_nowait((audio, channels, rate, rms, record_ms))
         except queue.Full:
             log.warning("Transkriberingskö full — hoppar över denna")
             self.on_status("Upptagen — vänta…")
@@ -274,7 +302,7 @@ class DictationMode:
                 log.error("Worker exception: %s", e, exc_info=True)
 
     def _process_job(self, audio_raw: np.ndarray, channels: int,
-                     rate: int, rms: float):
+                     rate: int, rms: float, record_ms: float = 0.0):
         n_raw = audio_raw.shape[0] if audio_raw.ndim >= 1 else 0
         log.info("Audio: %d raw samples, RMS=%.5f", n_raw, rms)
 
@@ -297,15 +325,20 @@ class DictationMode:
                 self.indicator.hide(delay_ms=0)
             return
 
-        self._transcribe(audio)
+        self._transcribe(audio, record_ms)
 
-    def _transcribe(self, audio: np.ndarray):
+    def _transcribe(self, audio: np.ndarray, record_ms: float = 0.0):
         try:
             if self._worker_stop.is_set() or not self._active:
                 log.info("Hoppar över stale transkribering efter stopp")
                 return
             log.info("Transkriberar %d samples...", len(audio))
-            llm_enabled = getattr(self.transcriber, "llm_enabled", False)
+            # "Rå direkt" disables polish even when the transcriber has LLM on.
+            llm_enabled = (
+                getattr(self.transcriber, "llm_enabled", False)
+                and not getattr(self, "raw_mode", False)
+            )
+            t_tx0 = time.monotonic()
             # The status message shown while transcription runs reflects
             # whether the user opted into a remote provider. Saying "lokalt"
             # when the audio is being shipped to e.g. KBLab's API is both
@@ -320,6 +353,7 @@ class DictationMode:
                 if self.indicator:
                     self.indicator.show(f"Transkriberar {tr_label}…", state="transcribe")
             text = self.transcriber.transcribe(audio)
+            transcribe_ms = (time.monotonic() - t_tx0) * 1000
             log.info("Resultat klart (%s)", _text_meta(text))
             if text.strip():
                 if self._worker_stop.is_set() or not self._active:
@@ -343,13 +377,18 @@ class DictationMode:
 
                     polish_lock = threading.Lock()
                     polish_completed = {"done": False}
+                    t_llm0 = time.monotonic()
 
                     def _paste_and_finalize(final_text: str, polished_label: bool) -> None:
                         """Paste once and update indicator. Must be called under lock."""
                         if self._worker_stop.is_set() or not self._active:
                             log.info("Hoppar över paste efter stopp")
                             return
+                        llm_ms = (time.monotonic() - t_llm0) * 1000
+                        t_p0 = time.monotonic()
                         paste_text(final_text, active_modifiers=self._modifier_keys)
+                        self._log_latency(record_ms, transcribe_ms, llm_ms,
+                                          (time.monotonic() - t_p0) * 1000)
                         if polished_label:
                             state = getattr(self.transcriber, "last_polish_state", "local")
                             if state == "llm_changed":
@@ -376,7 +415,9 @@ class DictationMode:
                         )
                         _paste_and_finalize(text, polished_label=False)
 
-                    watchdog = threading.Timer(15.0, _watchdog_fallback)
+                    watchdog = threading.Timer(
+                        getattr(self, "llm_timeout_sec", 15.0),
+                        _watchdog_fallback)
                     watchdog.daemon = True
                     watchdog.name = "llm-polish-watchdog"
 
@@ -405,7 +446,10 @@ class DictationMode:
                         _watchdog_fallback()
                 else:
                     # No LLM — paste immediately, this is the fast path.
+                    t_p0 = time.monotonic()
                     paste_text(text, active_modifiers=self._modifier_keys)
+                    self._log_latency(record_ms, transcribe_ms, 0.0,
+                                      (time.monotonic() - t_p0) * 1000)
                     message = "Klistrad"
                     self.on_status(f"{message} — håll {self.hotkey.upper()} igen")
                     if self.indicator:
