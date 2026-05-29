@@ -16,6 +16,10 @@ CONFIG_DIR = Path.home() / ".freewispr-swedish"
 MODEL_DIR = CONFIG_DIR / "models"
 HOTWORDS_FILE = CONFIG_DIR / "hotwords.txt"
 
+# How often to ping the LLM endpoint to keep the pooled connection alive (L3).
+# Comfortably under typical keep-alive idle timeouts (~60 s).
+_LLM_WARM_INTERVAL = 25.0
+
 
 def _text_meta(text: str) -> str:
     words = len(text.split())
@@ -382,6 +386,13 @@ class Transcriber:
         self.transcription_temperature = transcription_temperature
         self.on_stage = None
 
+        # L3: keep the LLM connection warm so the first polish doesn't pay a
+        # TLS handshake / provider cold-start. Only runs when LLM is enabled —
+        # offline base mode (LLM off) issues no network traffic.
+        self._llm_warm_stop = threading.Event()
+        if llm_enabled:
+            self._start_llm_warmer()
+
         # When the user has opted into a remote transcription provider, the
         # local Whisper model is *not* loaded. This saves 0.5–3 GB of RAM/VRAM
         # and skips the warmup pass. There is no fallback — if the remote
@@ -455,6 +466,17 @@ class Transcriber:
         threading.Thread(target=self._warmup, name="whisper-warmup",
                          daemon=True).start()
 
+    def _start_llm_warmer(self) -> None:
+        """Warm the LLM connection now + periodically (L3)."""
+        def _loop():
+            from llm_polish import warm
+            kw = dict(model=self.llm_model, provider=self.llm_provider,
+                      base_url_override=self.llm_base_url)
+            warm(self.llm_api_key, **kw)
+            while not self._llm_warm_stop.wait(_LLM_WARM_INTERVAL):
+                warm(self.llm_api_key, **kw)
+        threading.Thread(target=_loop, name="llm-warm", daemon=True).start()
+
     def _warmup(self) -> None:
         """Run a single silent inference to pre-allocate inference state."""
         try:
@@ -486,10 +508,15 @@ class Transcriber:
     def close(self) -> None:
         """Release the underlying WhisperModel to free VRAM/RAM.
 
+        Also stops the LLM warm-keeper thread (L3).
+
         Important on model reload: keeping two WhisperModels alive briefly
         can pin 2-3 GB of VRAM and OOM smaller CUDA devices.
         """
         import gc
+        warm_stop = getattr(self, "_llm_warm_stop", None)
+        if warm_stop is not None:
+            warm_stop.set()
         try:
             with self._model_lock:
                 model = getattr(self, "model", None)

@@ -164,7 +164,8 @@ class DictationMode:
                  context_awareness: bool = True,
                  learning_enabled: bool = True,
                  app_profiles: dict | None = None,
-                 command_mode_enabled: bool = True):
+                 command_mode_enabled: bool = True,
+                 llm_replace_mode: bool = False):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
@@ -176,6 +177,8 @@ class DictationMode:
         # even if the transcriber has LLM enabled. May be overridden per app
         # profile (AP3) once context awareness resolves a "kod"-style profile.
         self.raw_mode = raw_mode
+        # "Rå → ersätt" (L3): paste raw first, replace with polished when ready.
+        self.llm_replace_mode = llm_replace_mode
         # Watchdog threshold for the wait-mode polish fallback (configurable).
         self.llm_timeout_sec = llm_timeout_sec
         self.context_awareness = context_awareness
@@ -316,6 +319,66 @@ class DictationMode:
             self.indicator.hide(delay_ms=1800)
         log.info("Kommandoläge utförde '%s'", cmd.phrase)
         return True
+
+    def _dictate_replace_mode(self, text: str, record_ms: float,
+                              transcribe_ms: float, context_hotpath_ms: float,
+                              uia_ms: float, profile_desc: str,
+                              onscreen_names: str) -> None:
+        """L3: paste the raw transcript immediately, then replace it with the
+        polished version when polish lands (editable fields only)."""
+        t_p0 = time.monotonic()
+        paste_text(text, active_modifiers=self._modifier_keys)
+        raw_paste_ms = (time.monotonic() - t_p0) * 1000
+        self._last_pasted = text
+        self._last_block = text
+        log.info("Latens (rå→ersätt) första synliga: record=%.0fms "
+                 "transcribe=%.0fms paste=%.0fms",
+                 record_ms, transcribe_ms, raw_paste_ms)
+        self.on_status("Klistrad (rå) — granskar…")
+        if self.indicator:
+            self.indicator.show("Granskar…", state="transcribe")
+
+        raw_text = text
+        t_llm0 = time.monotonic()
+
+        def _on_replace(original: str, polished: str) -> None:
+            if self._worker_stop.is_set() or not self._active:
+                return
+            llm_ms = (time.monotonic() - t_llm0) * 1000
+            tr = self.transcriber
+            replace_ms = 0.0
+            # Only replace if our raw paste is still the last thing pasted
+            # (best-effort: a newer dictation/command supersedes it; pressing
+            # Enter/Tab before polish lands may still cause a double — a
+            # documented trade-off of this mode).
+            if (polished and polished != raw_text
+                    and self._last_pasted == raw_text):
+                t_r0 = time.monotonic()
+                paste_text(polished, active_modifiers=self._modifier_keys,
+                           replace_len=len(raw_text) + 1)
+                self._last_pasted = polished
+                self._last_block = polished
+                replace_ms = (time.monotonic() - t_r0) * 1000
+            self._log_latency(
+                record_ms, transcribe_ms, llm_ms, raw_paste_ms + replace_ms,
+                context_hotpath_ms=context_hotpath_ms, uia_ms=uia_ms,
+                conn_ms=getattr(tr, "last_polish_conn_ms", 0.0),
+                conn_reused=getattr(tr, "last_polish_conn_reused", None),
+                first_token_ms=getattr(tr, "last_polish_first_token_ms", 0.0))
+            state = getattr(tr, "last_polish_state", "local")
+            msg = ("Klistrad (LLM-polerad)" if state == "llm_changed"
+                   else "Klistrad (LLM-granskad)")
+            self.on_status(f"{msg} — håll {self.hotkey.upper()} igen")
+            if self.indicator:
+                self.indicator.show(msg, state="done")
+                self.indicator.hide(delay_ms=1800)
+
+        try:
+            self.transcriber.polish_async(
+                raw_text, _on_replace, on_stage=None,
+                app_profile=profile_desc, onscreen_names=onscreen_names)
+        except Exception as e:
+            log.error("polish_async (rå→ersätt) kraschade: %s", e, exc_info=True)
 
     @staticmethod
     def _read_focused_text() -> str:
@@ -640,6 +703,15 @@ class DictationMode:
                 if (getattr(self, "command_mode_enabled", False)
                         and getattr(self, "_last_block", "")
                         and self._try_command(text)):
+                    return
+
+                # L3 "rå → ersätt": paste raw now, replace with polished later.
+                # Reaches here only for editable fields (code/terminal profiles
+                # disable polish, so llm_enabled is already False there).
+                if llm_enabled and getattr(self, "llm_replace_mode", False):
+                    self._dictate_replace_mode(
+                        text, record_ms, transcribe_ms, context_hotpath_ms,
+                        uia_ms, profile_desc, onscreen_names)
                     return
 
                 if llm_enabled:

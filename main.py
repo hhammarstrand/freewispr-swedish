@@ -190,6 +190,7 @@ def _make_dictation(transcriber):
         learning_enabled=bool(_config.get("learning_enabled", True)),
         app_profiles=_config.get("app_profiles") or {},
         command_mode_enabled=bool(_config.get("command_mode_enabled", True)),
+        llm_replace_mode=bool(_config.get("llm_replace_mode", False)),
     )
 
 

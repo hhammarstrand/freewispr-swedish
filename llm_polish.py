@@ -299,24 +299,48 @@ def build_reference_block(
     return "\n\n".join(blocks)
 
 
-def _build_system_prompt(reference_block: str = "") -> str:
-    """Compose the system prompt, optionally appending a reference block.
+# The static system prefix (role + few-shot) never changes between calls, so
+# it sits in its own message and providers with automatic prompt/prefix caching
+# (OpenAI, Anthropic-compatible) or a local KV cache (Ollama/llama.cpp) can
+# reuse it (L3). The dynamic reference block goes in a *separate* message so it
+# doesn't invalidate that cached prefix.
+_STATIC_PREFIX = _SYSTEM_PROMPT + _FEWSHOT
 
-    The reference is wrapped in clear delimiters and framed as *background
-    reference* — not content to insert into the output. Empty / whitespace-only
-    reference returns the bare base prompt (with few-shot) unchanged.
-    """
-    base = _SYSTEM_PROMPT + _FEWSHOT
+
+def _reference_message(reference_block: str) -> str:
+    """Wrap the dynamic reference block, or "" when empty."""
     ref = (reference_block or "").strip()
     if not ref:
-        return base
+        return ""
     return (
-        f"{base}\n\n"
         "Referensblock (använd ENDAST som referens, klistra INTE in härifrån):\n"
         "---\n"
         f"{ref}\n"
         "---"
     )
+
+
+def _build_system_prompt(reference_block: str = "") -> str:
+    """Compose the combined system prompt (static prefix + reference).
+
+    Kept for callers/tests that want a single string. The hot path
+    (:func:`_chat_messages`) keeps the prefix and reference in separate messages
+    so the static prefix stays cacheable.
+    """
+    ref = _reference_message(reference_block)
+    if not ref:
+        return _STATIC_PREFIX
+    return f"{_STATIC_PREFIX}\n\n{ref}"
+
+
+def _chat_messages(reference_block: str, user_text: str) -> list[dict]:
+    """Build chat messages with a stable, cacheable static prefix (L3)."""
+    messages = [{"role": "system", "content": _STATIC_PREFIX}]
+    ref = _reference_message(reference_block)
+    if ref:
+        messages.append({"role": "system", "content": ref})
+    messages.append({"role": "user", "content": user_text})
+    return messages
 
 
 def _text_meta(text: str) -> str:
@@ -387,10 +411,7 @@ def _call_api(
         raise ValueError("inget modellnamn angivet")
     body = {
         "model": normalized,
-        "messages": [
-            {"role": "system", "content": _build_system_prompt(context_text)},
-            {"role": "user",   "content": user_text},
-        ],
+        "messages": _chat_messages(context_text, user_text),
         "temperature": 0,
         # Output is a cleaned-up version of the input, never much longer.
         # ~1.3× input chars + a small constant covers punctuation growth.
@@ -520,6 +541,42 @@ def polish(
         log.warning("LLM-fel (%s, %dms): %s", provider, latency, e)
         return PolishResult(text=text, model=used_model, latency_ms=latency,
                             changed=False)
+
+
+def warm(api_key: str = "", model: str = "", provider: str = DEFAULT_PROVIDER,
+         base_url_override: str = "") -> bool:
+    """Open/keep the pooled LLM connection warm with a tiny throwaway request (L3).
+
+    Sends a 1-token completion so the first real polish doesn't pay the TLS
+    handshake (and primes a provider cold-start). Best-effort: returns False on
+    any failure and never raises. Loggar aldrig nyckel eller innehåll.
+    """
+    p = _get_provider(provider)
+    resolved_key = resolve_api_key(api_key, provider)
+    if not resolved_key and provider != "custom":
+        return False
+    try:
+        base = _resolve_base_url(provider, base_url_override)
+    except Exception:
+        return False
+    used_model = normalize_model(model, provider) or p.default_model
+    if not base or not used_model:
+        return False
+    body = {
+        "model": used_model,
+        "messages": [{"role": "user", "content": "."}],
+        "max_tokens": 1,
+        "temperature": 0,
+    }
+    try:
+        _http_request(f"{base}/chat/completions", _build_headers(p, resolved_key),
+                      json.dumps(body).encode("utf-8"), method="POST",
+                      timeout_sec=8.0, stream=False)
+        log.debug("LLM-anslutning uppvärmd (%s)", provider)
+        return True
+    except Exception as e:
+        log.debug("LLM-warm misslyckades (%s): %s", provider, e)
+        return False
 
 
 _COMMAND_SYSTEM_PROMPT = (

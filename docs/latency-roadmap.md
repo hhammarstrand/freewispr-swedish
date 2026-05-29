@@ -1,6 +1,6 @@
 # FreeWispr-Swedish — Latens-roadmap (uppföljning på AP1–AP6)
 
-> **Status: TODO / planerad.** Ren latenspass ovanpå AP1–AP6 (landade i PR #25).
+> **Status: implementerad.** Ren latenspass ovanpå AP1–AP6 (landade i PR #25).
 > Jaga all latens i hot-pathen som **inte** är modellinferens — inferensen (lokal
 > Whisper-decode resp. remote transkriberings-/LLM-inferens) är det irreducibla
 > golvet. Arbetspaketen plockas i ordning L0→L4. Kodankare (`fil:funktion`) är
@@ -21,15 +21,15 @@ lokal-först/integritet, bakåtkompatibel config, tester + ruff.
 Utan mätning är ms-kriterierna nedan inte verifierbara. Bygg ut den befintliga
 latensloggen (`dictation.py:_log_latency`, ~rad 311).
 
-- [ ] Lägg till fält i `_log_latency` så raden blir komplett:
+- [x] Lägg till fält i `_log_latency` så raden blir komplett:
   - `context_hotpath_ms` — hur mycket kontext/UIA-läsning bidrog till kritiska
     vägen (≈0 om överlappad/cachad enligt L1).
   - `uia_ms` — faktisk tid för UIA-läsningen (oavsett var den körs).
   - `conn_ms` + `conn_reused` (bool) — anslutningssetup för remote-anrop
     (transkribering och polish).
   - `first_token_ms` — TTFT för polish (även om paste sker vid full text).
-- [ ] Rullande sammanställning i loggen (p50/p95 över senaste N dikteringar).
-- [ ] Benchmark-läge `python -m tests.bench_latency <wav>` — kör pipelinen K
+- [x] Rullande sammanställning i loggen (p50/p95 över senaste N dikteringar).
+- [x] Benchmark-läge `python -m tests.bench_latency <wav>` — kör pipelinen K
       gånger på en fast WAV och skriver percentiler per steg. Får mocka
       paste/UIA så det körs i CI utan Windows-GUI.
 
@@ -49,19 +49,19 @@ sedan `_transcribe` → `_resolve_context()` → `get_context()` (~`context_win.
 transkribering. I Electron/Chromium kan varje
 `GetFocusedControl().GetValuePattern()` ta 100–500 ms och ibland hänga.
 
-- [ ] **Flytta kontextupplösningen till `_on_press`, på en daemon-tråd.** Aktiv
+- [x] **Flytta kontextupplösningen till `_on_press`, på en daemon-tråd.** Aktiv
       app + fokuserat fält är kända vid nedtryck och ändras inte medan tangenten
       hålls. Spara i t.ex. `self._ctx_future`; `_transcribe` läser cachat med kort
       hård `join(timeout)`. UIA-kostnaden överlappar hela inspelningen.
-- [ ] **Slå ihop de två UIA-läsningarna till en.** Snapshotet vid nedtryck ger
+- [x] **Slå ihop de två UIA-läsningarna till en.** Snapshotet vid nedtryck ger
       både (a) fältets nuvarande innehåll = förra (ev. redigerade) inklistringen
       → underlag för AP2-inlärningen, och (b) egennamn för AP3-biasing.
       `_observe_corrections` konsumerar (a) från samma snapshot. Ingen synkron
       `get_focused_text` kvar i `_process_job`/`_transcribe`.
-- [ ] **Tidsbegränsa UIA hårt.** `uiautomation.SetGlobalSearchTimeout(...)` lågt
+- [x] **Tidsbegränsa UIA hårt.** `uiautomation.SetGlobalSearchTimeout(...)` lågt
       vid init, och kör läsningen i tråd med `join(timeout≈150 ms)` → returnera
       `""` annars.
-- [ ] **Hoppa över textläsningen när den inte behövs.** `get_context(read_text=…)`
+- [x] **Hoppa över textläsningen när den inte behövs.** `get_context(read_text=…)`
       finns redan men anropas alltid med `True`. Anropa med `read_text=False` när
       profilen är polish-av (t.ex. `code`) **och** `_last_pasted` är tomt — då
       räcker billiga `get_active_app`.
@@ -84,11 +84,11 @@ färsk `urllib.request.Request` per diktering (~rad 229) → ny TCP + TLS varje 
 (`_http_request` ~rad 423, `_read_sse` ~rad 391, `reset_sessions` ~rad 384,
 stale-reopen+retry); transkriberingen saknar den.
 
-- [ ] Bryt ut keep-alive-poolen ur `llm_polish.py` till delad modul
+- [x] Bryt ut keep-alive-poolen ur `llm_polish.py` till delad modul
       `http_pool.py` (persistent anslutning per host, stale-detektion → reopen +
       retry-en-gång, timeouts). Behåll `reset_sessions()`-motsvarighet.
-- [ ] Använd poolen i **både** `llm_polish.py` och `remote_transcribe.py`.
-- [ ] Multipart-bygget kan vara kvar; bara transporten ska poolas.
+- [x] Använd poolen i **både** `llm_polish.py` och `remote_transcribe.py`.
+- [x] Multipart-bygget kan vara kvar; bara transporten ska poolas.
 
 **Acceptanskriterier**
 - Diktering N>1 mot samma host loggar `conn_reused=true` och `conn_ms` ≈ 0 (mot
@@ -106,17 +106,17 @@ ingen vinst i nuläget. Whisper värms (`transcriber.py:_warmup` ~rad 456, 1 s
 tystnad på egen tråd) men **inget värmer LLM-endpointen** → första polishen betalar
 handskakning + ev. provider-cold-start.
 
-- [ ] **Värm LLM-anslutningen vid start + periodiskt.** Minimal throwaway-polish
+- [x] **Värm LLM-anslutningen vid start + periodiskt.** Minimal throwaway-polish
       (~1 token) på egen tråd när LLM är på, och håll den poolade anslutningen
       (L2) varm med intervall under keep-alive-timeouten.
-- [ ] **Valfritt "rå → ersätt"-läge** (config-flagga, default av). Klistra rå
+- [x] **Valfritt "rå → ersätt"-läge** (config-flagga, default av). Klistra rå
       transkribering direkt och ersätt med polerad text när den landar, via
       **befintlig** `paste.py:_paste_and_keep_clipboard(replace_len=…)` (~rad 56).
       **Grinda på app-profil:** aldrig i `code`/terminal (paste-twice-risk),
       endast i redigerbara fält (casual/email). Hoppa över ersättning om
       användaren redan tryckt Enter/Tab (best-effort; dokumentera tradeoffen i
       README).
-- [ ] **Prefix-caching:** strukturera polish-anropet så ett statiskt
+- [x] **Prefix-caching:** strukturera polish-anropet så ett statiskt
       system-/few-shot-prefix kan cachas där providern stödjer det
       (capability-flagga per provider; lokal Ollama/llama.cpp via KV-cache). Håll
       annars few-shot stramt.
@@ -137,11 +137,11 @@ handskakning + ev. provider-cold-start.
 kosta mer än den sparar på korta klipp; RMS-grinden fångar redan tystnad), och
 CUDA-`compute_type` bör vara `int8_float16`.
 
-- [ ] Sätt CUDA-default-`compute_type` till `int8_float16` i
+- [x] Sätt CUDA-default-`compute_type` till `int8_float16` i
       `transcriber.py:_get_device_and_compute` (~rad 258) (behåll override).
-- [ ] Behåll `whisper_vad_filter` som dokumenterad latensratt; logga `vad`-on/off
+- [x] Behåll `whisper_vad_filter` som dokumenterad latensratt; logga `vad`-on/off
       så deltat syns.
-- [ ] Säkerställ att den **live** transkriberingspathen (inte bara `_warmup`)
+- [x] Säkerställ att den **live** transkriberingspathen (inte bara `_warmup`)
       sätter `condition_on_previous_text=False` för single-shot (~rad 702 — redan
       satt; verifiera och täck med test).
 

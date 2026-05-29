@@ -81,6 +81,10 @@ DEFAULTS = {
     # "Rå direkt": paste the raw transcript and skip LLM polish even when LLM
     # is enabled (useful per-app via profiles, or as a global fast toggle).
     "llm_raw_mode": False,
+    # "Rå → ersätt" (L3): paste the raw transcript immediately for instant
+    # visible text, then replace it with the polished version when it lands.
+    # Editable fields only (code/terminal profiles disable polish). Default off.
+    "llm_replace_mode": False,
     # Watchdog threshold (seconds): if polish hasn't returned by now, the raw
     # transcript is pasted as a fallback so the indicator never hangs.
     "llm_timeout_sec": 15.0,

@@ -66,7 +66,8 @@ def test_call_api_payload_uses_token_budget_and_stream(monkeypatch):
     assert body["stream"] is True
     assert captured["stream"] is True
     assert body["max_tokens"] == max(64, int(len("hejsan") * 1.3) + 32)
-    assert "REF-BLOCK" in body["messages"][0]["content"]
+    # Reference is in its own message (static prefix stays cacheable, L3).
+    assert any("REF-BLOCK" in m["content"] for m in body["messages"])
     assert captured["url"] == "https://x.example/v1/chat/completions"
 
 
