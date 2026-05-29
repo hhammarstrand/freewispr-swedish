@@ -483,7 +483,9 @@ class Transcriber:
 
     def polish_async(self, text: str,
                      callback: Callable[[str, str], None],
-                     on_stage: Callable[[str], None] | None = None) -> None:
+                     on_stage: Callable[[str], None] | None = None,
+                     app_profile: str = "",
+                     onscreen_names: str = "") -> None:
         """Run LLM polish in a background thread.
 
         When finished, calls ``callback(original_text, polished_text)``
@@ -547,6 +549,15 @@ class Transcriber:
                         log.debug("Kunde inte ladda personlig kontext: %s", ctx_err)
                         ctx = ""
 
+                    # Learned corrections (AP2) — injected as reference so the
+                    # model applies known fixes/names. Cheap mtime-cached read.
+                    try:
+                        from learning import load_corrections
+                        corrections = load_corrections()
+                    except Exception as corr_err:
+                        log.debug("Kunde inte ladda rättelser: %s", corr_err)
+                        corrections = {}
+
                     result = polish(
                         text,
                         self.llm_api_key,
@@ -554,6 +565,9 @@ class Transcriber:
                         provider=self.llm_provider,
                         base_url_override=self.llm_base_url,
                         context_text=ctx,
+                        corrections=corrections,
+                        app_profile=app_profile,
+                        onscreen_names=onscreen_names,
                     )
                 except Exception as e:
                     log.warning("LLM-polish kraschade: %s", e, exc_info=True)

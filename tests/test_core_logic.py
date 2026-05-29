@@ -731,7 +731,7 @@ def test_transcriber_polish_async_calls_callback_with_polished_text(monkeypatch,
     inst.on_stage = None
 
     fake_llm = SimpleNamespace(
-        polish=lambda text, key, model=None, provider=None, base_url_override=None, context_text=None: SimpleNamespace(
+        polish=lambda text, key, model=None, provider=None, base_url_override=None, context_text=None, **kw: SimpleNamespace(
             text="hej!", changed=True, latency_ms=1
         )
     )
@@ -766,7 +766,7 @@ def test_transcriber_polish_async_unchanged_text(monkeypatch, fake_transcriber_d
     inst.on_stage = None
 
     fake_llm = SimpleNamespace(
-        polish=lambda text, key, model=None, provider=None, base_url_override=None, context_text=None: SimpleNamespace(
+        polish=lambda text, key, model=None, provider=None, base_url_override=None, context_text=None, **kw: SimpleNamespace(
             text="Hej", changed=False, latency_ms=1
         )
     )
@@ -842,7 +842,7 @@ def test_polish_async_on_stage_parameter_isolates_overlapping_jobs(monkeypatch, 
         return inst
 
     fake_llm = SimpleNamespace(
-        polish=lambda text, key, model=None, provider=None, base_url_override=None, context_text=None: SimpleNamespace(
+        polish=lambda text, key, model=None, provider=None, base_url_override=None, context_text=None, **kw: SimpleNamespace(
             text=text, changed=False, latency_ms=1
         )
     )

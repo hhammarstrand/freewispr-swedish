@@ -106,7 +106,8 @@ class DictationMode:
                  min_rms: float = DEFAULT_MIN_RMS,
                  raw_mode: bool = False,
                  llm_timeout_sec: float = 15.0,
-                 context_awareness: bool = True):
+                 context_awareness: bool = True,
+                 learning_enabled: bool = True):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
@@ -121,9 +122,16 @@ class DictationMode:
         # Watchdog threshold for the wait-mode polish fallback (configurable).
         self.llm_timeout_sec = llm_timeout_sec
         self.context_awareness = context_awareness
+        self.learning_enabled = learning_enabled
         self._active = False
         self._recording = False
         self._t_press = 0.0
+        # AP2 learning loop: remember the last pasted text and read the focused
+        # field's value before the next dictation to learn manual corrections.
+        # _field_reader is a best-effort callable returning the focused text
+        # (wired to context_win in AP3); None disables observation.
+        self._last_pasted = ""
+        self._field_reader = None
         self._hook_handles: list = []
 
         # Bounded queue + dedicated worker thread. Replaces the old single-slot
@@ -193,6 +201,33 @@ class DictationMode:
             log.debug("recorder.shutdown() under stop misslyckades", exc_info=True)
 
     # ----------------------------------------------------------------- private
+
+    def _observe_corrections(self) -> None:
+        """AP2: compare the previously pasted text against the focused field now.
+
+        Best-effort and silent on any failure — never blocks dictation. Reads
+        the field via the pluggable ``_field_reader`` (wired to context_win in
+        AP3); a no-op when learning is off or nothing was pasted yet.
+        """
+        if not getattr(self, "learning_enabled", True):
+            return
+        reader = getattr(self, "_field_reader", None)
+        last = getattr(self, "_last_pasted", "")
+        if reader is None or not last:
+            return
+        self._last_pasted = ""
+        try:
+            observed = reader() or ""
+        except Exception as e:
+            log.debug("Kunde inte läsa målfält för inlärning: %s", e)
+            return
+        if not observed:
+            return
+        try:
+            from learning import learn_from_observation
+            learn_from_observation(last, observed)
+        except Exception as e:
+            log.debug("Inlärning misslyckades: %s", e)
 
     @staticmethod
     def _log_latency(record_ms: float, transcribe_ms: float,
@@ -306,6 +341,10 @@ class DictationMode:
         n_raw = audio_raw.shape[0] if audio_raw.ndim >= 1 else 0
         log.info("Audio: %d raw samples, RMS=%.5f", n_raw, rms)
 
+        # AP2: learn from any manual edits the user made to the last paste
+        # before starting this new dictation (best-effort, never blocks).
+        self._observe_corrections()
+
         if rms < self.min_rms:
             log.info("Inspelning för tyst (RMS=%.5f < %.5f), ignorerar",
                      rms, self.min_rms)
@@ -387,6 +426,7 @@ class DictationMode:
                         llm_ms = (time.monotonic() - t_llm0) * 1000
                         t_p0 = time.monotonic()
                         paste_text(final_text, active_modifiers=self._modifier_keys)
+                        self._last_pasted = final_text
                         self._log_latency(record_ms, transcribe_ms, llm_ms,
                                           (time.monotonic() - t_p0) * 1000)
                         if polished_label:
@@ -448,6 +488,7 @@ class DictationMode:
                     # No LLM — paste immediately, this is the fast path.
                     t_p0 = time.monotonic()
                     paste_text(text, active_modifiers=self._modifier_keys)
+                    self._last_pasted = text
                     self._log_latency(record_ms, transcribe_ms, 0.0,
                                       (time.monotonic() - t_p0) * 1000)
                     message = "Klistrad"

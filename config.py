@@ -101,6 +101,15 @@ DEFAULTS = {
     # Explicit consent: ljudet skickas över nätet vid remote-transkribering.
     "transcription_privacy_accepted": False,
 
+    # ---- Inlärningsloop (AP2) ----
+    # Lär dig term-par när användaren rättar inklistrad text. Påverkar bara
+    # *inspelning* av nya rättelser; redan inlärda injiceras alltid i polish.
+    "learning_enabled": True,
+
+    # ---- Kontextmedvetenhet (AP3) ----
+    # Läs aktiv app + text nära markör för bättre egennamn/ton. Best-effort.
+    "context_awareness_enabled": True,
+
     "indicator_follow_mouse": True,
     # Lägsta RMS-nivå (0.0-1.0) som räknas som tal. Se DEFAULT_MIN_RMS i dictation.py.
     "min_rms": 0.003,
