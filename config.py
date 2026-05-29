@@ -111,6 +111,11 @@ DEFAULTS = {
     # Remote OpenAI-kompatibel path: temperatur (prompt byggs automatiskt).
     "transcription_temperature": 0.0,
 
+    # ---- Kommandoläge (AP5) ----
+    # Tolka inledande kommandofraser ("gör det kortare" m.fl.) som redigering
+    # av senaste blocket i stället för ny diktering.
+    "command_mode_enabled": True,
+
     # ---- Inlärningsloop (AP2) ----
     # Lär dig term-par när användaren rättar inklistrad text. Påverkar bara
     # *inspelning* av nya rättelser; redan inlärda injiceras alltid i polish.

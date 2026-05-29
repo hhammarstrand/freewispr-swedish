@@ -108,7 +108,8 @@ class DictationMode:
                  llm_timeout_sec: float = 15.0,
                  context_awareness: bool = True,
                  learning_enabled: bool = True,
-                 app_profiles: dict | None = None):
+                 app_profiles: dict | None = None,
+                 command_mode_enabled: bool = True):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
@@ -125,9 +126,13 @@ class DictationMode:
         self.context_awareness = context_awareness
         self.learning_enabled = learning_enabled
         self.app_profiles = app_profiles or {}
+        self.command_mode_enabled = command_mode_enabled
         self._active = False
         self._recording = False
         self._t_press = 0.0
+        # AP5 command mode: the last pasted/transformed block, edited in place
+        # by voice commands. Kept separate from _last_pasted (which AP2 clears).
+        self._last_block = ""
         # AP2 learning loop: remember the last pasted text and read the focused
         # field's value before the next dictation to learn manual corrections.
         # The reader is context_win.get_focused_text (best-effort) and only
@@ -206,6 +211,56 @@ class DictationMode:
             log.debug("recorder.shutdown() under stop misslyckades", exc_info=True)
 
     # ----------------------------------------------------------------- private
+
+    def _try_command(self, text: str) -> bool:
+        """AP5: if ``text`` is a command, transform the last block in place.
+
+        Returns True when the command ran and the result was pasted (replacing
+        the previous block); False when no command matched or it couldn't run,
+        so the caller falls back to normal dictation.
+        """
+        try:
+            import commands
+        except Exception:
+            return False
+        cmd = commands.detect_command(text)
+        if cmd is None:
+            return False
+
+        tr = self.transcriber
+
+        def _llm_transform(instruction: str, prev: str) -> str:
+            from llm_polish import instruct
+            return instruct(
+                prev, instruction,
+                api_key=getattr(tr, "llm_api_key", ""),
+                model=getattr(tr, "llm_model", ""),
+                provider=getattr(tr, "llm_provider", "github"),
+                base_url_override=getattr(tr, "llm_base_url", ""),
+            )
+
+        transform = _llm_transform if getattr(tr, "llm_enabled", False) else None
+        prev_block = self._last_block
+        result = commands.execute(cmd, prev_block, transform)
+        if not result:
+            # Recognised but couldn't run (e.g. LLM command with LLM off) —
+            # let the caller dictate the words normally instead.
+            return False
+        if self._worker_stop.is_set() or not self._active:
+            return True
+        # Replace the previous block: backspace over it (+1 for the trailing
+        # space paste_text adds), then paste the transformed text.
+        paste_text(result, active_modifiers=self._modifier_keys,
+                   replace_len=len(prev_block) + 1)
+        self._last_block = result
+        self._last_pasted = result
+        msg = f"Kommando: {cmd.phrase}"
+        self.on_status(f"{msg} — håll {self.hotkey.upper()} igen")
+        if self.indicator:
+            self.indicator.show(msg, state="done")
+            self.indicator.hide(delay_ms=1800)
+        log.info("Kommandoläge utförde '%s'", cmd.phrase)
+        return True
 
     @staticmethod
     def _read_focused_text() -> str:
@@ -439,6 +494,13 @@ class DictationMode:
                     log.info("Hoppar över paste från stale transkribering")
                     return
 
+                # AP5 command mode: if this utterance is a command on the last
+                # block, edit that block in place instead of dictating new text.
+                if (getattr(self, "command_mode_enabled", False)
+                        and getattr(self, "_last_block", "")
+                        and self._try_command(text)):
+                    return
+
                 if llm_enabled:
                     # Wait-mode: don't paste the raw transcript. Run LLM polish
                     # first and paste the polished result in one step. This
@@ -467,6 +529,7 @@ class DictationMode:
                         t_p0 = time.monotonic()
                         paste_text(final_text, active_modifiers=self._modifier_keys)
                         self._last_pasted = final_text
+                        self._last_block = final_text
                         self._log_latency(record_ms, transcribe_ms, llm_ms,
                                           (time.monotonic() - t_p0) * 1000)
                         if polished_label:
@@ -531,6 +594,7 @@ class DictationMode:
                     t_p0 = time.monotonic()
                     paste_text(text, active_modifiers=self._modifier_keys)
                     self._last_pasted = text
+                    self._last_block = text
                     self._log_latency(record_ms, transcribe_ms, 0.0,
                                       (time.monotonic() - t_p0) * 1000)
                     message = "Klistrad"

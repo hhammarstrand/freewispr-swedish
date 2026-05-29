@@ -606,6 +606,65 @@ def polish(
                             changed=False)
 
 
+_COMMAND_SYSTEM_PROMPT = (
+    "Du är en svensk textredigerare. Användaren ger en instruktion och en text. "
+    "Utför instruktionen på texten och returnera ENBART den nya texten — ingen "
+    "förklaring, inga kodstaket, inga citationstecken runt."
+)
+
+
+def instruct(
+    text: str,
+    instruction: str,
+    api_key: str = "",
+    model: str = "",
+    provider: str = DEFAULT_PROVIDER,
+    base_url_override: str = "",
+    timeout_sec: float = 12.0,
+) -> str:
+    """Kommandoläge (AP5): kör en fri instruktion på ``text`` via LLM.
+
+    Returnerar den transformerade texten, eller originaltexten oförändrad vid
+    valfritt fel — kommandoläget får aldrig krascha dikteringen.
+    """
+    p = _get_provider(provider)
+    text = (text or "").strip()
+    instruction = (instruction or "").strip()
+    if not text or not instruction:
+        return text
+    resolved_key = resolve_api_key(api_key, provider)
+    if not resolved_key and provider != "custom":
+        return text
+    base = _resolve_base_url(provider, base_url_override)
+    used_model = normalize_model(model, provider) or p.default_model
+    if not base or not used_model:
+        return text
+
+    body = {
+        "model": used_model,
+        "messages": [
+            {"role": "system", "content": _COMMAND_SYSTEM_PROMPT},
+            {"role": "user",
+             "content": f"Instruktion: {instruction}\n\nText:\n{text}"},
+        ],
+        "temperature": 0,
+        "max_tokens": max(64, int(len(text) * 1.6) + 64),
+    }
+    payload = json.dumps(body).encode("utf-8")
+    try:
+        data = _http_request(
+            f"{base}/chat/completions",
+            _build_headers(p, resolved_key),
+            payload, method="POST", timeout_sec=timeout_sec, stream=False,
+        )
+        from text_sanitize import sanitize_output
+        out = sanitize_output(data["choices"][0]["message"]["content"].strip())
+        return out or text
+    except Exception as e:
+        log.warning("Kommando-LLM misslyckades (%s): %s", provider, e)
+        return text
+
+
 def test_connection(
     api_key: str,
     model: str = "",
