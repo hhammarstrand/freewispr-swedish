@@ -200,6 +200,7 @@ def _make_dictation(transcriber):
         app_profiles=_config.get("app_profiles") or {},
         command_mode_enabled=bool(_config.get("command_mode_enabled", True)),
         llm_replace_mode=bool(_config.get("llm_replace_mode", False)),
+        cancel_hotkey=_config.get("cancel_hotkey", "esc"),
     )
 
 
@@ -694,6 +695,25 @@ def _toggle_flow(_=None):
     _rebuild_menu()
 
 
+def _dictation_paused() -> bool:
+    return bool(_dictation is not None and _dictation.is_paused())
+
+
+def _toggle_pause(_=None):
+    """AP7.3: pause/resume dictation from the tray."""
+    if _dictation is None:
+        return
+    paused = not _dictation.is_paused()
+    _dictation.set_paused(paused)
+    _set_tray_status("Diktering pausad" if paused
+                     else f"Klar — håll {_config.get('hotkey','ctrl+space').upper()}")
+    if _indicator:
+        if paused:
+            _indicator.show("Pausad", state="error")
+            _indicator.hide(delay_ms=1500)
+    _rebuild_menu()
+
+
 def _build_menu():
     startup_label = "✓ Starta med Windows" if _is_startup_enabled() else "Starta med Windows"
     items = [
@@ -702,6 +722,9 @@ def _build_menu():
         pystray.MenuItem("Inställningar", _open_settings, default=True),
         pystray.MenuItem(startup_label, _toggle_startup),
     ]
+    if _dictation is not None:
+        pause_label = "Återuppta diktering" if _dictation_paused() else "Pausa diktering"
+        items.append(pystray.MenuItem(pause_label, _toggle_pause))
     if _config.get("flow_mode_enabled", False):
         flow_label = "✓ Flow-läge" if _flow_active() else "Flow-läge"
         items.append(pystray.MenuItem(flow_label, _toggle_flow))

@@ -165,7 +165,8 @@ class DictationMode:
                  learning_enabled: bool = True,
                  app_profiles: dict | None = None,
                  command_mode_enabled: bool = True,
-                 llm_replace_mode: bool = False):
+                 llm_replace_mode: bool = False,
+                 cancel_hotkey: str = "esc"):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
@@ -185,6 +186,11 @@ class DictationMode:
         self.learning_enabled = learning_enabled
         self.app_profiles = app_profiles or {}
         self.command_mode_enabled = command_mode_enabled
+        # AP7.2 cancel key (only active while recording); AP7.3 pause (session
+        # state, not persisted — hotkey becomes a no-op while paused).
+        self.cancel_hotkey = cancel_hotkey
+        self._cancel_trigger, _ = _parse_hotkey(cancel_hotkey)
+        self._paused = False
         self._active = False
         self._recording = False
         self._t_press = 0.0
@@ -233,7 +239,24 @@ class DictationMode:
             keyboard.on_press_key(self._trigger_key, self._on_press, suppress=False),
             keyboard.on_release_key(self._trigger_key, self._on_release, suppress=False),
         ]
+        # AP7.2: cancel key — only acts while recording, otherwise a no-op so
+        # normal Esc isn't disturbed.
+        if self._cancel_trigger and self._cancel_trigger != self._trigger_key:
+            try:
+                self._hook_handles.append(
+                    keyboard.on_press_key(self._cancel_trigger, self._on_cancel,
+                                          suppress=False))
+            except Exception as e:
+                log.debug("Kunde inte registrera avbryt-tangent: %s", e)
         self.on_status(f"Klar — håll {self.hotkey.upper()} för att prata")
+
+    def set_paused(self, paused: bool) -> None:
+        """AP7.3: pause/resume dictation without quitting (session state)."""
+        self._paused = bool(paused)
+        log.info("Diktering %s", "pausad" if self._paused else "återupptagen")
+
+    def is_paused(self) -> bool:
+        return getattr(self, "_paused", False)
 
     def stop(self, wait: bool = True):
         self._active = False
@@ -505,8 +528,30 @@ class DictationMode:
         except Exception:
             return False
 
+    def _on_cancel(self, _):
+        """AP7.2: discard the in-progress recording. No-op when not recording
+        (so normal Esc is left alone)."""
+        if not (self._active and self._recording):
+            return
+        self._recording = False
+        self.recorder.on_level = None
+        try:
+            self.recorder.shutdown()   # close stream + drop captured audio
+        except Exception:
+            log.debug("recorder.shutdown() vid avbrott misslyckades", exc_info=True)
+        try:
+            sounds.play_error()
+        except Exception:
+            pass
+        self.on_status(f"Avbruten — håll {self.hotkey.upper()}")
+        if self.indicator:
+            self.indicator.show("Avbruten", state="error")
+            self.indicator.hide(delay_ms=1500)
+        log.info("Diktering avbruten (%s)", self.cancel_hotkey)
+
     def _on_press(self, _):
-        if self._active and not self._recording and self._modifier_held():
+        if (self._active and not getattr(self, "_paused", False)
+                and not self._recording and self._modifier_held()):
             try:
                 self._recording = True
                 self._t_press = time.monotonic()

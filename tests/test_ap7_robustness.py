@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import importlib
+import sys
 import time
+from types import SimpleNamespace
 
 
 # --------------------------------------------------------------------------- #
@@ -93,6 +95,72 @@ def test_single_instance_second_acquire_fails():
     # After release the lock is available again.
     assert si.acquire("test-fw") is True
     si.release()
+
+
+# --------------------------------------------------------------------------- #
+#  AP7.2 — cancel in-flight recording
+# --------------------------------------------------------------------------- #
+
+def _cancel_mode(monkeypatch):
+    monkeypatch.setitem(sys.modules, "faster_whisper",
+                        SimpleNamespace(WhisperModel=object))
+    import queue
+    dictation = importlib.reload(importlib.import_module("dictation"))
+    monkeypatch.setattr(dictation.sounds, "play_error", lambda: None)
+    mode = object.__new__(dictation.DictationMode)
+    mode._active = True
+    mode.hotkey = "ctrl+space"
+    mode.cancel_hotkey = "esc"
+    mode.indicator = None
+    mode.on_status = lambda m: None
+    mode._jobs = queue.Queue(maxsize=2)
+    shutdown = []
+    mode.recorder = SimpleNamespace(on_level=None,
+                                    shutdown=lambda: shutdown.append(1))
+    return dictation, mode, shutdown
+
+
+def test_cancel_during_recording_drops_job(monkeypatch):
+    _dictation, mode, shutdown = _cancel_mode(monkeypatch)
+    mode._recording = True
+    mode._on_cancel(None)
+    assert mode._recording is False
+    assert shutdown == [1]                 # buffer discarded
+    assert mode._jobs.empty()              # nothing queued
+
+
+def test_cancel_without_recording_is_noop(monkeypatch):
+    _dictation, mode, shutdown = _cancel_mode(monkeypatch)
+    mode._recording = False
+    mode._on_cancel(None)
+    assert shutdown == []                  # untouched — normal Esc preserved
+
+
+# --------------------------------------------------------------------------- #
+#  AP7.3 — pause
+# --------------------------------------------------------------------------- #
+
+def test_paused_press_does_not_record(monkeypatch):
+    monkeypatch.setitem(sys.modules, "faster_whisper",
+                        SimpleNamespace(WhisperModel=object))
+    dictation = importlib.reload(importlib.import_module("dictation"))
+    started = []
+    mode = object.__new__(dictation.DictationMode)
+    mode._active = True
+    mode._recording = False
+    mode._paused = True
+    mode._modifiers = ()
+    mode.indicator = None
+    mode.on_status = lambda m: None
+    mode.recorder = SimpleNamespace(start=lambda: started.append(1), on_level=None)
+    mode._on_press(None)
+    assert started == []                   # paused → no recording
+    assert mode._recording is False
+    # Resuming lets it record again.
+    mode.set_paused(False)
+    monkeypatch.setattr(dictation.sounds, "play_start", lambda: None)
+    mode._on_press(None)
+    assert started == [1]
 
 
 def test_main_exits_early_when_locked(monkeypatch):
