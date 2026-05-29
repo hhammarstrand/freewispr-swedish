@@ -84,6 +84,7 @@ except Exception:
 _config: dict = {}
 _transcriber = None   # Transcriber (lazy-imported)
 _dictation = None     # DictationMode (lazy-imported)
+_flow = None          # FlowMode (AP6, lazy-imported)
 _tray_icon: pystray.Icon | None = None
 _tk_root: tk.Tk | None = None
 _status_var: tk.StringVar | None = None
@@ -645,19 +646,61 @@ def _rebuild_menu():
         _tray_icon.menu = _build_menu()
 
 
+def _flow_active() -> bool:
+    return bool(_flow and _flow.active)
+
+
+def _toggle_flow(_=None):
+    """AP6: start/stop continuous Flow-läge (local transcription only)."""
+    global _flow
+    if not _config.get("flow_mode_enabled", False):
+        return
+    if _transcriber is None:
+        _set_tray_status("Flow-läge: modellen laddas fortfarande")
+        return
+    try:
+        if _flow is None:
+            from flow import FlowMode
+            _flow = FlowMode(
+                _transcriber,
+                mic_device=_config.get("mic_device"),
+                on_status=_set_tray_status,
+                indicator=_indicator,
+                min_rms=float(_config.get("min_rms", 0.003)),
+            )
+        # Flow and push-to-talk shouldn't fight over the mic — pause dictation
+        # while Flow runs.
+        if not _flow.active and _dictation is not None:
+            _dictation.stop(wait=False)
+        _flow.toggle()
+        if not _flow.active and _dictation is not None:
+            _dictation.start()
+    except Exception as e:
+        log.error("Flow-läge fel: %s", e, exc_info=True)
+    _rebuild_menu()
+
+
 def _build_menu():
     startup_label = "✓ Starta med Windows" if _is_startup_enabled() else "Starta med Windows"
-    return pystray.Menu(
+    items = [
         # default=True makes this the action that runs on left double-click
         # of the tray icon (in addition to being the bold first menu entry).
         pystray.MenuItem("Inställningar", _open_settings, default=True),
         pystray.MenuItem(startup_label, _toggle_startup),
+    ]
+    if _config.get("flow_mode_enabled", False):
+        flow_label = "✓ Flow-läge" if _flow_active() else "Flow-läge"
+        items.append(pystray.MenuItem(flow_label, _toggle_flow))
+    items += [
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Avsluta freewispr-swedish", _quit),
-    )
+    ]
+    return pystray.Menu(*items)
 
 
 def _quit(_=None):
+    if _flow:
+        _flow.stop(wait=False)
     if _dictation:
         _dictation.stop()
     if _transcriber:

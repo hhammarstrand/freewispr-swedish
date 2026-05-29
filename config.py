@@ -128,6 +128,11 @@ DEFAULTS = {
     # "code"). Slås ihop ovanpå context_win.DEFAULT_APP_PROFILES. Tomt = inbyggda.
     "app_profiles": {},
 
+    # ---- Flow-läge (AP6, valfritt) ----
+    # Kontinuerlig diktering över pauser (endast lokal transkribering). Av som
+    # default; togglas via tray-menyn när påslaget.
+    "flow_mode_enabled": False,
+
     "indicator_follow_mouse": True,
     # Lägsta RMS-nivå (0.0-1.0) som räknas som tal. Se DEFAULT_MIN_RMS i dictation.py.
     "min_rms": 0.003,
