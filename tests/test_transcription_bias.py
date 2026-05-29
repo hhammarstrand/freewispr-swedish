@@ -108,21 +108,12 @@ def test_remote_transcribe_sends_prompt_and_temperature(monkeypatch):
     rt = importlib.reload(importlib.import_module("remote_transcribe"))
     captured = {}
 
-    class FakeResponse:
-        def __enter__(self):
-            return self
+    def fake_request(url, headers, payload=None, method="POST", timeout=8.0,
+                     stream=False, parse="json"):
+        captured["body"] = payload
+        return b'{"text": "hej"}'
 
-        def __exit__(self, *a):
-            return False
-
-        def read(self):
-            return b'{"text": "hej"}'
-
-    def fake_urlopen(req, timeout=None):
-        captured["body"] = req.data
-        return FakeResponse()
-
-    monkeypatch.setattr(rt.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(rt.http_pool, "request", fake_request)
 
     audio = np.ones(8000, dtype=np.float32) * 0.2
     out = rt.transcribe(audio, 16000, provider="staik", api_key="sk-st",

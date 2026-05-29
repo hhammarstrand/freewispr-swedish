@@ -624,6 +624,11 @@ class Transcriber:
                     _deliver(text, text)
                     return
 
+                # Stash polish telemetry for the latency log (L0/L2/L3).
+                self.last_polish_first_token_ms = getattr(result, "first_token_ms", 0.0)
+                self.last_polish_conn_ms = getattr(result, "conn_ms", 0.0)
+                self.last_polish_conn_reused = getattr(result, "conn_reused", None)
+
                 elapsed = _time.monotonic() - t0
                 if elapsed > 10.0:
                     # polish() should have timed out at 8 s; anything past
@@ -813,6 +818,15 @@ class Transcriber:
                 except Exception:
                     pass
             return ""
+
+        # Surface keep-alive connection telemetry for the latency log (L2).
+        try:
+            from http_pool import last_stats
+            st = last_stats()
+            self.last_transcribe_conn_ms = st.get("conn_ms", 0.0)
+            self.last_transcribe_conn_reused = st.get("conn_reused")
+        except Exception:
+            pass
 
         log.info("Rå text mottagen (%s)", _text_meta(raw))
         text = _NOISE_PLACEHOLDERS.sub("", raw)
