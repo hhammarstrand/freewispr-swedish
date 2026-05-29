@@ -347,6 +347,19 @@ def _text_meta(text: str) -> str:
     return f"chars={len(text)}, words={len(text.split())}"
 
 
+def _token_budget(char_len: int, growth: float = 1.3, headroom: int = 32,
+                  cap: int = 2048) -> int:
+    """Estimate a max_tokens budget from a *character* length (AP7.8).
+
+    ``max_tokens`` counts tokens, not characters — for Swedish roughly 1 token ≈
+    3 characters. Using len(chars) directly over-budgeted by ~4-5×. We estimate
+    chars/3, scale by ``growth`` for punctuation/expansion, add ``headroom``,
+    and clamp to a generous ``cap`` so legitimate output is never truncated.
+    """
+    est = int((char_len / 3) * growth) + headroom
+    return max(64, min(cap, est))
+
+
 def _build_headers(provider: _Provider, api_key: str) -> dict[str, str]:
     headers = {
         "Accept": provider.accept,
@@ -414,8 +427,7 @@ def _call_api(
         "messages": _chat_messages(context_text, user_text),
         "temperature": 0,
         # Output is a cleaned-up version of the input, never much longer.
-        # ~1.3× input chars + a small constant covers punctuation growth.
-        "max_tokens": max(64, int(len(user_text) * 1.3) + 32),
+        "max_tokens": _token_budget(len(user_text)),
     }
     if stream:
         body["stream"] = True
@@ -621,7 +633,9 @@ def instruct(
              "content": f"Instruktion: {instruction}\n\nText:\n{text}"},
         ],
         "temperature": 0,
-        "max_tokens": max(64, int(len(text) * 1.6) + 64),
+        # Commands (translate/bullet-list/etc.) can grow the text more than a
+        # polish pass, so allow extra growth + headroom.
+        "max_tokens": _token_budget(len(text), growth=1.8, headroom=64),
     }
     payload = json.dumps(body).encode("utf-8")
     try:

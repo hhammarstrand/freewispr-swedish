@@ -175,6 +175,15 @@ def _make_transcriber(model_size: str, use_cuda: bool):
     )
 
 
+def _apply_runtime_flags():
+    """Push module-level runtime flags from config (AP7)."""
+    try:
+        import paste
+        paste.set_restore_clipboard(bool(_config.get("restore_clipboard", False)))
+    except Exception as e:
+        log.debug("Kunde inte applicera runtime-flaggor: %s", e)
+
+
 def _make_dictation(transcriber):
     from dictation import DictationMode, DEFAULT_MIN_RMS
     return DictationMode(
@@ -268,6 +277,7 @@ def _load_app():
     log.info("Laddar config och modell…")
 
     _config = cfg_module.load()
+    _apply_runtime_flags()
 
     # One-shot migration of legacy snippets.json + corrections.json into the
     # new personal_context.json. Idempotent: skipped once the context file
@@ -407,6 +417,7 @@ def _apply_settings_locked(new_cfg: dict):
     # validated (model loaded, dictation rebuilt, etc.). This way a failed
     # reload doesn't leave a broken config on disk for the next launch.
     _config.update(new_cfg)
+    _apply_runtime_flags()
     # Reflect e.g. flow_mode_enabled visibility in the tray menu.
     _rebuild_menu()
 
@@ -702,6 +713,11 @@ def _build_menu():
 
 
 def _quit(_=None):
+    try:
+        import single_instance
+        single_instance.release()
+    except Exception:
+        pass
     if _flow:
         _flow.stop(wait=False)
     if _dictation:
@@ -722,6 +738,20 @@ def _quit(_=None):
 
 def main():
     global _tray_icon, _tk_root, _status_var, _indicator
+
+    # AP7.1: single-instance guard. A second instance would register duplicate
+    # hotkeys and load a second Whisper model into VRAM (OOM). Bail out early —
+    # before logging/tray/model — if another instance already holds the lock.
+    import single_instance
+    if not single_instance.acquire():
+        log.warning("freewispr-swedish körs redan — avslutar denna instans")
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(
+                0, "freewispr-swedish körs redan.", "freewispr-swedish", 0x40)
+        except Exception:
+            pass
+        return
 
     # Wire up file logging now (deferred from import time so tests can import
     # this module without touching ~/.freewispr-swedish/).

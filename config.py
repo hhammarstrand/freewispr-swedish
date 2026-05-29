@@ -137,6 +137,17 @@ DEFAULTS = {
     # default; togglas via tray-menyn när påslaget.
     "flow_mode_enabled": False,
 
+    # ---- Robusthet & saknade funktioner (AP7) ----
+    # Återställ användarens urklipp efter diktering (opt-in; av = dikterad text
+    # ligger kvar som CLI-fallback).
+    "restore_clipboard": False,
+    # Avbryt pågående inspelning (AP7.2). Aktiv endast medan inspelning pågår.
+    "cancel_hotkey": "esc",
+    # Behåll engelska facktermer bättre i svensk diktering (AP7.5, mitigering).
+    "expect_english_terms": False,
+    # Snippets / textexpansion (AP7.6) — par lagras i snippets.json.
+    "snippets_enabled": True,
+
     "indicator_follow_mouse": True,
     # Lägsta RMS-nivå (0.0-1.0) som räknas som tal. Se DEFAULT_MIN_RMS i dictation.py.
     "min_rms": 0.003,
