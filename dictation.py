@@ -73,6 +73,25 @@ DEFAULT_MIN_RMS = 0.003
 # drop new presses and show "Upptagen" instead.
 _QUEUE_MAX = 2
 
+# How long the worker waits for the press-time context resolution to finish
+# (L1). It runs during recording, so this wait is normally ~0; the bound just
+# protects against a pathological/hung UIA provider.
+_CTX_JOIN_TIMEOUT = 0.2
+
+# Sentinel: distinguishes "_transcribe called without a context arg" (legacy /
+# tests → resolve synchronously) from "context explicitly passed as None".
+_NO_CTX = object()
+
+
+class _ContextHolder:
+    """A one-shot slot for the press-time context resolution (L1)."""
+
+    __slots__ = ("event", "ctx")
+
+    def __init__(self) -> None:
+        self.event = threading.Event()
+        self.ctx = None
+
 
 def _friendly_mic_error(exc: Exception) -> str:
     """Convert raw exception to a user-friendly Swedish message."""
@@ -308,7 +327,11 @@ class DictationMode:
             return ""
 
     def _resolve_context(self):
-        """AP3: resolve active-app profile + on-screen names. Best-effort."""
+        """AP3: resolve active-app profile + on-screen names. Best-effort.
+
+        Synchronous fallback used when no press-time snapshot is available
+        (legacy callers / tests). The hot path uses the async snapshot instead.
+        """
         try:
             import context_win
             return context_win.get_context(getattr(self, "app_profiles", None))
@@ -316,25 +339,64 @@ class DictationMode:
             log.debug("Kontextmedvetenhet misslyckades: %s", e)
             return None
 
-    def _observe_corrections(self) -> None:
-        """AP2: compare the previously pasted text against the focused field now.
+    def _resolve_context_async(self, holder, last_pasted: str) -> None:
+        """L1: resolve context off the hot path. Reads the focused field once,
+        whose text serves both AP2 learning and AP3 biasing."""
+        try:
+            import context_win
+            app, _title = context_win.get_active_app()
+            profile_key = context_win.resolve_profile_key(
+                app, getattr(self, "app_profiles", None))
+            profile = context_win.PROFILES.get(
+                profile_key, context_win.PROFILES["default"])
+            # Skip the (expensive) field read only when nothing needs it: a
+            # polish-off profile (e.g. code) AND no prior paste to learn from.
+            need_text = profile.polish or bool(last_pasted)
+            holder.ctx = context_win.get_context(
+                getattr(self, "app_profiles", None), read_text=need_text)
+        except Exception as e:
+            log.debug("Kontext (async) misslyckades: %s", e)
+            holder.ctx = None
+        finally:
+            holder.event.set()
 
-        Best-effort and silent on any failure — never blocks dictation. Reads
-        the field via the pluggable ``_field_reader`` (wired to context_win in
-        AP3); a no-op when learning is off or nothing was pasted yet.
+    def _await_context(self):
+        """Return ``(ctx, hotpath_ms)`` from the press-time resolution (L1)."""
+        holder = getattr(self, "_ctx_result", None)
+        if holder is None:
+            return None, 0.0
+        t0 = time.monotonic()
+        holder.event.wait(timeout=_CTX_JOIN_TIMEOUT)
+        elapsed = (time.monotonic() - t0) * 1000
+        if not holder.event.is_set():
+            log.debug("Kontext ej klar inom %.0f ms — tom kontext", _CTX_JOIN_TIMEOUT * 1000)
+        return holder.ctx, elapsed
+
+    def _observe_corrections(self, ctx=None) -> None:
+        """AP2: compare the previously pasted text against the focused field.
+
+        Consumes the focused-field text from the press-time snapshot (``ctx``)
+        so it never issues its own UIA read on the critical path (L1). Falls
+        back to ``_field_reader`` only when no snapshot is available (legacy).
+        Best-effort and silent on any failure — never blocks dictation.
         """
         if not getattr(self, "learning_enabled", True):
             return
-        reader = getattr(self, "_field_reader", None)
         last = getattr(self, "_last_pasted", "")
-        if reader is None or not last:
+        if not last:
             return
         self._last_pasted = ""
-        try:
-            observed = reader() or ""
-        except Exception as e:
-            log.debug("Kunde inte läsa målfält för inlärning: %s", e)
-            return
+        observed = ""
+        if ctx is not None and getattr(ctx, "focused_text", ""):
+            observed = ctx.focused_text
+        else:
+            reader = getattr(self, "_field_reader", None)
+            if reader is not None:
+                try:
+                    observed = reader() or ""
+                except Exception as e:
+                    log.debug("Kunde inte läsa målfält för inlärning: %s", e)
+                    return
         if not observed:
             return
         try:
@@ -385,6 +447,17 @@ class DictationMode:
             try:
                 self._recording = True
                 self._t_press = time.monotonic()
+                # L1: resolve active-app context + focused-field snapshot on a
+                # daemon thread *now*, overlapping the whole recording, so the
+                # UIA cost is off the critical path after key-up.
+                self._ctx_result = None
+                if getattr(self, "context_awareness", False):
+                    holder = _ContextHolder()
+                    self._ctx_result = holder
+                    threading.Thread(
+                        target=self._resolve_context_async,
+                        args=(holder, self._last_pasted),
+                        name="ctx-resolve", daemon=True).start()
                 # Wire the audio thread to push RMS levels directly to the
                 # UI indicator — replaces the 50 ms polling timer with an
                 # event-driven path. Cleared in _on_release.
@@ -472,9 +545,13 @@ class DictationMode:
         n_raw = audio_raw.shape[0] if audio_raw.ndim >= 1 else 0
         log.info("Audio: %d raw samples, RMS=%.5f", n_raw, rms)
 
+        # L1: collect the press-time context snapshot once (bounded wait) and
+        # reuse it for both the learning loop and transcription/polish.
+        ctx, context_hotpath_ms = self._await_context()
+
         # AP2: learn from any manual edits the user made to the last paste
         # before starting this new dictation (best-effort, never blocks).
-        self._observe_corrections()
+        self._observe_corrections(ctx)
 
         if rms < self.min_rms:
             log.info("Inspelning för tyst (RMS=%.5f < %.5f), ignorerar",
@@ -495,9 +572,11 @@ class DictationMode:
                 self.indicator.hide(delay_ms=0)
             return
 
-        self._transcribe(audio, record_ms)
+        self._transcribe(audio, record_ms, ctx=ctx,
+                         context_hotpath_ms=context_hotpath_ms)
 
-    def _transcribe(self, audio: np.ndarray, record_ms: float = 0.0):
+    def _transcribe(self, audio: np.ndarray, record_ms: float = 0.0,
+                    ctx=_NO_CTX, context_hotpath_ms: float = 0.0):
         try:
             if self._worker_stop.is_set() or not self._active:
                 log.info("Hoppar över stale transkribering efter stopp")
@@ -509,25 +588,29 @@ class DictationMode:
                 and not getattr(self, "raw_mode", False)
             )
 
-            # AP3 context awareness: resolve app profile + on-screen names.
+            # AP3/L1 context: prefer the press-time snapshot (off the hot path).
+            # When called without one (legacy/tests) resolve synchronously.
+            if ctx is _NO_CTX:
+                ctx = None
+                context_hotpath_ms = 0.0
+                if getattr(self, "context_awareness", False):
+                    t_ctx0 = time.monotonic()
+                    ctx = self._resolve_context()
+                    context_hotpath_ms = (time.monotonic() - t_ctx0) * 1000
+
             # A "code"-style profile disables polish and capitalisation; names
             # bias the local decoder and (only when polishing) the LLM prompt.
             profile_desc = ""
             onscreen_names = ""
             capitalize = True
-            context_hotpath_ms = 0.0
             uia_ms = 0.0
-            if getattr(self, "context_awareness", False):
-                t_ctx0 = time.monotonic()
-                ctx = self._resolve_context()
-                context_hotpath_ms = (time.monotonic() - t_ctx0) * 1000
-                if ctx is not None:
-                    profile_desc = ctx.profile_description
-                    onscreen_names = ctx.onscreen_names
-                    capitalize = ctx.capitalize
-                    uia_ms = getattr(ctx, "read_ms", 0.0)
-                    if not ctx.polish:
-                        llm_enabled = False
+            if ctx is not None:
+                profile_desc = ctx.profile_description
+                onscreen_names = ctx.onscreen_names
+                capitalize = ctx.capitalize
+                uia_ms = getattr(ctx, "read_ms", 0.0)
+                if not ctx.polish:
+                    llm_enabled = False
 
             t_tx0 = time.monotonic()
             # The status message shown while transcription runs reflects
