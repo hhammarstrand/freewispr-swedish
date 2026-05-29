@@ -18,9 +18,17 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
+import time
 from typing import NamedTuple
 
 log = logging.getLogger("freewispr")
+
+# Hard cap on a single UIA read (L1). Electron/Chromium apps can make
+# GetValuePattern() take 100-500 ms or hang; we never block the hot path
+# longer than this and fall back to empty context.
+UIA_TIMEOUT_S = 0.15
+_uia_inited = False
 
 
 class Profile(NamedTuple):
@@ -66,6 +74,23 @@ class ContextInfo(NamedTuple):
     polish: bool
     capitalize: bool
     onscreen_names: str
+    # L0/L1: the raw focused-field text (reused by the AP2 learning loop so it
+    # doesn't issue a second UIA read) and the measured UIA read time.
+    focused_text: str = ""
+    read_ms: float = 0.0
+
+
+def _ensure_uia_timeout() -> None:
+    """Lower uiautomation's global search timeout once (best-effort)."""
+    global _uia_inited
+    if _uia_inited:
+        return
+    _uia_inited = True
+    try:
+        import uiautomation as auto
+        auto.SetGlobalSearchTimeout(UIA_TIMEOUT_S + 0.05)
+    except Exception:
+        pass
 
 
 def get_active_app() -> tuple[str, str]:
@@ -89,8 +114,25 @@ def get_active_app() -> tuple[str, str]:
         return "", ""
 
 
+def _focused_text_with_timeout(timeout: float = UIA_TIMEOUT_S) -> str:
+    """Run get_focused_text on a daemon thread, give up after ``timeout`` (L1)."""
+    result = {"text": ""}
+
+    def _run():
+        result["text"] = get_focused_text()
+
+    t = threading.Thread(target=_run, daemon=True, name="uia-read")
+    t.start()
+    t.join(timeout)
+    if t.is_alive():
+        log.debug("UIA-läsning överskred %.0f ms — tom kontext", timeout * 1000)
+        return ""
+    return result["text"]
+
+
 def get_focused_text() -> str:
     """Return the focused UI element's value/name via UIA — best-effort, "" on fail."""
+    _ensure_uia_timeout()
     try:
         import uiautomation as auto
     except Exception:
@@ -142,24 +184,32 @@ def resolve_profile_key(app: str, app_profiles: dict[str, str] | None = None) ->
 
 
 def get_context(app_profiles: dict[str, str] | None = None,
-                read_text: bool = True) -> ContextInfo:
+                read_text: bool = True,
+                timeout: float = UIA_TIMEOUT_S) -> ContextInfo:
     """Resolve the active app, its profile, and on-screen names — best-effort.
 
     ``read_text=False`` skips the UIA text read (used when no names are needed,
-    e.g. the profile disables polish anyway).
+    e.g. the profile disables polish anyway). The UIA read is hard-bounded by
+    ``timeout`` (L1) and its duration is reported as ``read_ms``. The raw
+    focused text is returned as ``focused_text`` so the AP2 learning loop can
+    reuse this single read instead of issuing its own.
     """
     app, title = get_active_app()
     profile_key = resolve_profile_key(app, app_profiles)
     profile = PROFILES.get(profile_key, PROFILES["default"])
 
+    focused = ""
+    read_ms = 0.0
     names = ""
     if read_text:
-        focused = get_focused_text()
+        t0 = time.monotonic()
+        focused = _focused_text_with_timeout(timeout)
+        read_ms = (time.monotonic() - t0) * 1000
         names = extract_names(" ".join(x for x in (title, focused) if x))
 
     return ContextInfo(
         app=app, title=title, profile_key=profile_key,
         profile_description=profile.description,
         polish=profile.polish, capitalize=profile.capitalize,
-        onscreen_names=names,
+        onscreen_names=names, focused_text=focused, read_ms=read_ms,
     )

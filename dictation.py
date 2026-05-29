@@ -1,4 +1,5 @@
 """Push-to-talk dictation: hotkey -> record -> transcribe -> paste."""
+import collections
 import logging
 import queue
 import threading
@@ -7,12 +8,47 @@ import keyboard
 import numpy as np
 
 from audio import MicRecorder, finalize_audio
-from transcriber import Transcriber
 from paste import paste_text
 from modifiers import normalize_all, is_modifier
+from transcriber import Transcriber
 import sounds
 
 log = logging.getLogger("freewispr")
+
+
+# Rolling latency window for p50/p95 summaries (L0 measurability).
+_LAT_WINDOW = 50
+_latency_samples: collections.deque = collections.deque(maxlen=_LAT_WINDOW)
+_LAT_KEYS = ("transcribe_ms", "llm_ms", "paste_ms", "context_hotpath_ms", "conn_ms")
+
+
+def _percentile(values: list[float], pct: float) -> float:
+    """Linear-interpolated percentile (no numpy dependency on the hot path)."""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    if len(s) == 1:
+        return s[0]
+    k = (len(s) - 1) * (pct / 100.0)
+    f = int(k)
+    c = min(f + 1, len(s) - 1)
+    if f == c:
+        return s[f]
+    return s[f] + (s[c] - s[f]) * (k - f)
+
+
+def _record_latency_sample(sample: dict) -> None:
+    """Append a per-dictation sample and log a rolling p50/p95 summary."""
+    _latency_samples.append(sample)
+    if len(_latency_samples) < 3:
+        return
+    parts = []
+    for k in _LAT_KEYS:
+        vals = [s[k] for s in _latency_samples if k in s]
+        if vals:
+            parts.append(f"{k} p50={_percentile(vals, 50):.0f} "
+                         f"p95={_percentile(vals, 95):.0f}")
+    log.info("Latens p50/p95 (n=%d): %s", len(_latency_samples), " | ".join(parts))
 
 
 def _text_meta(text: str) -> str:
@@ -309,14 +345,31 @@ class DictationMode:
 
     @staticmethod
     def _log_latency(record_ms: float, transcribe_ms: float,
-                     llm_ms: float, paste_ms: float) -> None:
-        """Log the per-step latency breakdown for the hot path (AP1)."""
+                     llm_ms: float, paste_ms: float, *,
+                     context_hotpath_ms: float = 0.0, uia_ms: float = 0.0,
+                     conn_ms: float = 0.0, conn_reused: bool | None = None,
+                     first_token_ms: float = 0.0) -> None:
+        """Log the per-step latency breakdown for the hot path (AP1 + L0).
+
+        ``context_hotpath_ms`` is how much context/UIA work landed on the
+        critical path (≈0 once L1 overlaps it with recording); ``uia_ms`` is the
+        raw UIA read time wherever it ran; ``conn_ms``/``conn_reused`` describe
+        remote connection setup; ``first_token_ms`` is polish TTFT.
+        """
         pipeline = transcribe_ms + llm_ms + paste_ms
+        reused = "?" if conn_reused is None else ("true" if conn_reused else "false")
         log.info(
             "Latens: record=%.0fms transcribe=%.0fms llm=%.0fms paste=%.0fms "
-            "(pipeline efter release=%.0fms)",
-            record_ms, transcribe_ms, llm_ms, paste_ms, pipeline,
+            "context_hotpath=%.0fms uia=%.0fms conn=%.0fms conn_reused=%s "
+            "first_token=%.0fms (pipeline efter release=%.0fms)",
+            record_ms, transcribe_ms, llm_ms, paste_ms,
+            context_hotpath_ms, uia_ms, conn_ms, reused, first_token_ms, pipeline,
         )
+        _record_latency_sample({
+            "transcribe_ms": transcribe_ms, "llm_ms": llm_ms,
+            "paste_ms": paste_ms, "context_hotpath_ms": context_hotpath_ms,
+            "conn_ms": conn_ms,
+        })
 
     def _modifier_held(self) -> bool:
         """All required modifiers must be physically held right now."""
@@ -462,12 +515,17 @@ class DictationMode:
             profile_desc = ""
             onscreen_names = ""
             capitalize = True
+            context_hotpath_ms = 0.0
+            uia_ms = 0.0
             if getattr(self, "context_awareness", False):
+                t_ctx0 = time.monotonic()
                 ctx = self._resolve_context()
+                context_hotpath_ms = (time.monotonic() - t_ctx0) * 1000
                 if ctx is not None:
                     profile_desc = ctx.profile_description
                     onscreen_names = ctx.onscreen_names
                     capitalize = ctx.capitalize
+                    uia_ms = getattr(ctx, "read_ms", 0.0)
                     if not ctx.polish:
                         llm_enabled = False
 
@@ -530,8 +588,14 @@ class DictationMode:
                         paste_text(final_text, active_modifiers=self._modifier_keys)
                         self._last_pasted = final_text
                         self._last_block = final_text
-                        self._log_latency(record_ms, transcribe_ms, llm_ms,
-                                          (time.monotonic() - t_p0) * 1000)
+                        tr = self.transcriber
+                        self._log_latency(
+                            record_ms, transcribe_ms, llm_ms,
+                            (time.monotonic() - t_p0) * 1000,
+                            context_hotpath_ms=context_hotpath_ms, uia_ms=uia_ms,
+                            conn_ms=getattr(tr, "last_polish_conn_ms", 0.0),
+                            conn_reused=getattr(tr, "last_polish_conn_reused", None),
+                            first_token_ms=getattr(tr, "last_polish_first_token_ms", 0.0))
                         if polished_label:
                             state = getattr(self.transcriber, "last_polish_state", "local")
                             if state == "llm_changed":
@@ -595,8 +659,13 @@ class DictationMode:
                     paste_text(text, active_modifiers=self._modifier_keys)
                     self._last_pasted = text
                     self._last_block = text
-                    self._log_latency(record_ms, transcribe_ms, 0.0,
-                                      (time.monotonic() - t_p0) * 1000)
+                    tr = self.transcriber
+                    self._log_latency(
+                        record_ms, transcribe_ms, 0.0,
+                        (time.monotonic() - t_p0) * 1000,
+                        context_hotpath_ms=context_hotpath_ms, uia_ms=uia_ms,
+                        conn_ms=getattr(tr, "last_transcribe_conn_ms", 0.0),
+                        conn_reused=getattr(tr, "last_transcribe_conn_reused", None))
                     message = "Klistrad"
                     self.on_status(f"{message} — håll {self.hotkey.upper()} igen")
                     if self.indicator:
