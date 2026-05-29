@@ -1012,9 +1012,10 @@ class SettingsWindow:
         new_cfg[f"llm_model_{llm_pid}"] = self._llm_model_var.get().strip()
         new_cfg[f"llm_api_key_{llm_pid}"] = llm_key
         new_cfg["llm_custom_base_url"] = self._llm_base_url_var.get().strip()
-        new_cfg["llm_privacy_accepted"] = bool(
-            llm_enabled and (llm_local or llm_consent)
-        )
+        # Persist consent independently of llm_enabled — otherwise users
+        # who toggle LLM off later have to re-accept the consent dialog
+        # next time they enable it, which is annoying and erodes trust.
+        new_cfg["llm_privacy_accepted"] = bool(llm_local or llm_consent)
 
         # Transcription
         new_cfg["transcription_provider"] = tr_pid

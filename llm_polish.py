@@ -443,7 +443,11 @@ def test_connection(
         data = _call_api(resolved_key, used_model, test_input, timeout_sec=10.0,
                          provider=provider, base_url_override=base_url_override)
         latency = int((time.perf_counter() - t0) * 1000)
-        result = data["choices"][0]["message"]["content"].strip()
+        from text_sanitize import sanitize_output
+        # Same threat model as polish(): the provider could embed ANSI/control
+        # bytes in the response. Sanitise before showing in Settings UI so the
+        # test path can't smuggle control sequences via the "Visa svar" line.
+        result = sanitize_output(data["choices"][0]["message"]["content"]).strip()
         actual_model = data.get("model", used_model)
         usage = data.get("usage", {}) or {}
         tokens_in = usage.get("prompt_tokens", "?")

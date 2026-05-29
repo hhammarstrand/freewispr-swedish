@@ -309,10 +309,13 @@ class DictationMode:
             # The status message shown while transcription runs reflects
             # whether the user opted into a remote provider. Saying "lokalt"
             # when the audio is being shipped to e.g. KBLab's API is both
-            # wrong and erodes trust about where the data is going.
+            # wrong and erodes trust about where the data is going. Show
+            # the remote status even when LLM is off — the user needs
+            # transparency that audio is leaving the machine, regardless
+            # of whether LLM polish is enabled.
             tr_provider = getattr(self.transcriber, "transcription_provider", "local")
             tr_label = "lokalt" if tr_provider == "local" else f"via {tr_provider}"
-            if llm_enabled:
+            if llm_enabled or tr_provider != "local":
                 self.on_status(f"Transkriberar {tr_label}…")
                 if self.indicator:
                     self.indicator.show(f"Transkriberar {tr_label}…", state="transcribe")
