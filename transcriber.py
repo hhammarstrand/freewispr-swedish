@@ -752,6 +752,10 @@ class Transcriber:
                         initial_prompt=prompt or None,
                         condition_on_previous_text=False,
                         without_timestamps=True,
+                        # L5.1: pin a *scalar* temperature so faster-whisper
+                        # never escalates through its (0.0, 0.2, …, 1.0)
+                        # fallback (up to 6 decode passes) on hard audio.
+                        temperature=0.0,
                         # Drop segments the model is confident are silence —
                         # reduces hallucination on quiet/noisy audio.
                         no_speech_threshold=no_speech_threshold,
@@ -764,10 +768,10 @@ class Transcriber:
                         hotwords=hotwords,
                     )
                     raw = " ".join(s.text.strip() for s in segments)
-                # L4: log the effective decode knobs so the VAD on/off delta
-                # is visible in bench_latency / the latency log.
-                log.info("Lokal decode: vad=%s, beam=%d, no_speech=%.2f",
-                         use_vad, beam_size, no_speech_threshold)
+                # L4/L5.1: log the effective decode knobs so the VAD on/off
+                # delta is visible; decode_passes=1 thanks to scalar temperature.
+                log.info("Lokal decode: vad=%s, beam=%d, no_speech=%.2f, "
+                         "decode_passes=1", use_vad, beam_size, no_speech_threshold)
                 break
             except RuntimeError as e:
                 msg = str(e).lower()

@@ -43,6 +43,9 @@ def test_local_transcribe_passes_configured_decode_params(transcriber):
     assert captured["no_speech_threshold"] == 0.3
     # L4: single-shot dictation must not condition on previous text.
     assert captured["condition_on_previous_text"] is False
+    # L5.1: a scalar temperature (no fallback escalation = 1 decode pass).
+    assert captured["temperature"] == 0.0
+    assert isinstance(captured["temperature"], float)
 
 
 def test_local_transcribe_merges_extra_hotwords(transcriber, monkeypatch):
