@@ -129,6 +129,10 @@ _QUEUE_MAX = 2
 # protects against a pathological/hung UIA provider.
 _CTX_JOIN_TIMEOUT = 0.2
 
+# L5.7: how often the live-transcription loop snapshots the buffer while
+# recording, decoding completed (silence-delimited) chunks ahead of release.
+_LIVE_POLL_S = 0.4
+
 # Sentinel: distinguishes "_transcribe called without a context arg" (legacy /
 # tests → resolve synchronously) from "context explicitly passed as None".
 _NO_CTX = object()
@@ -221,7 +225,8 @@ class DictationMode:
                  snippets_enabled: bool = True,
                  silence_trim_enabled: bool = True,
                  polish_skip_trivial: bool = True,
-                 polish_skip_max_words: int = 6):
+                 polish_skip_max_words: int = 6,
+                 live_transcribe_enabled: bool = False):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
@@ -249,6 +254,11 @@ class DictationMode:
         self.silence_trim_enabled = silence_trim_enabled
         self.polish_skip_trivial = polish_skip_trivial
         self.polish_skip_max_words = polish_skip_max_words
+        self.live_transcribe_enabled = live_transcribe_enabled
+        self._live_active = False
+        self._live_parts: list = []
+        self._live_consumed = 0
+        self._live_thread: threading.Thread | None = None
         self._paused = False
         self._active = False
         self._recording = False
@@ -479,6 +489,50 @@ class DictationMode:
         except Exception as e:
             log.error("polish_async (rå→ersätt) kraschade: %s", e, exc_info=True)
 
+    def _live_loop(self) -> None:
+        """L5.7: while recording, transcribe completed (silence-delimited)
+        chunks ahead of release so only the tail remains afterwards."""
+        from flow import split_on_silence
+        consumed = 0
+        parts: list[str] = []
+        try:
+            while self._recording and self._active:
+                time.sleep(_LIVE_POLL_S)
+                audio_raw, ch, rate = self.recorder.snapshot()
+                if audio_raw.size == 0:
+                    continue
+                final = finalize_audio(audio_raw, ch, rate)
+                chunks = split_on_silence(final, 16000, self.min_rms)
+                # Decode every completed chunk except the last (still growing).
+                if len(chunks) > consumed + 1:
+                    for c in chunks[consumed:len(chunks) - 1]:
+                        if not (self._recording and self._active):
+                            break
+                        txt = self.transcriber.transcribe(c)
+                        if txt.strip():
+                            parts.append(txt.strip())
+                    consumed = len(chunks) - 1
+        except Exception as e:
+            log.debug("Live-transkribering fel: %s", e)
+        self._live_parts = parts
+        self._live_consumed = consumed
+
+    def _combine_live(self, audio: np.ndarray) -> str:
+        """L5.7: join live partials with the post-release tail. Degrades to a
+        normal full-batch transcribe for short utterances (one chunk)."""
+        from flow import split_on_silence
+        t = getattr(self, "_live_thread", None)
+        if t is not None and t.is_alive():
+            t.join(timeout=5.0)
+        parts = list(getattr(self, "_live_parts", []))
+        consumed = getattr(self, "_live_consumed", 0)
+        chunks = split_on_silence(audio, 16000, self.min_rms) or [audio]
+        for c in chunks[consumed:]:
+            txt = self.transcriber.transcribe(c)
+            if txt.strip():
+                parts.append(txt.strip())
+        return " ".join(parts).strip()
+
     @staticmethod
     def _expand_snippet(text: str) -> str:
         """AP7.6: expand a leading snippet trigger. Returns text unchanged on
@@ -660,6 +714,18 @@ class DictationMode:
                 else:
                     self.recorder.on_level = None
                 self.recorder.start()
+                # L5.7: live-transcribe completed chunks while recording (local
+                # provider only; Fas 2 remote is intentionally a no-op).
+                self._live_active = False
+                if (getattr(self, "live_transcribe_enabled", False)
+                        and getattr(self.transcriber, "transcription_provider",
+                                    "local") == "local"):
+                    self._live_active = True
+                    self._live_parts = []
+                    self._live_consumed = 0
+                    self._live_thread = threading.Thread(
+                        target=self._live_loop, name="live-tx", daemon=True)
+                    self._live_thread.start()
                 sounds.play_start()
                 self.on_status("Lyssnar…")
                 if self.indicator:
@@ -828,8 +894,13 @@ class DictationMode:
                 self.on_status(f"Transkriberar {tr_label}…")
                 if self.indicator:
                     self.indicator.show(f"Transkriberar {tr_label}…", state="transcribe")
-            text = self.transcriber.transcribe(
-                audio, capitalize=capitalize, extra_hotwords=onscreen_names)
+            if getattr(self, "_live_active", False):
+                # L5.7: most of the audio was already decoded during recording;
+                # only the tail remains.
+                text = self._combine_live(audio)
+            else:
+                text = self.transcriber.transcribe(
+                    audio, capitalize=capitalize, extra_hotwords=onscreen_names)
             transcribe_ms = (time.monotonic() - t_tx0) * 1000
             log.info("Resultat klart (%s)", _text_meta(text))
             if text.strip():

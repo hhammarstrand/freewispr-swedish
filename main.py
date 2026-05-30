@@ -207,6 +207,7 @@ def _make_dictation(transcriber):
         silence_trim_enabled=bool(_config.get("silence_trim_enabled", True)),
         polish_skip_trivial=bool(_config.get("polish_skip_trivial", True)),
         polish_skip_max_words=int(_config.get("polish_skip_max_words", 6)),
+        live_transcribe_enabled=bool(_config.get("live_transcribe_enabled", False)),
     )
 
 

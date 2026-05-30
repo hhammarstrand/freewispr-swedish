@@ -458,6 +458,18 @@ class MicRecorder:
         captured = view.copy()
         return captured, self._buffer_channels, rate
 
+    def snapshot(self) -> tuple[np.ndarray, int, int]:
+        """Return a copy of the audio captured *so far* without stopping (L5.7).
+
+        Used by live transcription to decode completed chunks while recording
+        continues. Best-effort: reads the current offset and copies that slice;
+        a concurrent callback only ever appends past it, so the copy is safe.
+        """
+        rate = getattr(self, "_rate", TARGET_RATE)
+        if self._buffer is None or self._buffer_offset == 0:
+            return np.empty(0, dtype=np.float32), self._buffer_channels, rate
+        return self._buffer[:self._buffer_offset].copy(), self._buffer_channels, rate
+
     def stop(self) -> np.ndarray:
         """Backward-compatible: stop + finalize in one call.
 
