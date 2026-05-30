@@ -92,6 +92,7 @@ def test_replace_mode_pastes_raw_then_polished(monkeypatch):
     mode.llm_replace_mode = True
     mode.context_awareness = False
     mode.command_mode_enabled = False
+    mode.polish_skip_trivial = False
     monkeypatch.setattr(
         dictation, "paste_text",
         lambda text, active_modifiers=(), replace_len=0: pastes.append((text, replace_len)))

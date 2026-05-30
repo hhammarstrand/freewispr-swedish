@@ -526,6 +526,7 @@ def test_dictation_wait_mode_pastes_polished_not_raw(monkeypatch):
     mode.indicator = None
     mode.on_status = lambda msg: None
     mode.llm_enabled = True
+    mode.polish_skip_trivial = False
     monkeypatch.setattr(dictation, "paste_text",
                         lambda text, active_modifiers=(): pasted.append(text))
 
@@ -568,6 +569,7 @@ def test_dictation_wait_mode_watchdog_pastes_raw_on_timeout(monkeypatch):
     mode.indicator = None
     mode.on_status = lambda msg: None
     mode.llm_enabled = True
+    mode.polish_skip_trivial = False
     monkeypatch.setattr(dictation, "paste_text",
                         lambda text, active_modifiers=(): pasted.append(text))
     # Shrink watchdog so the test doesn't wait 15 s.
