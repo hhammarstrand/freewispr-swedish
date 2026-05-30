@@ -308,6 +308,33 @@ def transcribe(
     return text
 
 
+def warm(provider: str, api_key: str = "", base_url_override: str = "") -> bool:
+    """Open/keep the pooled transcription connection warm (L5.3).
+
+    Pings ``{base}/models`` over the shared pool so the *first* remote dictation
+    reuses the connection instead of paying a TLS handshake. Best-effort:
+    returns False on any failure, never raises. Loggar aldrig nyckel.
+    """
+    try:
+        base = _resolve_base_url(provider, base_url_override)
+    except Exception:
+        return False
+    resolved_key = _resolve_api_key(api_key, provider)
+    if not resolved_key and provider != "custom":
+        return False
+    headers = {"Accept": "application/json"}
+    if resolved_key:
+        headers["Authorization"] = f"Bearer {resolved_key}"
+    try:
+        http_pool.request(f"{base}/models", headers, method="GET",
+                          timeout=8.0, parse="raw")
+        log.debug("Transkriberings-anslutning uppvärmd (%s)", provider)
+        return True
+    except Exception as e:
+        log.debug("Transkriberings-warm misslyckades (%s): %s", provider, e)
+        return False
+
+
 def test_connection(
     provider: str,
     api_key: str = "",

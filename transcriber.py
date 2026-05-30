@@ -406,6 +406,9 @@ class Transcriber:
         self._llm_warm_stop = threading.Event()
         if llm_enabled:
             self._start_llm_warmer()
+        # L5.3: warm the remote transcription connection too (only when remote).
+        if transcription_provider != "local":
+            self._start_transcribe_warmer()
 
         # When the user has opted into a remote transcription provider, the
         # local Whisper model is *not* loaded. This saves 0.5–3 GB of RAM/VRAM
@@ -490,6 +493,17 @@ class Transcriber:
             while not self._llm_warm_stop.wait(_LLM_WARM_INTERVAL):
                 warm(self.llm_api_key, **kw)
         threading.Thread(target=_loop, name="llm-warm", daemon=True).start()
+
+    def _start_transcribe_warmer(self) -> None:
+        """Warm the remote transcription connection now + periodically (L5.3)."""
+        def _loop():
+            import remote_transcribe as rt
+            kw = dict(api_key=self.transcription_api_key,
+                      base_url_override=self.transcription_base_url)
+            rt.warm(self.transcription_provider, **kw)
+            while not self._llm_warm_stop.wait(_LLM_WARM_INTERVAL):
+                rt.warm(self.transcription_provider, **kw)
+        threading.Thread(target=_loop, name="tr-warm", daemon=True).start()
 
     def _warmup(self) -> None:
         """Run a single silent inference to pre-allocate inference state."""
