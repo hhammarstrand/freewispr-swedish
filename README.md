@@ -159,6 +159,8 @@ Vilken modell som passar dig beror på din hårdvara och hur petig du vill vara 
 
 > **Rå → ersätt** (Inställningar → Smart): klistrar in den råa transkriberingen direkt så att text syns omedelbart, och byter sedan ut den mot den polerade versionen när den är klar (via backsteg + ny inklistring). Endast för redigerbara fält — aktiveras aldrig i terminal/kod-profiler. Avvägning: om du hinner trycka **Enter/Tab** innan polishen landar kan utbytet misslyckas och ge dubblerad text; lämna läget av om du ofta skickar iväg text direkt.
 
+> **Lokal LLM-granskning** (lägre latens): har du GPU-headroom kan du köra granskningen lokalt i stället för mot en molnleverantör. Starta t.ex. [Ollama](https://ollama.com/) eller llama.cpp och välj **Custom**-leverantören med base-URL `http://localhost:11434/v1` (loopback kräver inget samtycke och lämnar aldrig maskinen). Det statiska system-/few-shot-prefixet återanvänds via modellens KV-cache, vilket sänker svarstiden ytterligare.
+
 ## Personlig kontext
 
 LLM-granskaren får en kort beskrivning av dig som referens vid varje pass — namn, fackord, vanliga feltolkningar. Du redigerar texten under **Inställningar → Kontext**.

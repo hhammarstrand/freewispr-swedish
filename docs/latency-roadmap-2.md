@@ -1,6 +1,6 @@
 # FreeWispr-Swedish — L5: latens, omgång 2
 
-> **Status: TODO / planerad.** Fortsättning efter L0–L4 (#26). Två angreppssätt:
+> **Status: implementerad.** Fortsättning efter L0–L4 (#26). Två angreppssätt:
 > *skala ner golvet* (snabbare inferens) och *gå under golvet* (sluta vänta på
 > inferensen) — vilket L0–L4 medvetet inte rörde. Plockas i prioordning (1–3 är
 > bästa lågt hängande). Kodankare (`fil:funktion`) verifierade mot nuvarande
@@ -32,10 +32,10 @@ opt-in med säkra defaults.
 default-fallbacken `(0.0, 0.2, …, 1.0)` och kör om avkodningen upp till 6 gånger
 när `compression_ratio`/`log_prob`-trösklarna fallerar.
 
-- [ ] Sätt `temperature=0.0` (skalär) i transcribe-anropet → max ett
+- [x] Sätt `temperature=0.0` (skalär) i transcribe-anropet → max ett
       avkodningspass. Behåll övriga rattar (beam_size, no_repeat_ngram,
       repetition_penalty).
-- [ ] Logga `decode_passes` (1 i normalfallet).
+- [x] Logga `decode_passes` (1 i normalfallet).
 
 **Acceptanskriterier**
 - Brusigt testklipp: `decode_passes == 1`; `transcribe_ms` p95 på brusig indata
@@ -50,12 +50,12 @@ när `compression_ratio`/`log_prob`-trösklarna fallerar.
 skickar okomprimerad 16-bitars WAV (~32 KB/s). Ljudet är redan 16k mono här
 (`finalize_audio` i `dictation._process_job`).
 
-- [ ] Config `remote_audio_format`: `wav` (default) | `flac` (~hälften) | `opus`
+- [x] Config `remote_audio_format`: `wav` (default) | `flac` (~hälften) | `opus`
       (~10× mindre för tal). Koda till valt format före multipart-bygget; sätt
       rätt `Content-Type` + filändelse. FLAC via `soundfile`/`libsndfile`, Opus
       via `soundfile`/`opuslib`/`ffmpeg`; falla tillbaka till WAV om kodaren
       saknas.
-- [ ] Logga `upload_bytes`.
+- [x] Logga `upload_bytes`.
 
 **Acceptanskriterier**
 - `flac`/`opus`: `upload_bytes` ned ≥40 % (FLAC) / ≥85 % (Opus) på 5 s-klipp;
@@ -70,7 +70,7 @@ skickar okomprimerad 16-bitars WAV (~32 KB/s). Ljudet är redan 16k mono här
 LLM-endpointen; remote-transkriberingen får ingen pre-warm, så L2:s keep-alive
 hjälper först från diktering nr 2.
 
-- [ ] Lägg en `warm`-motsvarighet för transkriberings-poolen (öppna/håll
+- [x] Lägg en `warm`-motsvarighet för transkriberings-poolen (öppna/håll
       `http_pool`-anslutningen mot transkriberings-base_url vid start, ev. en
       pytteliten request). Anropas bara när `transcription_provider != "local"`.
 
@@ -86,10 +86,10 @@ hjälper först från diktering nr 2.
 (`audio.py:_try_start` ~rad 168, `samplerate=default_samplerate`, oftast 48k) och
 resamplas i `finalize_audio` (~rad 468, soxr HQ / scipy).
 
-- [ ] Försök öppna `sd.InputStream` med `samplerate=16000, channels=1`. Lyckas →
+- [x] Försök öppna `sd.InputStream` med `samplerate=16000, channels=1`. Lyckas →
       `finalize_audio` blir no-op (hoppa resampling/downmix). Misslyckas → falla
       tillbaka till nativa-rate + resample.
-- [ ] Logga `resample_ms` (0 när hoppad).
+- [x] Logga `resample_ms` (0 när hoppad).
 
 **Acceptanskriterier**
 - Enhet som stödjer 16k mono: `resample_ms` ≈ 0, steget loggas som överhoppat.
@@ -103,9 +103,9 @@ resamplas i `finalize_audio` (~rad 468, soxr HQ / scipy).
 *andra* no-VAD-pass när VAD-passet ger tomt (`vad_attempts = (True, False)`
 ~rad 713).
 
-- [ ] Trimma ledande/avslutande tystnad med befintlig RMS (`min_rms`) före
+- [x] Trimma ledande/avslutande tystnad med befintlig RMS (`min_rms`) före
       transcribe — billigt, RMS finns redan i recordern.
-- [ ] Säkerställ att no-VAD-fallbacken bara körs när VAD-passet faktiskt gav
+- [x] Säkerställ att no-VAD-fallbacken bara körs när VAD-passet faktiskt gav
       tomt (inte rutinmässigt).
 
 **Acceptanskriterier**
@@ -116,7 +116,7 @@ resamplas i `finalize_audio` (~rad 468, soxr HQ / scipy).
 
 ## L5.6 — Hoppa över polish för triviala transkript
 
-- [ ] Billig lokal heuristik i polish-pathen (`dictation`/`transcriber`): hoppa
+- [x] Billig lokal heuristik i polish-pathen (`dictation`/`transcriber`): hoppa
       polish när transkriptet är trivialt — ≤ N ord **och** inga
       disfluens-/självrättelse-spår ("öh/eh/nej förresten" …). Konservativt, så
       självrättelser aldrig missas. Config-tröskel, default på.
@@ -130,12 +130,12 @@ resamplas i `finalize_audio` (~rad 468, soxr HQ / scipy).
 
 ## L5.7 — Transkribera *under* inspelningen *(störst vinst, fasad)*
 
-- [ ] **Fas 1 (lokal):** låna chunkningen från `flow.py:split_on_silence` /
+- [x] **Fas 1 (lokal):** låna chunkningen från `flow.py:split_on_silence` /
       `FlowMode` till push-to-talk: transkribera bufferten i bitar *medan*
       användaren pratar; vid släpp återstår bara sista chunken. Sätt ihop
       delresultaten (polish körs på helheten som idag). Robust mot mycket korta
       yttranden (degraderar till nuvarande beteende).
-- [ ] **Fas 2 (remote, valfritt):** om `staik`/`berget` exponerar
+- [x] **Fas 2 (remote, valfritt):** om `staik`/`berget` exponerar
       streaming-/realtids-ASR, strömma ljud under inspelning; annars no-op
       (behåll batch).
 
@@ -149,12 +149,12 @@ resamplas i `finalize_audio` (~rad 468, soxr HQ / scipy).
 
 ## L5.8 — Valfritt / utforskande
 
-- [ ] **`BatchedInferencePipeline`** (faster-whisper) för *längre* klipp →
+- [x] **`BatchedInferencePipeline`** (faster-whisper) för *längre* klipp →
       parallell chunk-avkodning. Mät innan default.
-- [ ] **Prefix/KV-cache för polish-prompten:** lokal Ollama (KV-återanvändning av
+- [x] **Prefix/KV-cache för polish-prompten:** lokal Ollama (KV-återanvändning av
       det statiska prefixet); staik om prompt-caching stöds. Mål: lägre
       `first_token_ms`.
-- [ ] **Lokal polish-modell** som config-alternativ (LAN-rundtur) ovanpå
+- [x] **Lokal polish-modell** som config-alternativ (LAN-rundtur) ovanpå
       befintlig custom-provider. Ren config/dokumentation.
 
 ---

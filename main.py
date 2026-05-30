@@ -174,6 +174,7 @@ def _make_transcriber(model_size: str, use_cuda: bool):
         transcription_temperature=float(_config.get("transcription_temperature", 0.0)),
         expect_english_terms=bool(_config.get("expect_english_terms", False)),
         remote_audio_format=str(_config.get("remote_audio_format", "wav")),
+        whisper_batched=bool(_config.get("whisper_batched", False)),
     )
 
 

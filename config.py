@@ -158,6 +158,9 @@ DEFAULTS = {
     # L5.7: transkribera färdiga chunkar redan under inspelning (endast lokal).
     # Av som default; experimentellt.
     "live_transcribe_enabled": False,
+    # L5.8: BatchedInferencePipeline för längre klipp (faster-whisper). Av som
+    # default — mät innan du slår på. Faller tillbaka om klassen saknas.
+    "whisper_batched": False,
 
     "indicator_follow_mouse": True,
     # Lägsta RMS-nivå (0.0-1.0) som räknas som tal. Se DEFAULT_MIN_RMS i dictation.py.

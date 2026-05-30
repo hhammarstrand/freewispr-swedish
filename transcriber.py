@@ -376,7 +376,8 @@ class Transcriber:
                  kblab_revision: str = "default",
                  transcription_temperature: float = 0.0,
                  expect_english_terms: bool = False,
-                 remote_audio_format: str = "wav"):
+                 remote_audio_format: str = "wav",
+                 whisper_batched: bool = False):
         MODEL_DIR.mkdir(parents=True, exist_ok=True)
         self.language = language
         self.llm_enabled = llm_enabled
@@ -398,6 +399,8 @@ class Transcriber:
         self.transcription_temperature = transcription_temperature
         self.expect_english_terms = expect_english_terms
         self.remote_audio_format = remote_audio_format or "wav"
+        self.whisper_batched = whisper_batched
+        self._batched = None
         self.on_stage = None
 
         # L3: keep the LLM connection warm so the first polish doesn't pay a
@@ -469,6 +472,19 @@ class Transcriber:
         )
         log.info("Whisper '%s' (%s) laddad OK [%s, %s]",
                  model_size, model_name, device, compute_type)
+
+        # L5.8 (opt-in, experimental): wrap the model in a BatchedInferencePipeline
+        # for parallel chunk decoding on *longer* clips. Guarded so a missing
+        # class / old faster-whisper simply keeps the normal path.
+        self._batched = None
+        if getattr(self, "whisper_batched", False):
+            try:
+                from faster_whisper import BatchedInferencePipeline
+                self._batched = BatchedInferencePipeline(model=self.model)
+                log.info("BatchedInferencePipeline aktiverad (experimentellt)")
+            except Exception as e:
+                log.info("BatchedInferencePipeline ej tillgänglig: %s", e)
+
         if self.llm_enabled:
             log.info("LLM-granskning aktiverad: %s/%s",
                      self.llm_provider, self.llm_model)
@@ -748,7 +764,24 @@ class Transcriber:
         raw = ""
         # segments is a lazy generator, so the error surfaces during
         # iteration, not at the transcribe() call itself.
-        for use_vad in vad_attempts:
+        # L5.8 (opt-in): route *longer* clips (>20 s) through the batched
+        # pipeline first. Fully isolated + fallback-safe — any failure (or an
+        # empty result) drops to the normal decode loop below.
+        batched = getattr(self, "_batched", None)
+        if batched is not None and audio.size > 16000 * 20:
+            try:
+                with self._model_lock:
+                    segments, _info = batched.transcribe(
+                        audio, language=self.language, beam_size=beam_size,
+                        vad_filter=vad_enabled, temperature=0.0)
+                    raw = " ".join(s.text.strip() for s in segments)
+                if raw.strip():
+                    log.info("Batched decode klar (%s)", _text_meta(raw))
+            except Exception as e:
+                log.warning("Batched decode misslyckades — normal path: %s", e)
+                raw = ""
+
+        for use_vad in (() if raw.strip() else vad_attempts):
             try:
                 with self._model_lock:
                     model = self.model
