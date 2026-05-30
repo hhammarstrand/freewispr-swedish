@@ -114,6 +114,9 @@ DEFAULTS = {
     "kblab_revision": "default",       # default | strict | subtitle (CT2-fallback)
     # Remote OpenAI-kompatibel path: temperatur (prompt byggs automatiskt).
     "transcription_temperature": 0.0,
+    # L5.2: uppladdningsformat för remote audio: wav (default) | flac | opus.
+    # flac/opus kräver soundfile; faller annars tillbaka till wav.
+    "remote_audio_format": "wav",
 
     # ---- Kommandoläge (AP5) ----
     # Tolka inledande kommandofraser ("gör det kortare" m.fl.) som redigering

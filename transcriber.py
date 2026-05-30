@@ -375,7 +375,8 @@ class Transcriber:
                  compute_type: str = "",
                  kblab_revision: str = "default",
                  transcription_temperature: float = 0.0,
-                 expect_english_terms: bool = False):
+                 expect_english_terms: bool = False,
+                 remote_audio_format: str = "wav"):
         MODEL_DIR.mkdir(parents=True, exist_ok=True)
         self.language = language
         self.llm_enabled = llm_enabled
@@ -396,6 +397,7 @@ class Transcriber:
         self.kblab_revision = kblab_revision or "default"
         self.transcription_temperature = transcription_temperature
         self.expect_english_terms = expect_english_terms
+        self.remote_audio_format = remote_audio_format or "wav"
         self.on_stage = None
 
         # L3: keep the LLM connection warm so the first polish doesn't pay a
@@ -864,6 +866,7 @@ class Transcriber:
                 base_url_override=self.transcription_base_url,
                 prompt=prompt,
                 temperature=temperature,
+                audio_format=getattr(self, "remote_audio_format", "wav"),
             )
         except rt.RemoteTranscribeError as e:
             log.warning("Remote-transkribering misslyckades: %s", e)

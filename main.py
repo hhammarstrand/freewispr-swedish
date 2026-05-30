@@ -173,6 +173,7 @@ def _make_transcriber(model_size: str, use_cuda: bool):
         kblab_revision=str(_config.get("kblab_revision", "default")),
         transcription_temperature=float(_config.get("transcription_temperature", 0.0)),
         expect_english_terms=bool(_config.get("expect_english_terms", False)),
+        remote_audio_format=str(_config.get("remote_audio_format", "wav")),
     )
 
 
