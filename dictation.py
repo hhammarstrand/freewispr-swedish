@@ -2,6 +2,7 @@
 import collections
 import logging
 import queue
+import re
 import threading
 import time
 import keyboard
@@ -20,6 +21,27 @@ log = logging.getLogger("freewispr")
 _LAT_WINDOW = 50
 _latency_samples: collections.deque = collections.deque(maxlen=_LAT_WINDOW)
 _LAT_KEYS = ("transcribe_ms", "llm_ms", "paste_ms", "context_hotpath_ms", "conn_ms")
+
+
+# L5.6: disfluency / self-correction markers. Their presence forces polish so a
+# self-correction ("…fem, nej förresten sex") is never left unresolved.
+_DISFLUENCY_RE = re.compile(
+    r"\b(öh+|eh+|öhm|ehm|hmm+|hrm|förresten|jag menar|nej nej|alltså nej)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_trivial(text: str, max_words: int = 6) -> bool:
+    """L5.6: True when the transcript is short and has no disfluency/self-
+    correction markers, so polish can be safely skipped. Conservative."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if len(t.split()) > max_words:
+        return False
+    if _DISFLUENCY_RE.search(t):
+        return False
+    return True
 
 
 def _trim_silence(audio: np.ndarray, rate: int, threshold: float,
@@ -197,7 +219,9 @@ class DictationMode:
                  llm_replace_mode: bool = False,
                  cancel_hotkey: str = "esc",
                  snippets_enabled: bool = True,
-                 silence_trim_enabled: bool = True):
+                 silence_trim_enabled: bool = True,
+                 polish_skip_trivial: bool = True,
+                 polish_skip_max_words: int = 6):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
@@ -223,6 +247,8 @@ class DictationMode:
         self._cancel_trigger, _ = _parse_hotkey(cancel_hotkey)
         self.snippets_enabled = snippets_enabled
         self.silence_trim_enabled = silence_trim_enabled
+        self.polish_skip_trivial = polish_skip_trivial
+        self.polish_skip_max_words = polish_skip_max_words
         self._paused = False
         self._active = False
         self._recording = False
@@ -836,6 +862,14 @@ class DictationMode:
                             self.indicator.show("Snippet", state="done")
                             self.indicator.hide(delay_ms=1500)
                         return
+
+                # L5.6: skip the whole LLM round-trip for trivial transcripts
+                # (short + no disfluencies) — text is pasted directly.
+                if (llm_enabled and getattr(self, "polish_skip_trivial", True)
+                        and _is_trivial(text, getattr(self, "polish_skip_max_words", 6))):
+                    log.info("Trivialt yttrande (%d ord) — hoppar polish",
+                             len(text.split()))
+                    llm_enabled = False
 
                 # L3 "rå → ersätt": paste raw now, replace with polished later.
                 # Reaches here only for editable fields (code/terminal profiles

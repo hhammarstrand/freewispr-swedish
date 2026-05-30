@@ -152,6 +152,9 @@ DEFAULTS = {
     "snippets_enabled": True,
     # L5.5: trimma ledande/avslutande tystnad (RMS) före decode.
     "silence_trim_enabled": True,
+    # L5.6: hoppa LLM-polish för triviala (korta, disfluensfria) yttranden.
+    "polish_skip_trivial": True,
+    "polish_skip_max_words": 6,
 
     "indicator_follow_mouse": True,
     # Lägsta RMS-nivå (0.0-1.0) som räknas som tal. Se DEFAULT_MIN_RMS i dictation.py.
