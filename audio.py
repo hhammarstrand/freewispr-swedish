@@ -354,7 +354,21 @@ class MicRecorder:
                 if entry not in candidates:
                     candidates.append(entry)
 
-        return candidates
+        # L5.4: try 16 kHz mono first for each device so finalize_audio can skip
+        # the resample/downmix entirely. Drivers that reject it fall through to
+        # the native-rate candidates that follow.
+        preferred: list[tuple[int, int, int, str]] = []
+        seen_idx: set[int] = set()
+        for (i, _rate, _ch, label) in candidates:
+            if i not in seen_idx:
+                seen_idx.add(i)
+                preferred.append((i, TARGET_RATE, 1, f"{label} @16k"))
+
+        result: list[tuple[int, int, int, str]] = []
+        for entry in preferred + candidates:
+            if entry not in result:
+                result.append(entry)
+        return result
 
     def _cb(self, indata, frames, time, status):
         if status:
@@ -487,8 +501,12 @@ def finalize_audio(audio: np.ndarray, channels: int, orig_rate: int) -> np.ndarr
     log.info("Rå audio: shape=%s, dtype=%s, rate=%d, peak=%.4f",
              mono.shape, mono.dtype, orig_rate,
              max(abs(float(mono.min())), abs(float(mono.max()))) if mono.size else 0.0)
+    # L5.4: when capture is already 16 kHz the resample is a no-op (skipped).
+    t0 = time_module.monotonic()
     resampled = _resample(mono, orig_rate)
-    log.info("Resamplerad: %d -> %d samples (%d->%dHz), peak=%.4f",
+    resample_ms = (time_module.monotonic() - t0) * 1000
+    skipped = " (överhoppad)" if orig_rate == TARGET_RATE else ""
+    log.info("Resamplerad: %d -> %d samples (%d->%dHz), resample_ms=%.1f%s",
              len(mono), len(resampled), orig_rate, TARGET_RATE,
-             max(abs(float(resampled.min())), abs(float(resampled.max()))) if resampled.size else 0.0)
+             resample_ms, skipped)
     return resampled
