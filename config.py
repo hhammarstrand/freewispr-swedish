@@ -150,6 +150,8 @@ DEFAULTS = {
     "expect_english_terms": False,
     # Snippets / textexpansion (AP7.6) — par lagras i snippets.json.
     "snippets_enabled": True,
+    # L5.5: trimma ledande/avslutande tystnad (RMS) före decode.
+    "silence_trim_enabled": True,
 
     "indicator_follow_mouse": True,
     # Lägsta RMS-nivå (0.0-1.0) som räknas som tal. Se DEFAULT_MIN_RMS i dictation.py.

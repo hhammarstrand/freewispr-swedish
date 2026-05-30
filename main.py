@@ -204,6 +204,7 @@ def _make_dictation(transcriber):
         llm_replace_mode=bool(_config.get("llm_replace_mode", False)),
         cancel_hotkey=_config.get("cancel_hotkey", "esc"),
         snippets_enabled=bool(_config.get("snippets_enabled", True)),
+        silence_trim_enabled=bool(_config.get("silence_trim_enabled", True)),
     )
 
 

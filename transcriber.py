@@ -788,7 +788,12 @@ class Transcriber:
                 # delta is visible; decode_passes=1 thanks to scalar temperature.
                 log.info("Lokal decode: vad=%s, beam=%d, no_speech=%.2f, "
                          "decode_passes=1", use_vad, beam_size, no_speech_threshold)
-                break
+                # L5.5: only fall through to the no-VAD pass when the VAD pass
+                # produced *nothing* (VAD over-trimmed real speech). A non-empty
+                # result — or the no-VAD pass itself — ends the loop.
+                if raw.strip() or not use_vad:
+                    break
+                log.info("VAD-passet gav tomt — försöker en gång utan VAD")
             except RuntimeError as e:
                 msg = str(e).lower()
 

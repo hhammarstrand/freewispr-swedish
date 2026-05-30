@@ -22,6 +22,35 @@ _latency_samples: collections.deque = collections.deque(maxlen=_LAT_WINDOW)
 _LAT_KEYS = ("transcribe_ms", "llm_ms", "paste_ms", "context_hotpath_ms", "conn_ms")
 
 
+def _trim_silence(audio: np.ndarray, rate: int, threshold: float,
+                  win_ms: int = 30, pad_ms: int = 120) -> np.ndarray:
+    """L5.5: trim leading/trailing silence using RMS, with padding.
+
+    Cheap alternative to VAD — fewer samples reach Whisper. Conservative:
+    keeps a pad around the voiced region so word edges aren't clipped, and
+    returns the input unchanged if nothing crosses the threshold.
+    """
+    if audio is None or audio.size == 0:
+        return audio
+    win = max(1, int(rate * win_ms / 1000))
+    n = audio.size
+    first = last = None
+    for start in range(0, n, win):
+        seg = audio[start:start + win]
+        if seg.size and float(np.sqrt(np.mean(seg * seg))) >= threshold:
+            if first is None:
+                first = start
+            last = start
+    if first is None:
+        return audio
+    pad = int(rate * pad_ms / 1000)
+    s = max(0, first - pad)
+    e = min(n, last + win + pad)
+    if s == 0 and e == n:
+        return audio
+    return audio[s:e]
+
+
 def _percentile(values: list[float], pct: float) -> float:
     """Linear-interpolated percentile (no numpy dependency on the hot path)."""
     if not values:
@@ -167,7 +196,8 @@ class DictationMode:
                  command_mode_enabled: bool = True,
                  llm_replace_mode: bool = False,
                  cancel_hotkey: str = "esc",
-                 snippets_enabled: bool = True):
+                 snippets_enabled: bool = True,
+                 silence_trim_enabled: bool = True):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
@@ -192,6 +222,7 @@ class DictationMode:
         self.cancel_hotkey = cancel_hotkey
         self._cancel_trigger, _ = _parse_hotkey(cancel_hotkey)
         self.snippets_enabled = snippets_enabled
+        self.silence_trim_enabled = silence_trim_enabled
         self._paused = False
         self._active = False
         self._recording = False
@@ -708,6 +739,14 @@ class DictationMode:
             if self.indicator:
                 self.indicator.hide(delay_ms=0)
             return
+
+        # L5.5: trim edge silence (cheaper than VAD) so fewer samples reach
+        # Whisper. Keeps a pad so word edges aren't clipped.
+        if getattr(self, "silence_trim_enabled", True):
+            trimmed = _trim_silence(audio, 16000, self.min_rms)
+            if trimmed.size >= MIN_AUDIO_SAMPLES and trimmed.size < n:
+                log.info("RMS-trim: %d -> %d samples", n, trimmed.size)
+                audio = trimmed
 
         self._transcribe(audio, record_ms, ctx=ctx,
                          context_hotpath_ms=context_hotpath_ms)
