@@ -8,9 +8,19 @@ on:
     branches: [master]
   workflow_dispatch:
 
+# Only one run per ref at a time: a new push cancels an in-progress run for the
+# same branch/PR. Prevents stale/hung runs from piling up and blocking merges.
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-windows:
     runs-on: windows-latest
+    # Hard cap so a hung step (e.g. a stalled download or PyInstaller) fails
+    # fast instead of running until GitHub's 6-hour default and blocking the
+    # required check indefinitely.
+    timeout-minutes: 30
 
     permissions:
       contents: write   # behövs för att publicera/uppdatera rolling release
