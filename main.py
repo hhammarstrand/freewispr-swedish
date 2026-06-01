@@ -172,7 +172,19 @@ def _make_transcriber(model_size: str, use_cuda: bool):
         compute_type=str(_config.get("whisper_compute_type", "")),
         kblab_revision=str(_config.get("kblab_revision", "default")),
         transcription_temperature=float(_config.get("transcription_temperature", 0.0)),
+        expect_english_terms=bool(_config.get("expect_english_terms", False)),
+        remote_audio_format=str(_config.get("remote_audio_format", "wav")),
+        whisper_batched=bool(_config.get("whisper_batched", False)),
     )
+
+
+def _apply_runtime_flags():
+    """Push module-level runtime flags from config (AP7)."""
+    try:
+        import paste
+        paste.set_restore_clipboard(bool(_config.get("restore_clipboard", False)))
+    except Exception as e:
+        log.debug("Kunde inte applicera runtime-flaggor: %s", e)
 
 
 def _make_dictation(transcriber):
@@ -191,6 +203,13 @@ def _make_dictation(transcriber):
         app_profiles=_config.get("app_profiles") or {},
         command_mode_enabled=bool(_config.get("command_mode_enabled", True)),
         llm_replace_mode=bool(_config.get("llm_replace_mode", False)),
+        cancel_hotkey=_config.get("cancel_hotkey", "esc"),
+        snippets_enabled=bool(_config.get("snippets_enabled", True)),
+        silence_trim_enabled=bool(_config.get("silence_trim_enabled", True)),
+        polish_skip_trivial=bool(_config.get("polish_skip_trivial", True)),
+        polish_skip_max_words=int(_config.get("polish_skip_max_words", 6)),
+        live_transcribe_enabled=bool(_config.get("live_transcribe_enabled", False)),
+        voice_edit_hotkey=_config.get("voice_edit_hotkey", ""),
     )
 
 
@@ -268,6 +287,7 @@ def _load_app():
     log.info("Laddar config och modell…")
 
     _config = cfg_module.load()
+    _apply_runtime_flags()
 
     # One-shot migration of legacy snippets.json + corrections.json into the
     # new personal_context.json. Idempotent: skipped once the context file
@@ -407,6 +427,7 @@ def _apply_settings_locked(new_cfg: dict):
     # validated (model loaded, dictation rebuilt, etc.). This way a failed
     # reload doesn't leave a broken config on disk for the next launch.
     _config.update(new_cfg)
+    _apply_runtime_flags()
     # Reflect e.g. flow_mode_enabled visibility in the tray menu.
     _rebuild_menu()
 
@@ -683,6 +704,31 @@ def _toggle_flow(_=None):
     _rebuild_menu()
 
 
+def _dictation_paused() -> bool:
+    return bool(_dictation is not None and _dictation.is_paused())
+
+
+def _toggle_pause(_=None):
+    """AP7.3: pause/resume dictation from the tray."""
+    if _dictation is None:
+        return
+    paused = not _dictation.is_paused()
+    _dictation.set_paused(paused)
+    _set_tray_status("Diktering pausad" if paused
+                     else f"Klar — håll {_config.get('hotkey','ctrl+space').upper()}")
+    if _indicator:
+        if paused:
+            _indicator.show("Pausad", state="error")
+            _indicator.hide(delay_ms=1500)
+    _rebuild_menu()
+
+
+def _undo_last(_=None):
+    """AP7.7: erase the last pasted block."""
+    if _dictation is not None:
+        _dictation.undo_last()
+
+
 def _build_menu():
     startup_label = "✓ Starta med Windows" if _is_startup_enabled() else "Starta med Windows"
     items = [
@@ -691,6 +737,10 @@ def _build_menu():
         pystray.MenuItem("Inställningar", _open_settings, default=True),
         pystray.MenuItem(startup_label, _toggle_startup),
     ]
+    if _dictation is not None:
+        pause_label = "Återuppta diktering" if _dictation_paused() else "Pausa diktering"
+        items.append(pystray.MenuItem(pause_label, _toggle_pause))
+        items.append(pystray.MenuItem("Ångra senaste", _undo_last))
     if _config.get("flow_mode_enabled", False):
         flow_label = "✓ Flow-läge" if _flow_active() else "Flow-läge"
         items.append(pystray.MenuItem(flow_label, _toggle_flow))
@@ -702,6 +752,11 @@ def _build_menu():
 
 
 def _quit(_=None):
+    try:
+        import single_instance
+        single_instance.release()
+    except Exception:
+        pass
     if _flow:
         _flow.stop(wait=False)
     if _dictation:
@@ -722,6 +777,20 @@ def _quit(_=None):
 
 def main():
     global _tray_icon, _tk_root, _status_var, _indicator
+
+    # AP7.1: single-instance guard. A second instance would register duplicate
+    # hotkeys and load a second Whisper model into VRAM (OOM). Bail out early —
+    # before logging/tray/model — if another instance already holds the lock.
+    import single_instance
+    if not single_instance.acquire():
+        log.warning("freewispr-swedish körs redan — avslutar denna instans")
+        try:
+            import ctypes
+            ctypes.windll.user32.MessageBoxW(
+                0, "freewispr-swedish körs redan.", "freewispr-swedish", 0x40)
+        except Exception:
+            pass
+        return
 
     # Wire up file logging now (deferred from import time so tests can import
     # this module without touching ~/.freewispr-swedish/).

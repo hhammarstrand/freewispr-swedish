@@ -284,6 +284,16 @@ def _get_device_and_compute(use_cuda: bool, compute_type_override: str = "") -> 
 # Initial prompts guide Whisper toward the right language and style.
 # This dramatically improves first-word accuracy and reduces hallucinations.
 # Include a few natural Swedish phrases to anchor the decoder.
+# AP7.5: common English tech terms to bias toward when expect_english_terms is
+# on (a mitigation — KBLab is Swedish-trained, so this can't fully fix English
+# acoustics, only nudge spelling/recognition).
+_ENGLISH_TERMS = (
+    "deploy, deploya, staging, production, pull request, commit, committa, "
+    "merge, mergea, branch, rebase, backend, frontend, framework, endpoint, "
+    "release, deadline, feature, bug, debugga, review, pipeline, container, "
+    "Kubernetes, Docker, Python, JavaScript, TypeScript, repository"
+)
+
 _INITIAL_PROMPTS = {
     "sv": (
         "Hej, det här är en diktering på svenska."
@@ -364,7 +374,10 @@ class Transcriber:
                  no_speech_threshold: float = 0.6,
                  compute_type: str = "",
                  kblab_revision: str = "default",
-                 transcription_temperature: float = 0.0):
+                 transcription_temperature: float = 0.0,
+                 expect_english_terms: bool = False,
+                 remote_audio_format: str = "wav",
+                 whisper_batched: bool = False):
         MODEL_DIR.mkdir(parents=True, exist_ok=True)
         self.language = language
         self.llm_enabled = llm_enabled
@@ -384,6 +397,10 @@ class Transcriber:
         self.compute_type_override = compute_type
         self.kblab_revision = kblab_revision or "default"
         self.transcription_temperature = transcription_temperature
+        self.expect_english_terms = expect_english_terms
+        self.remote_audio_format = remote_audio_format or "wav"
+        self.whisper_batched = whisper_batched
+        self._batched = None
         self.on_stage = None
 
         # L3: keep the LLM connection warm so the first polish doesn't pay a
@@ -392,6 +409,9 @@ class Transcriber:
         self._llm_warm_stop = threading.Event()
         if llm_enabled:
             self._start_llm_warmer()
+        # L5.3: warm the remote transcription connection too (only when remote).
+        if transcription_provider != "local":
+            self._start_transcribe_warmer()
 
         # When the user has opted into a remote transcription provider, the
         # local Whisper model is *not* loaded. This saves 0.5–3 GB of RAM/VRAM
@@ -452,6 +472,19 @@ class Transcriber:
         )
         log.info("Whisper '%s' (%s) laddad OK [%s, %s]",
                  model_size, model_name, device, compute_type)
+
+        # L5.8 (opt-in, experimental): wrap the model in a BatchedInferencePipeline
+        # for parallel chunk decoding on *longer* clips. Guarded so a missing
+        # class / old faster-whisper simply keeps the normal path.
+        self._batched = None
+        if getattr(self, "whisper_batched", False):
+            try:
+                from faster_whisper import BatchedInferencePipeline
+                self._batched = BatchedInferencePipeline(model=self.model)
+                log.info("BatchedInferencePipeline aktiverad (experimentellt)")
+            except Exception as e:
+                log.info("BatchedInferencePipeline ej tillgänglig: %s", e)
+
         if self.llm_enabled:
             log.info("LLM-granskning aktiverad: %s/%s",
                      self.llm_provider, self.llm_model)
@@ -476,6 +509,17 @@ class Transcriber:
             while not self._llm_warm_stop.wait(_LLM_WARM_INTERVAL):
                 warm(self.llm_api_key, **kw)
         threading.Thread(target=_loop, name="llm-warm", daemon=True).start()
+
+    def _start_transcribe_warmer(self) -> None:
+        """Warm the remote transcription connection now + periodically (L5.3)."""
+        def _loop():
+            import remote_transcribe as rt
+            kw = dict(api_key=self.transcription_api_key,
+                      base_url_override=self.transcription_base_url)
+            rt.warm(self.transcription_provider, **kw)
+            while not self._llm_warm_stop.wait(_LLM_WARM_INTERVAL):
+                rt.warm(self.transcription_provider, **kw)
+        threading.Thread(target=_loop, name="tr-warm", daemon=True).start()
 
     def _warmup(self) -> None:
         """Run a single silent inference to pre-allocate inference state."""
@@ -646,6 +690,8 @@ class Transcriber:
                         corrections=corrections,
                         app_profile=app_profile,
                         onscreen_names=onscreen_names,
+                        expect_english_terms=getattr(
+                            self, "expect_english_terms", False),
                     )
                 except Exception as e:
                     log.warning("LLM-polish kraschade: %s", e, exc_info=True)
@@ -694,6 +740,9 @@ class Transcriber:
         # Merge AP3 on-screen proper nouns into the decoder hotwords.
         if extra_hotwords:
             hotwords = f"{hotwords}, {extra_hotwords}" if hotwords else extra_hotwords
+        # AP7.5: bias toward common English tech terms when opted in.
+        if getattr(self, "expect_english_terms", False):
+            hotwords = f"{hotwords}, {_ENGLISH_TERMS}" if hotwords else _ENGLISH_TERMS
 
         if getattr(self, "_cuda_oom", False):
             # We already hit OOM in this session; refuse fast with the same
@@ -715,7 +764,24 @@ class Transcriber:
         raw = ""
         # segments is a lazy generator, so the error surfaces during
         # iteration, not at the transcribe() call itself.
-        for use_vad in vad_attempts:
+        # L5.8 (opt-in): route *longer* clips (>20 s) through the batched
+        # pipeline first. Fully isolated + fallback-safe — any failure (or an
+        # empty result) drops to the normal decode loop below.
+        batched = getattr(self, "_batched", None)
+        if batched is not None and audio.size > 16000 * 20:
+            try:
+                with self._model_lock:
+                    segments, _info = batched.transcribe(
+                        audio, language=self.language, beam_size=beam_size,
+                        vad_filter=vad_enabled, temperature=0.0)
+                    raw = " ".join(s.text.strip() for s in segments)
+                if raw.strip():
+                    log.info("Batched decode klar (%s)", _text_meta(raw))
+            except Exception as e:
+                log.warning("Batched decode misslyckades — normal path: %s", e)
+                raw = ""
+
+        for use_vad in (() if raw.strip() else vad_attempts):
             try:
                 with self._model_lock:
                     model = self.model
@@ -735,6 +801,10 @@ class Transcriber:
                         initial_prompt=prompt or None,
                         condition_on_previous_text=False,
                         without_timestamps=True,
+                        # L5.1: pin a *scalar* temperature so faster-whisper
+                        # never escalates through its (0.0, 0.2, …, 1.0)
+                        # fallback (up to 6 decode passes) on hard audio.
+                        temperature=0.0,
                         # Drop segments the model is confident are silence —
                         # reduces hallucination on quiet/noisy audio.
                         no_speech_threshold=no_speech_threshold,
@@ -747,11 +817,16 @@ class Transcriber:
                         hotwords=hotwords,
                     )
                     raw = " ".join(s.text.strip() for s in segments)
-                # L4: log the effective decode knobs so the VAD on/off delta
-                # is visible in bench_latency / the latency log.
-                log.info("Lokal decode: vad=%s, beam=%d, no_speech=%.2f",
-                         use_vad, beam_size, no_speech_threshold)
-                break
+                # L4/L5.1: log the effective decode knobs so the VAD on/off
+                # delta is visible; decode_passes=1 thanks to scalar temperature.
+                log.info("Lokal decode: vad=%s, beam=%d, no_speech=%.2f, "
+                         "decode_passes=1", use_vad, beam_size, no_speech_threshold)
+                # L5.5: only fall through to the no-VAD pass when the VAD pass
+                # produced *nothing* (VAD over-trimmed real speech). A non-empty
+                # result — or the no-VAD pass itself — ends the loop.
+                if raw.strip() or not use_vad:
+                    break
+                log.info("VAD-passet gav tomt — försöker en gång utan VAD")
             except RuntimeError as e:
                 msg = str(e).lower()
 
@@ -827,6 +902,7 @@ class Transcriber:
             _INITIAL_PROMPTS.get(self.language, ""),
             _get_hotwords_cached() or "",
             extra_prompt or "",
+            _ENGLISH_TERMS if getattr(self, "expect_english_terms", False) else "",
         ]
         prompt = " ".join(p for p in bias_parts if p).strip()
         temperature = getattr(self, "transcription_temperature", 0.0)
@@ -842,6 +918,7 @@ class Transcriber:
                 base_url_override=self.transcription_base_url,
                 prompt=prompt,
                 temperature=temperature,
+                audio_format=getattr(self, "remote_audio_format", "wav"),
             )
         except rt.RemoteTranscribeError as e:
             log.warning("Remote-transkribering misslyckades: %s", e)

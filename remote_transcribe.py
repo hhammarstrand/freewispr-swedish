@@ -139,8 +139,35 @@ def _float_to_wav_bytes(audio: np.ndarray, sample_rate: int) -> bytes:
     return buf.getvalue()
 
 
-def _build_multipart(fields: dict[str, str], wav_bytes: bytes,
-                     filename: str = "audio.wav") -> tuple[bytes, str]:
+def _encode_audio(audio: np.ndarray, sample_rate: int,
+                  fmt: str = "wav") -> tuple[bytes, str, str, str]:
+    """Encode 16k mono audio to the requested format (L5.2).
+
+    Returns ``(data, content_type, filename, used_format)``. FLAC ~halves and
+    Opus ~10×-shrinks the upload vs WAV. Falls back to WAV when the encoder
+    (soundfile/libsndfile) is unavailable, so this never raises.
+    """
+    fmt = (fmt or "wav").lower()
+    if fmt in ("flac", "opus"):
+        try:
+            import soundfile as sf
+            a = audio.astype(np.float32, copy=False)
+            if a.ndim != 1:
+                a = a.reshape(-1)
+            buf = io.BytesIO()
+            if fmt == "flac":
+                sf.write(buf, a, int(sample_rate), format="FLAC")
+                return buf.getvalue(), "audio/flac", "audio.flac", "flac"
+            sf.write(buf, a, int(sample_rate), format="OGG", subtype="OPUS")
+            return buf.getvalue(), "audio/ogg", "audio.opus", "opus"
+        except Exception as e:
+            log.warning("Kunde inte koda %s (faller tillbaka till WAV): %s", fmt, e)
+    return _float_to_wav_bytes(audio, sample_rate), "audio/wav", "audio.wav", "wav"
+
+
+def _build_multipart(fields: dict[str, str], file_bytes: bytes,
+                     filename: str = "audio.wav",
+                     content_type: str = "audio/wav") -> tuple[bytes, str]:
     """Bygg multipart/form-data body. Returnerar (body, content_type)."""
     boundary = "----freewispr-" + secrets.token_hex(16)
     crlf = b"\r\n"
@@ -158,9 +185,9 @@ def _build_multipart(fields: dict[str, str], wav_bytes: bytes,
     parts.append(
         f'Content-Disposition: form-data; name="file"; filename="{filename}"'.encode("ascii") + crlf
     )
-    parts.append(b"Content-Type: audio/wav" + crlf)
+    parts.append(f"Content-Type: {content_type}".encode("ascii") + crlf)
     parts.append(crlf)
-    parts.append(wav_bytes)
+    parts.append(file_bytes)
     parts.append(crlf)
     parts.append(b"--" + boundary.encode("ascii") + b"--" + crlf)
     body = b"".join(parts)
@@ -182,6 +209,7 @@ def transcribe(
     timeout_sec: float = 60.0,
     prompt: str = "",
     temperature: float | None = None,
+    audio_format: str = "wav",
 ) -> str:
     """Skicka ljud till remote-leverantör. Returnerar transkriberad text.
 
@@ -205,7 +233,12 @@ def transcribe(
     if not resolved_key and provider != "custom":
         raise RemoteTranscribeError(f"Ingen {p.label}-nyckel hittades")
 
-    wav_bytes = _float_to_wav_bytes(audio, sample_rate)
+    # L5.2: encode to the requested format (smaller upload). Falls back to WAV.
+    audio_bytes, file_ctype, filename, used_fmt = _encode_audio(
+        audio, sample_rate, audio_format)
+    log.info("Remote transcribe upload: format=%s, upload_bytes=%d",
+             used_fmt, len(audio_bytes))
+
     fields = {"model": used_model}
     if language:
         fields["language"] = language
@@ -218,7 +251,7 @@ def transcribe(
     if temperature is not None:
         fields["temperature"] = str(temperature)
 
-    body, content_type = _build_multipart(fields, wav_bytes)
+    body, content_type = _build_multipart(fields, audio_bytes, filename, file_ctype)
     headers = {
         "Accept": "application/json",
         "Content-Type": content_type,
@@ -273,6 +306,33 @@ def transcribe(
     text = sanitize_output(text.strip())
     log.info("Remote transcribe ok (%s, %d chars)", provider, len(text))
     return text
+
+
+def warm(provider: str, api_key: str = "", base_url_override: str = "") -> bool:
+    """Open/keep the pooled transcription connection warm (L5.3).
+
+    Pings ``{base}/models`` over the shared pool so the *first* remote dictation
+    reuses the connection instead of paying a TLS handshake. Best-effort:
+    returns False on any failure, never raises. Loggar aldrig nyckel.
+    """
+    try:
+        base = _resolve_base_url(provider, base_url_override)
+    except Exception:
+        return False
+    resolved_key = _resolve_api_key(api_key, provider)
+    if not resolved_key and provider != "custom":
+        return False
+    headers = {"Accept": "application/json"}
+    if resolved_key:
+        headers["Authorization"] = f"Bearer {resolved_key}"
+    try:
+        http_pool.request(f"{base}/models", headers, method="GET",
+                          timeout=8.0, parse="raw")
+        log.debug("Transkriberings-anslutning uppvärmd (%s)", provider)
+        return True
+    except Exception as e:
+        log.debug("Transkriberings-warm misslyckades (%s): %s", provider, e)
+        return False
 
 
 def test_connection(

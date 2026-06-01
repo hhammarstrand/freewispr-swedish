@@ -354,7 +354,21 @@ class MicRecorder:
                 if entry not in candidates:
                     candidates.append(entry)
 
-        return candidates
+        # L5.4: try 16 kHz mono first for each device so finalize_audio can skip
+        # the resample/downmix entirely. Drivers that reject it fall through to
+        # the native-rate candidates that follow.
+        preferred: list[tuple[int, int, int, str]] = []
+        seen_idx: set[int] = set()
+        for (i, _rate, _ch, label) in candidates:
+            if i not in seen_idx:
+                seen_idx.add(i)
+                preferred.append((i, TARGET_RATE, 1, f"{label} @16k"))
+
+        result: list[tuple[int, int, int, str]] = []
+        for entry in preferred + candidates:
+            if entry not in result:
+                result.append(entry)
+        return result
 
     def _cb(self, indata, frames, time, status):
         if status:
@@ -444,6 +458,18 @@ class MicRecorder:
         captured = view.copy()
         return captured, self._buffer_channels, rate
 
+    def snapshot(self) -> tuple[np.ndarray, int, int]:
+        """Return a copy of the audio captured *so far* without stopping (L5.7).
+
+        Used by live transcription to decode completed chunks while recording
+        continues. Best-effort: reads the current offset and copies that slice;
+        a concurrent callback only ever appends past it, so the copy is safe.
+        """
+        rate = getattr(self, "_rate", TARGET_RATE)
+        if self._buffer is None or self._buffer_offset == 0:
+            return np.empty(0, dtype=np.float32), self._buffer_channels, rate
+        return self._buffer[:self._buffer_offset].copy(), self._buffer_channels, rate
+
     def stop(self) -> np.ndarray:
         """Backward-compatible: stop + finalize in one call.
 
@@ -487,8 +513,12 @@ def finalize_audio(audio: np.ndarray, channels: int, orig_rate: int) -> np.ndarr
     log.info("Rå audio: shape=%s, dtype=%s, rate=%d, peak=%.4f",
              mono.shape, mono.dtype, orig_rate,
              max(abs(float(mono.min())), abs(float(mono.max()))) if mono.size else 0.0)
+    # L5.4: when capture is already 16 kHz the resample is a no-op (skipped).
+    t0 = time_module.monotonic()
     resampled = _resample(mono, orig_rate)
-    log.info("Resamplerad: %d -> %d samples (%d->%dHz), peak=%.4f",
+    resample_ms = (time_module.monotonic() - t0) * 1000
+    skipped = " (överhoppad)" if orig_rate == TARGET_RATE else ""
+    log.info("Resamplerad: %d -> %d samples (%d->%dHz), resample_ms=%.1f%s",
              len(mono), len(resampled), orig_rate, TARGET_RATE,
-             max(abs(float(resampled.min())), abs(float(resampled.max()))) if resampled.size else 0.0)
+             resample_ms, skipped)
     return resampled

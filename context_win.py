@@ -196,7 +196,15 @@ def get_context(app_profiles: dict[str, str] | None = None,
     """
     app, title = get_active_app()
     profile_key = resolve_profile_key(app, app_profiles)
-    profile = PROFILES.get(profile_key, PROFILES["default"])
+    # KP2: a binding may point at a user-defined mode, not just a built-in
+    # profile. modes.get_profile() resolves user modes first, then built-in
+    # PROFILES, then "default" — so existing built-in keys behave identically.
+    # Lazy import keeps context_win free of a load-time dependency on modes.
+    try:
+        from modes import get_profile as _get_profile
+        profile = _get_profile(profile_key)
+    except Exception:
+        profile = PROFILES.get(profile_key, PROFILES["default"])
 
     focused = ""
     read_ms = 0.0

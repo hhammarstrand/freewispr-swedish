@@ -8,9 +8,73 @@ on:
     branches: [master]
   workflow_dispatch:
 
+# Only one run per ref at a time: a new push cancels an in-progress run for the
+# same branch/PR. Prevents stale/hung runs from piling up and blocking merges.
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  # Required status check (branch protection gates on the job name
+  # "build-windows" — do NOT rename). Runs the gate (tests + lint + audit) on
+  # Linux, which is fast, reliable, and matches the dev environment. The Windows
+  # EXE build moved to the separate, non-gating package-windows job below: it is
+  # Windows-runtime-only, can't be reproduced headless, and was repeatedly
+  # hanging/failing the required check and blocking merges.
   build-windows:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: '3.11'
+          cache: pip
+
+      - name: Install dependencies
+        timeout-minutes: 10
+        run: |
+          python -m pip install --upgrade pip
+          # setuptools 65.5.0 has CVE-2024-6345 (RCE via package_index)
+          # and PYSEC-2025-49 (ReDoS). Force a current version first.
+          python -m pip install --upgrade "setuptools>=78.1.1"
+          python -m pip install -r requirements.txt pytest pytest-timeout
+
+      - name: Run tests
+        # Per-test timeout (thread method dumps a traceback of any hung test) so
+        # a stall fails fast with a signature instead of hanging the job.
+        timeout-minutes: 8
+        env:
+          PYTHONFAULTHANDLER: "1"
+        run: python -m pytest tests/ -q -p no:cacheprovider --timeout=120 --timeout-method=thread
+
+      - name: Lint with ruff
+        timeout-minutes: 3
+        run: |
+          python -m pip install ruff
+          ruff check . --select E,F,W --ignore E501
+
+      - name: Audit dependencies
+        timeout-minutes: 5
+        run: |
+          python -m pip install pip-audit
+          python -m pip_audit --strict
+
+  # Windows EXE build + release publishing. NOT a required check: runs only on
+  # push to master / version tags (and manual dispatch), never on pull_request,
+  # so a Windows-only build issue can never block a merge. Releases still build.
+  package-windows:
     runs-on: windows-latest
+    needs: build-windows
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' &&
+        (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v')))
+    timeout-minutes: 30
 
     permissions:
       contents: write   # behövs för att publicera/uppdatera rolling release
@@ -26,46 +90,35 @@ jobs:
           cache: pip
 
       - name: Install dependencies
+        timeout-minutes: 10
         run: |
           python -m pip install --upgrade pip
-          # setuptools 65.5.0 has CVE-2024-6345 (RCE via package_index)
-          # and PYSEC-2025-49 (ReDoS). Force a current version before
-          # touching requirements so pyinstaller doesn't pull the old one.
           python -m pip install --upgrade "setuptools>=78.1.1"
-          python -m pip install -r requirements.txt pyinstaller pytest
+          python -m pip install -r requirements.txt pyinstaller
 
       - name: Generate icon
+        timeout-minutes: 2
         run: python make_icon.py
 
       - name: Locate faster-whisper assets
         id: fw
         shell: pwsh
+        timeout-minutes: 2
         run: |
           $path = python -c "import faster_whisper, os; print(os.path.dirname(faster_whisper.__file__))"
           "assets=$path" >> $env:GITHUB_OUTPUT
 
-      - name: Run tests
-        run: python -m pytest tests/ -q
-
-      - name: Lint with ruff
-        run: |
-          python -m pip install ruff
-          ruff check . --select E,F,W --ignore E501
-
-      - name: Audit dependencies
-        run: |
-          python -m pip install pip-audit
-          python -m pip_audit --strict
-
       - name: Locate customtkinter assets
         id: ctk
         shell: pwsh
+        timeout-minutes: 2
         run: |
           $path = python -c "import customtkinter, os, sys; print(os.path.dirname(customtkinter.__file__))"
           "pkg=$path" >> $env:GITHUB_OUTPUT
 
       - name: Build PyInstaller app
         shell: pwsh
+        timeout-minutes: 12
         run: |
           python -m PyInstaller `
             --onedir `
