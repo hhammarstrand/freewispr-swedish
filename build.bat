@@ -48,6 +48,7 @@ echo Bygger exe...
   --collect-submodules=ui ^
   --add-data "%FW_DIR%\assets;faster_whisper\assets" ^
   --add-data "%CTK_DIR%;customtkinter" ^
+  --add-data "assets/icon.ico;assets" ^
   main.py
 
 echo.

@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <!-- Definitions for glows -->
+  <defs>
+    <radialGradient id="gold-halo-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="sparkle-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="1"/>
+      <stop offset="30%" stop-color="#f59e0b" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Background Windows 11 Card Representation (rx="8" instead of rx="30") -->
+  <rect width="100" height="100" rx="8" fill="#10141c" stroke="rgba(255,255,255,0.11)" stroke-width="1.5"/>
+
+  <!-- Halo Ring Background Glow -->
+  <circle cx="50" cy="50" r="32" fill="url(#gold-halo-glow)" />
+
+  <!-- Base Elegant Ring -->
+  <circle cx="50" cy="50" r="24" fill="none" stroke="rgba(245, 158, 11, 0.15)" stroke-width="1.5" />
+
+  <!-- Rotating Halo 1 (Slow, golden) -->
+  <g transform="translate(50, 50)">
+    <g>
+      <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="8s" repeatCount="indefinite"/>
+      <!-- Main Particle -->
+      <circle cx="24" cy="0" r="3" fill="#f59e0b" filter="drop-shadow(0 0 3px #f59e0b)" />
+      <!-- Tail particles for comet effect -->
+      <circle cx="23.2" cy="-7.4" r="2.2" fill="#f59e0b" opacity="0.7" />
+      <circle cx="20.8" cy="-14.1" r="1.5" fill="#f59e0b" opacity="0.4" />
+      <circle cx="17.0" cy="-19.4" r="1" fill="#f59e0b" opacity="0.2" />
+    </g>
+  </g>
+
+  <!-- Rotating Halo 2 (Fast, white/gold sparkle) -->
+  <g transform="translate(50, 50)">
+    <g>
+      <animateTransform attributeName="transform" type="rotate" from="180" to="-180" dur="4.5s" repeatCount="indefinite"/>
+      <!-- Fast Particle -->
+      <circle cx="-24" cy="0" r="2.5" fill="#ffffff" filter="drop-shadow(0 0 4px #ffffff)" />
+      <!-- Tail particles -->
+      <circle cx="-23.2" cy="7.4" r="1.8" fill="#f59e0b" opacity="0.6" />
+      <circle cx="-20.8" cy="14.1" r="1.2" fill="#f59e0b" opacity="0.3" />
+    </g>
+  </g>
+
+  <!-- Pulsing Central Sparkle -->
+  <g transform="translate(50,50)">
+    <path d="M 0,-6 Q 0,0 6,0 Q 0,0 0,6 Q 0,0 -6,0 Q 0,0 0,-6 Z" fill="#ffffff">
+      <animate attributeName="opacity" values="0.7;1;0.7" dur="2s" repeatCount="indefinite"/>
+      <animateTransform attributeName="transform" type="scale" values="0.8;1.1;0.8" dur="2s" repeatCount="indefinite"/>
+    </path>
+  </g>
+
+  <!-- Mic Icon Overlay (Very small, embedded) -->
+  <g fill="#ffffff" transform="translate(42, 42) scale(0.65)" opacity="0.5">
+    <rect x="10" y="5" width="8" height="13" rx="4" />
+    <path d="M5,12 A7,7 0 0,0 23,12" stroke="#ffffff" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>

@@ -82,6 +82,7 @@ jobs:
             --collect-submodules=ui `
             --add-data "${{ steps.fw.outputs.assets }}\assets;faster_whisper\assets" `
             --add-data "${{ steps.ctk.outputs.pkg }};customtkinter" `
+            --add-data "assets/icon.ico;assets" `
             main.py
 
       - name: Upload app artifact

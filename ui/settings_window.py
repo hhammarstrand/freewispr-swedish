@@ -101,6 +101,9 @@ class SettingsWindow:
         self._indicator_follow_var = tk.BooleanVar(
             value=c.get("indicator_follow_mouse", True)
         )
+        self._indicator_style_var = tk.StringVar(
+            value=c.get("indicator_style", "modern")
+        )
         self._model_var = tk.StringVar(value=c.get("model_size", "small"))
         self._cuda_var = tk.BooleanVar(value=c.get("use_cuda", True))
         self._mic_var = tk.StringVar()  # filled in _build_general
@@ -132,6 +135,14 @@ class SettingsWindow:
         self._tr_consent_var = tk.BooleanVar(
             value=c.get("transcription_privacy_accepted", False)
         )
+        style_map = {
+            "classic": "Klassisk (Tkinter-staplar)",
+            "modern": "Modern (Slate Gray)",
+            "transparent": "Transparent (Endast våg)",
+        }
+        current_style = self._indicator_style_var.get()
+        current_label = style_map.get(current_style, "Modern (Slate Gray)")
+        self._indicator_style_label_var = tk.StringVar(value=current_label)
 
     def _stringvar(self, value: str = "") -> tk.StringVar:
         v = tk.StringVar()
@@ -303,8 +314,21 @@ class SettingsWindow:
             anchor="w", padx=6, pady=(6, 0)
         )
         self._hint(parent, "Av = fast position överst på huvudskärmen.").pack(
-            anchor="w", padx=6, pady=(2, 8)
+            anchor="w", padx=6, pady=(2, 6)
         )
+
+        self._label(parent, "Stil").pack(anchor="w", padx=6, pady=(4, 0))
+        indicator_styles = [
+            "Klassisk (Tkinter-staplar)",
+            "Modern (Slate Gray)",
+            "Transparent (Endast våg)",
+        ]
+        self._combobox(
+            parent,
+            self._indicator_style_label_var,
+            indicator_styles,
+            width=240,
+        ).pack(anchor="w", padx=6, pady=(2, 8))
 
         # Mikrofon
         self._label(parent, "Mikrofon",
@@ -1093,6 +1117,14 @@ class SettingsWindow:
         new_cfg["model_size"] = self._model_var.get()
         new_cfg["use_cuda"] = self._cuda_var.get()
         new_cfg["indicator_follow_mouse"] = self._indicator_follow_var.get()
+
+        style_map = {
+            "Klassisk (Tkinter-staplar)": "classic",
+            "Modern (Slate Gray)": "modern",
+            "Transparent (Endast våg)": "transparent",
+        }
+        picked_style_label = self._indicator_style_label_var.get()
+        new_cfg["indicator_style"] = style_map.get(picked_style_label, "modern")
 
         mic = self._mic_var.get()
         if mic == "Auto":

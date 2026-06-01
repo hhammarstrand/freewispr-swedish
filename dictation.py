@@ -19,6 +19,32 @@ def _text_meta(text: str) -> str:
     return f"chars={len(text)}, words={words}"
 
 
+# Short, human-friendly names for the status pill. The provider ids stored in
+# config (``staik``, ``github``, …) are fine for code but look unpolished in the
+# UI. We keep these short — the full labels in llm_polish/remote_transcribe
+# (e.g. "staik.se (SE)") are too long for a compact pill.
+_PROVIDER_DISPLAY_NAMES = {
+    "github": "GitHub Models",
+    "staik":  "Staik",
+    "berget": "Berget AI",
+    "openai": "OpenAI",
+    "custom": "egen server",
+}
+
+
+def _provider_status_label(provider: str) -> str:
+    """Return the suffix shown after Transkriberar/Polerar for a provider.
+
+    ``local`` becomes "lokalt" (nothing leaves the machine); every remote
+    provider becomes "via <Namn>" so the user always sees where the text/audio
+    is going.
+    """
+    if provider == "local":
+        return "lokalt"
+    name = _PROVIDER_DISPLAY_NAMES.get(provider, provider)
+    return f"via {name}"
+
+
 MIN_AUDIO_SAMPLES = 3200   # 0.2 s at 16 kHz — ignore accidental taps
 # Default RMS gate. Audio quieter than this is treated as silence and dropped
 # without invoking Whisper (saves ~1 s of CPU per phantom press).
@@ -61,6 +87,21 @@ def _friendly_transcribe_error(exc: Exception) -> str:
     if (
         "gpu-minne slut" in msg
         or "modellen verkar korrupt" in msg
+    ):
+        return raw
+    # Remote-provider errors already carry a short, user-facing Swedish
+    # message (e.g. "Serverfel (HTTP 502)", "Ogiltig API-nyckel (HTTP 401)",
+    # "Nätverksfel: ..."). Pass these through verbatim so the user sees the
+    # real cause instead of a misleading "Inget hördes".
+    if (
+        "serverfel" in msg
+        or "servern tillfälligt otillgänglig" in msg
+        or "rate limit" in msg
+        or "åtkomst nekad" in msg
+        or "modellen finns inte" in msg
+        or "ljudfilen är för stor" in msg
+        or "filformatet stöds inte" in msg
+        or raw.startswith("Nätverksfel")
     ):
         return raw
     if "out of memory" in msg or "cuda" in msg and "memory" in msg:
@@ -311,7 +352,7 @@ class DictationMode:
             # when the audio is being shipped to e.g. KBLab's API is both
             # wrong and erodes trust about where the data is going.
             tr_provider = getattr(self.transcriber, "transcription_provider", "local")
-            tr_label = "lokalt" if tr_provider == "local" else f"via {tr_provider}"
+            tr_label = _provider_status_label(tr_provider)
             if llm_enabled:
                 self.on_status(f"Transkriberar {tr_label}…")
                 if self.indicator:
@@ -334,9 +375,13 @@ class DictationMode:
                     # appears, but they get exactly one paste of the final
                     # text. Watchdog falls back to pasting the raw transcript
                     # if polish hangs past 15s.
-                    self.on_status("LLM-granskar…")
+                    # Mirror the transcription status: name where the text is
+                    # going so the user always sees which service polishes it.
+                    llm_provider = getattr(self.transcriber, "llm_provider", "local")
+                    polish_label = _provider_status_label(llm_provider)
+                    self.on_status(f"Polerar {polish_label}…")
                     if self.indicator:
-                        self.indicator.show("LLM-granskar…", state="transcribe")
+                        self.indicator.show(f"Polerar {polish_label}…", state="review")
 
                     polish_lock = threading.Lock()
                     polish_completed = {"done": False}
@@ -360,7 +405,7 @@ class DictationMode:
                         self.on_status(f"{msg} — håll {self.hotkey.upper()} igen")
                         if self.indicator:
                             self.indicator.show(msg, state="done")
-                            self.indicator.hide(delay_ms=1800)
+                            self.indicator.hide(delay_ms=950)
 
                     def _watchdog_fallback() -> None:
                         with polish_lock:
@@ -407,7 +452,7 @@ class DictationMode:
                     self.on_status(f"{message} — håll {self.hotkey.upper()} igen")
                     if self.indicator:
                         self.indicator.show(message, state="done")
-                        self.indicator.hide(delay_ms=1800)
+                        self.indicator.hide(delay_ms=950)
             else:
                 self.on_status(f"Inget hördes — håll {self.hotkey.upper()}")
                 if self.indicator:

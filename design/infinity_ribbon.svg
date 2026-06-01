@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <!-- Definitions for gradients -->
+  <defs>
+    <linearGradient id="infinity-grad-1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8b5cf6" />
+      <stop offset="50%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#00f0ff" />
+    </linearGradient>
+    <linearGradient id="infinity-grad-2" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="50%" stop-color="#ff007f" />
+      <stop offset="100%" stop-color="#8b5cf6" />
+    </linearGradient>
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background Pill Representation -->
+  <rect width="100" height="100" rx="30" fill="#10141c" stroke="rgba(255,255,255,0.11)" stroke-width="1.5"/>
+
+  <!-- Rotating and Pulsing group -->
+  <g transform="translate(50,50)">
+    <g>
+      <animateTransform attributeName="transform" type="rotate" values="0; 360" dur="20s" repeatCount="indefinite"/>
+      <animateTransform attributeName="transform" type="scale" values="0.95; 1.05; 0.95" dur="4s" additive="sum" repeatCount="indefinite"/>
+      
+      <!-- Primary Infinity Ribbon (Back glow) -->
+      <path d="M -25,0 C -25,-15 -10,-15 0,0 C 10,15 25,15 25,0 C 25,-15 10,-15 0,0 C -10,15 -25,15 -25,0 Z" 
+            fill="none" stroke="url(#infinity-grad-1)" stroke-width="5" stroke-linecap="round" filter="url(#glow)" opacity="0.4" />
+
+      <!-- Primary Infinity Ribbon (Front sharp) -->
+      <path id="infinity-path" d="M -25,0 C -25,-15 -10,-15 0,0 C 10,15 25,15 25,0 C 25,-15 10,-15 0,0 C -10,15 -25,15 -25,0 Z" 
+            fill="none" stroke="url(#infinity-grad-1)" stroke-width="3" stroke-linecap="round" filter="url(#glow)">
+        <animate attributeName="stroke-dasharray" values="0,150; 150,150; 150,0; 0,150" dur="3s" repeatCount="indefinite"/>
+      </path>
+
+      <!-- Secondary Overlapping Ribbon to create a 3D dual-helix effect -->
+      <path d="M -25,0 C -25,-15 -10,-15 0,0 C 10,15 25,15 25,0 C 25,-15 10,-15 0,0 C -10,15 -25,15 -25,0 Z" 
+            fill="none" stroke="url(#infinity-grad-2)" stroke-width="1.5" stroke-linecap="round" opacity="0.8">
+        <animate attributeName="stroke-dashoffset" values="0; 150" dur="3s" repeatCount="indefinite"/>
+        <animate attributeName="stroke-dasharray" values="40,20; 20,40; 40,20" dur="3s" repeatCount="indefinite"/>
+      </path>
+    </g>
+  </g>
+
+  <!-- Mic Icon Overlay (Very small, central) -->
+  <g fill="#ffffff" transform="translate(42, 42) scale(0.65)" opacity="0.6">
+    <rect x="10" y="5" width="8" height="13" rx="4" />
+    <path d="M5,12 A7,7 0 0,0 23,12" stroke="#ffffff" stroke-width="2.2" fill="none"/>
+  </g>
+</svg>

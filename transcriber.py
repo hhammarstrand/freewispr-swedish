@@ -690,9 +690,11 @@ class Transcriber:
     def _transcribe_remote(self, audio: np.ndarray) -> str:
         """Skicka ljud till remote-leverantör.
 
-        Inget fallback till lokal modell — vid fel loggas det och tom sträng
-        returneras. Dictation-pipelinen klistrar inte in tom text, så
-        användaren ser bara en felsignal i indikatorn (via on_status).
+        Inget fallback till lokal modell — vid fel höjs felet vidare så att
+        dictation-pipelinen kan visa ett tydligt felmeddelande i indikatorn.
+        Tidigare returnerades en tom sträng här, vilket blev omöjligt att
+        skilja från "ingen tal hördes" och fick användaren att tro att
+        mikrofonen var tyst trots att det egentligen var ett serverfel.
         """
         import remote_transcribe as rt
 
@@ -720,7 +722,9 @@ class Transcriber:
                     on_stage("remote_error")
                 except Exception:
                     pass
-            return ""
+            # Re-raise so dictation.py surfaces a real error to the user
+            # instead of silently treating it as "Inget hördes".
+            raise
 
         log.info("Rå text mottagen (%s)", _text_meta(raw))
         text = _NOISE_PLACEHOLDERS.sub("", raw)

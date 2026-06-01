@@ -1,0 +1,81 @@
+<svg width="980" height="300" viewBox="0 0 980 300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="pillShadow" x="-20%" y="-80%" width="140%" height="260%">
+      <feDropShadow dx="0" dy="14" stdDeviation="18" flood-color="#000000" flood-opacity="0.22"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000000" flood-opacity="0.12"/>
+    </filter>
+    <filter id="iconGlow" x="-70%" y="-70%" width="240%" height="240%">
+      <feGaussianBlur stdDeviation="3.2" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="glassLight" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.92"/>
+      <stop offset="1" stop-color="#f2efe8" stop-opacity="0.88"/>
+    </linearGradient>
+    <linearGradient id="edgeStroke" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.48"/>
+      <stop offset="0.5" stop-color="#006AA7" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#FECC02" stop-opacity="0.44"/>
+    </linearGradient>
+    <linearGradient id="progress" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#006AA7"/>
+      <stop offset="0.68" stop-color="#2b88b9"/>
+      <stop offset="1" stop-color="#FECC02"/>
+    </linearGradient>
+    <style>
+      .title-chip { fill: #111827; fill-opacity: 0.86; stroke: url(#edgeStroke); stroke-width: 1; filter: url(#pillShadow); }
+      .pill { fill: url(#glassLight); stroke: url(#edgeStroke); stroke-width: 1; filter: url(#pillShadow); }
+      .label { fill: #111827; font: 760 15px 'Segoe UI', Arial, sans-serif; letter-spacing: -0.02em; }
+      .title { fill: #f8fafc; font: 760 22px 'Segoe UI', Arial, sans-serif; letter-spacing: -0.04em; }
+      .note { fill: #d0d5dd; font: 500 13px 'Segoe UI', Arial, sans-serif; }
+      .mono { fill: #9fd3ef; font: 700 11px 'Cascadia Mono', Consolas, monospace; letter-spacing: 0.09em; }
+      .round { stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+
+  <!-- Transparent canvas: no background rect. -->
+
+  <g transform="translate(34,30)">
+    <rect class="title-chip" width="590" height="74" rx="24"/>
+    <text x="24" y="30" class="mono">AI SEAL VARIANT</text>
+    <text x="24" y="55" class="title">Project Icon Seal</text>
+    <text x="218" y="55" class="note">Samma AI Seal-koncept, men med freewispr-ikonen som huvudsymbol.</text>
+  </g>
+
+  <!-- Project icon glyph, drawn as vector so the file stays standalone. -->
+  <symbol id="projectIcon" viewBox="0 0 64 64">
+    <circle cx="32" cy="32" r="30" fill="#006AA7"/>
+    <rect x="25" y="14" width="14" height="23" rx="7" fill="#FECC02"/>
+    <path d="M20 30 A12 12 0 0 0 44 30" fill="none" stroke="#FECC02" stroke-width="4" stroke-linecap="round"/>
+    <path d="M32 42 V50" stroke="#FECC02" stroke-width="4" stroke-linecap="round"/>
+    <path d="M25 50 H39" stroke="#FECC02" stroke-width="4" stroke-linecap="round"/>
+  </symbol>
+
+  <g transform="translate(34,160)">
+    <rect class="pill" width="205" height="62" rx="23"/>
+    <circle cx="38" cy="31" r="24" fill="#006AA7" opacity="0.10" filter="url(#iconGlow)"/>
+    <use href="#projectIcon" x="18" y="11" width="40" height="40"/>
+    <path d="M24 54 H52" stroke="url(#progress)" stroke-width="2.2" class="round"/>
+    <text x="78" y="38" class="label">Lyssnar</text>
+  </g>
+
+  <g transform="translate(285,160)">
+    <rect class="pill" width="258" height="62" rx="23"/>
+    <circle cx="38" cy="31" r="25" fill="#006AA7" opacity="0.10" filter="url(#iconGlow)"/>
+    <use href="#projectIcon" x="18" y="11" width="40" height="40"/>
+    <path d="M38 7 A24 24 0 0 1 62 31" fill="none" stroke="#FECC02" stroke-width="3" class="round"/>
+    <path d="M24 54 H40" stroke="#006AA7" stroke-width="2.2" class="round"/>
+    <path d="M43 54 H57" stroke="#FECC02" stroke-width="2.2" class="round"/>
+    <text x="82" y="38" class="label">Transkriberar</text>
+  </g>
+
+  <g transform="translate(590,160)">
+    <rect class="pill" width="258" height="62" rx="23"/>
+    <circle cx="38" cy="31" r="25" fill="#006AA7" opacity="0.10" filter="url(#iconGlow)"/>
+    <use href="#projectIcon" x="18" y="11" width="40" height="40"/>
+    <path d="M63 15 L66 23 L74 26 L66 29 L63 37 L60 29 L52 26 L60 23 Z" fill="#FECC02" opacity="0.96"/>
+    <path d="M28 54 H40" stroke="#006AA7" stroke-width="2.2" class="round"/>
+    <path d="M43 54 H57" stroke="#7F9B55" stroke-width="2.2" class="round"/>
+    <text x="82" y="38" class="label">LLM-granskar</text>
+  </g>
+</svg>

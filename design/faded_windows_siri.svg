@@ -1,0 +1,132 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 90" width="100%" height="100%">
+  <!-- Definitions for masks, gradients, and ambient glows -->
+  <defs>
+    <!-- Soft Edge Mask - Feathers the left and right edges to prevent a hard "framed" look -->
+    <linearGradient id="soft-edge-grad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0" />
+      <stop offset="15%" stop-color="#ffffff" stop-opacity="1" />
+      <stop offset="85%" stop-color="#ffffff" stop-opacity="1" />
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0" />
+    </linearGradient>
+    <mask id="soft-edge-mask">
+      <rect x="20" y="19" width="240" height="52" rx="10" fill="url(#soft-edge-grad)" />
+    </mask>
+
+    <!-- Windows 11 Acrylic Ambient Glow (Colored drop shadow behind the card) -->
+    <filter id="fluent-ambient-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="blur" />
+      <!-- Boost the shadow color slightly for a premium neon bleed -->
+      <feColorMatrix type="matrix" values="
+        1 0 0 0 0
+        0 1 0 0 0
+        0 0 1 0 0
+        0 0 0 0.45 0" />
+      <feMerge>
+        <feMergeNode />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+
+    <!-- Crisp text drop shadow -->
+    <filter id="crisp-text-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#000000" flood-opacity="0.95"/>
+    </filter>
+
+    <!-- Linear gradients for the waves -->
+    <linearGradient id="wave-cyan" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00f0ff" stop-opacity="0.05"/>
+      <stop offset="50%" stop-color="#00a2ff" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#00f0ff" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="wave-magenta" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff007f" stop-opacity="0.05"/>
+      <stop offset="50%" stop-color="#8b5cf6" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#ff007f" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="wave-yellow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.02"/>
+      <stop offset="50%" stop-color="#ec4899" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.02"/>
+    </linearGradient>
+
+    <!-- Premium Animated Shimmer Gradient for Text -->
+    <linearGradient id="shimmer-grad" x1="-100%" y1="0%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#e2e8f0" />
+      <stop offset="35%" stop-color="#e2e8f0" />
+      <stop offset="50%" stop-color="#ffffff" />
+      <stop offset="65%" stop-color="#e2e8f0" />
+      <stop offset="100%" stop-color="#e2e8f0" />
+      <animate attributeName="x1" values="-100%; 100%" dur="2.2s" repeatCount="indefinite" />
+      <animate attributeName="x2" values="0%; 200%" dur="2.2s" repeatCount="indefinite" />
+    </linearGradient>
+  </defs>
+
+  <!-- ==================== AMBIENT BACK GLOW ==================== -->
+  <!-- A beautiful, breathing back glow that blends the widget into the desktop -->
+  <g filter="url(#fluent-ambient-glow)" opacity="0.85">
+    <!-- Breathing Cyan/Purple back layer -->
+    <rect x="20" y="19" width="240" height="52" rx="10" fill="#3b82f6" opacity="0.15">
+      <animate attributeName="opacity" values="0.1;0.25;0.1" dur="4s" repeatCount="indefinite" />
+    </rect>
+    <rect x="50" y="24" width="180" height="42" rx="10" fill="#ec4899" opacity="0.1">
+      <animate attributeName="opacity" values="0.05;0.18;0.05" dur="3.2s" repeatCount="indefinite" />
+    </rect>
+  </g>
+
+  <!-- ==================== MAIN GLASS CARD ==================== -->
+  <!-- Applying the soft-edge-mask to fade out the left/right borders and background -->
+  <g mask="url(#soft-edge-mask)">
+    <!-- Translucent acrylic base plate -->
+    <rect x="20" y="19" width="240" height="52" rx="10" fill="rgba(11, 14, 23, 0.45)" />
+
+    <!-- Animated Waveforms in the background -->
+    <g opacity="0.95">
+      <!-- Cyan Wave -->
+      <path fill="none" stroke="url(#wave-cyan)" stroke-width="7" stroke-linecap="round">
+        <animate attributeName="d" 
+                 values="M 10,45 Q 60,15 110,45 T 210,45 T 270,45;
+                         M 10,45 Q 60,75 110,45 T 210,45 T 270,45;
+                         M 10,45 Q 60,15 110,45 T 210,45 T 270,45" 
+                 dur="4.5s" repeatCount="indefinite"/>
+      </path>
+
+      <!-- Magenta Wave -->
+      <path fill="none" stroke="url(#wave-magenta)" stroke-width="5" stroke-linecap="round">
+        <animate attributeName="d" 
+                 values="M 10,45 Q 70,65 130,45 T 230,45 T 270,45;
+                         M 10,45 Q 70,25 130,45 T 230,45 T 270,45;
+                         M 10,45 Q 70,65 130,45 T 230,45 T 270,45" 
+                 dur="3.8s" repeatCount="indefinite"/>
+      </path>
+
+      <!-- Yellow Wave -->
+      <path fill="none" stroke="url(#wave-yellow)" stroke-width="3" stroke-linecap="round">
+        <animate attributeName="d" 
+                 values="M 10,45 Q 80,30 140,45 T 240,45 T 270,45;
+                         M 10,45 Q 80,60 140,45 T 240,45 T 270,45;
+                         M 10,45 Q 80,30 140,45 T 240,45 T 270,45" 
+                 dur="3s" repeatCount="indefinite"/>
+      </path>
+    </g>
+
+    <!-- Inner dark overlay for text contrast -->
+    <rect x="20" y="19" width="240" height="52" rx="10" fill="rgba(10, 12, 20, 0.35)" pointer-events="none" />
+
+    <!-- Soft borders - fading at the ends -->
+    <rect x="20" y="19" width="240" height="52" rx="10" fill="none" stroke="rgba(255, 255, 255, 0.08)" stroke-width="1.2" />
+    <path d="M 50,20 Q 140,20 230,20" stroke="rgba(255,255,255,0.18)" stroke-width="1" fill="none" pointer-events="none" />
+  </g>
+
+  <!-- ==================== FRONT SHIMMERING TEXT ==================== -->
+  <g transform="translate(140, 50)" filter="url(#crisp-text-shadow)">
+    <text x="0" y="0" 
+          font-family="'Segoe UI', -apple-system, BlinkMacSystemFont, 'Segoe UI Variable', sans-serif" 
+          font-weight="700" 
+          font-size="14px" 
+          fill="url(#shimmer-grad)" 
+          text-anchor="middle" 
+          letter-spacing="0.7px">
+      Transkriberar...
+    </text>
+  </g>
+</svg>

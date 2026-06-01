@@ -1,0 +1,110 @@
+<svg width="820" height="260" viewBox="0 0 820 260" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="pillShadow" x="-20%" y="-80%" width="140%" height="260%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#000" flood-opacity=".30"/>
+    </filter>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbfaf7"/>
+      <stop offset="1" stop-color="#f2efe8"/>
+    </linearGradient>
+    <linearGradient id="pillFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="1" stop-color="#0d1118"/>
+    </linearGradient>
+    <linearGradient id="shimmer" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"    stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.50" stop-color="#ffffff" stop-opacity="0.85"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="1"    stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="textMask">
+      <rect width="100%" height="100%" fill="black"/>
+      <text x="78" y="34" font-family="Segoe UI, Arial" font-weight="700" font-size="16" fill="white">Transkriberar</text>
+    </mask>
+
+    <style>
+      .title{fill:#111827;font:700 24px 'Segoe UI',Arial}
+      .desc{fill:#5f6878;font:400 14px 'Segoe UI',Arial}
+      .label{fill:#e6ecf2;font:700 16px 'Segoe UI',Arial}
+      .edge{stroke:#7aa6ff;stroke-width:0.9;fill:none;stroke-linecap:round;opacity:0.55}
+      .node{fill:#7aa6ff}
+    </style>
+  </defs>
+
+  <rect fill="url(#bg)" width="820" height="260"/>
+  <text x="34" y="46" class="title">4. Neural Mesh</text>
+  <text x="34" y="74" class="desc">Ikonen ersätts av 6 noder · linjer tänds sekventiellt som signalpulser · central nod pulserar · inspiration: ChatGPT thinking</text>
+
+  <g transform="translate(34 130)">
+    <rect width="232" height="56" rx="19" fill="url(#pillFill)" filter="url(#pillShadow)"/>
+    <rect x="14" y="1" width="204" height="1" fill="#ffffff" fill-opacity="0.18"/>
+
+    <!-- Mesh: 1 center + 6 outer nodes in hexagon at cx=40, cy=28, R=14 -->
+    <g transform="translate(40 28)">
+      <!-- edges from center -->
+      <g>
+        <line class="edge" x1="0" y1="0" x2="14"   y2="0">
+          <animate attributeName="stroke" values="#2d3a49;#FECC02;#2d3a49" dur="2s" begin="0s"    repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.35;1;0.35"            dur="2s" begin="0s"    repeatCount="indefinite"/>
+        </line>
+        <line class="edge" x1="0" y1="0" x2="7"    y2="-12.12">
+          <animate attributeName="stroke" values="#2d3a49;#FECC02;#2d3a49" dur="2s" begin="0.33s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.35;1;0.35"            dur="2s" begin="0.33s" repeatCount="indefinite"/>
+        </line>
+        <line class="edge" x1="0" y1="0" x2="-7"   y2="-12.12">
+          <animate attributeName="stroke" values="#2d3a49;#FECC02;#2d3a49" dur="2s" begin="0.66s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.35;1;0.35"            dur="2s" begin="0.66s" repeatCount="indefinite"/>
+        </line>
+        <line class="edge" x1="0" y1="0" x2="-14"  y2="0">
+          <animate attributeName="stroke" values="#2d3a49;#FECC02;#2d3a49" dur="2s" begin="1.0s"  repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.35;1;0.35"            dur="2s" begin="1.0s"  repeatCount="indefinite"/>
+        </line>
+        <line class="edge" x1="0" y1="0" x2="-7"   y2="12.12">
+          <animate attributeName="stroke" values="#2d3a49;#FECC02;#2d3a49" dur="2s" begin="1.33s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.35;1;0.35"            dur="2s" begin="1.33s" repeatCount="indefinite"/>
+        </line>
+        <line class="edge" x1="0" y1="0" x2="7"    y2="12.12">
+          <animate attributeName="stroke" values="#2d3a49;#FECC02;#2d3a49" dur="2s" begin="1.66s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.35;1;0.35"            dur="2s" begin="1.66s" repeatCount="indefinite"/>
+        </line>
+      </g>
+
+      <!-- perimeter edges connecting outer nodes (faint) -->
+      <g opacity="0.30">
+        <line class="edge" x1="14"  y1="0"      x2="7"   y2="-12.12"/>
+        <line class="edge" x1="7"   y1="-12.12" x2="-7"  y2="-12.12"/>
+        <line class="edge" x1="-7"  y1="-12.12" x2="-14" y2="0"/>
+        <line class="edge" x1="-14" y1="0"      x2="-7"  y2="12.12"/>
+        <line class="edge" x1="-7"  y1="12.12"  x2="7"   y2="12.12"/>
+        <line class="edge" x1="7"   y1="12.12"  x2="14"  y2="0"/>
+      </g>
+
+      <!-- outer nodes -->
+      <circle class="node" cx="14"   cy="0"      r="2"/>
+      <circle class="node" cx="7"    cy="-12.12" r="2"/>
+      <circle class="node" cx="-7"   cy="-12.12" r="2"/>
+      <circle class="node" cx="-14"  cy="0"      r="2"/>
+      <circle class="node" cx="-7"   cy="12.12"  r="2"/>
+      <circle class="node" cx="7"    cy="12.12"  r="2"/>
+
+      <!-- central pulsing node -->
+      <circle cx="0" cy="0" r="3.6" fill="#FECC02">
+        <animate attributeName="r" values="3;4.6;3" dur="1.4s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="0" cy="0" r="3.6" fill="none" stroke="#FECC02" stroke-opacity="0.7">
+        <animate attributeName="r"            values="3;14;14" dur="1.8s" repeatCount="indefinite"/>
+        <animate attributeName="stroke-opacity" values="0.6;0;0" dur="1.8s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+
+    <!-- Label -->
+    <text x="78" y="34" class="label">Transkriberar</text>
+
+    <g mask="url(#textMask)">
+      <rect x="-120" y="0" width="120" height="56" fill="url(#shimmer)">
+        <animate attributeName="x" from="-120" to="232" dur="2.2s" repeatCount="indefinite"/>
+      </rect>
+    </g>
+  </g>
+</svg>
