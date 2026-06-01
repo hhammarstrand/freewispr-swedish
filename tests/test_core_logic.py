@@ -303,6 +303,10 @@ def test_main_apply_settings_serialised(monkeypatch):
 
     pytest.importorskip("PIL")
     pytest.importorskip("pystray")
+    # main imports tkinter at module load; without it reload(main) raises
+    # ModuleNotFoundError. Gate on tkinter too so this skips cleanly on any
+    # environment missing the full GUI stack (matches test_ap7_robustness).
+    pytest.importorskip("tkinter")
     main = importlib.reload(importlib.import_module("main"))
 
     assert isinstance(main._config_lock, type(_th.Lock()))
@@ -388,6 +392,7 @@ def test_config_save_fails_if_secret_delete_fails(tmp_path):
 def test_llm_only_save_failure_restores_transcriber_state(monkeypatch):
     pytest.importorskip("PIL")
     pytest.importorskip("pystray")
+    pytest.importorskip("tkinter")
     main = importlib.reload(importlib.import_module("main"))
     old_state = {
         "hotkey": "ctrl+space",
