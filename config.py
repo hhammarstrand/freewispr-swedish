@@ -150,6 +150,12 @@ DEFAULTS = {
     "expect_english_terms": False,
     # Snippets / textexpansion (AP7.6) — par lagras i snippets.json.
     "snippets_enabled": True,
+    # KP2: användardefinierade lägen (Superwhisper-stil) — definitioner lagras i
+    # modes.json, bindningar app→läge i app_profiles. Inget eget på/av-fält
+    # behövs (ett läge är aktivt bara om en app pekar på det).
+    # KP3: rösteditera markerad text. Egen hotkey: spela in instruktion, läs
+    # markeringen, kör LLM-omskrivning, ersätt. Tom = av. Kräver att LLM är på.
+    "voice_edit_hotkey": "",
     # L5.5: trimma ledande/avslutande tystnad (RMS) före decode.
     "silence_trim_enabled": True,
     # L5.6: hoppa LLM-polish för triviala (korta, disfluensfria) yttranden.

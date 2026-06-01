@@ -336,6 +336,70 @@ class DictationMode:
         log.info("Ångrade senaste blocket (%d tecken)", len(block))
         return True
 
+    def run_voice_edit(self, instruction: str) -> str:
+        """KP3: apply a spoken instruction to the current selection.
+
+        Reads the selection, runs it through the LLM with ``instruction``, and
+        replaces the selection with the result. Returns a ``voice_edit`` result
+        code. Fail-safe: never disturbs the selection on error, and is a no-op
+        (``FAILED``) when LLM is disabled, since there's no transform to run.
+
+        This is the routing seam — given an already-transcribed instruction it
+        is fully testable. The hotkey→record→transcribe capture that produces
+        ``instruction`` is wired separately (hot path; needs a Windows smoke
+        test).
+        """
+        import voice_edit
+        from paste import read_selection, paste_text
+
+        tr = self.transcriber
+        if not getattr(tr, "llm_enabled", False):
+            log.info("Rösteditering kräver att LLM är på — ignorerar")
+            if self.indicator:
+                self.indicator.show("Slå på AI-städning först", state="error")
+                self.indicator.hide(delay_ms=2000)
+            return voice_edit.FAILED
+
+        def _transform(selection: str, instr: str) -> str:
+            from llm_polish import instruct
+            return instruct(
+                selection, instr,
+                api_key=getattr(tr, "llm_api_key", ""),
+                model=getattr(tr, "llm_model", ""),
+                provider=getattr(tr, "llm_provider", "github"),
+                base_url_override=getattr(tr, "llm_base_url", ""),
+            )
+
+        def _paste_replacement(text: str, replace_len: int) -> None:
+            # The selection is still highlighted (read_selection only issued
+            # Ctrl+C), so a paste overwrites it — replace_len stays 0.
+            paste_text(text, active_modifiers=self._modifier_keys,
+                       replace_len=replace_len)
+
+        result = voice_edit.run(
+            instruction,
+            read_selection=lambda: read_selection(self._modifier_keys),
+            transform=_transform,
+            paste_replacement=_paste_replacement,
+        )
+
+        # Map result → UI (4 indicator states only).
+        if self.indicator:
+            if result == voice_edit.OK:
+                self.indicator.show("Redigerat", state="done")
+                self.indicator.hide(delay_ms=1200)
+            elif result == voice_edit.NO_SELECTION:
+                self.indicator.show("Markera text först", state="error")
+                self.indicator.hide(delay_ms=2000)
+            elif result == voice_edit.UNCHANGED:
+                self.indicator.show("Ingen ändring", state="done")
+                self.indicator.hide(delay_ms=1200)
+            elif result in (voice_edit.FAILED, voice_edit.NO_INSTRUCTION):
+                self.indicator.show("Kunde inte redigera", state="error")
+                self.indicator.hide(delay_ms=2000)
+        log.info("Rösteditering: %s", result)
+        return result
+
     def set_paused(self, paused: bool) -> None:
         """AP7.3: pause/resume dictation without quitting (session state)."""
         self._paused = bool(paused)
