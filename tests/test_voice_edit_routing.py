@@ -73,3 +73,29 @@ def test_voice_edit_unchanged_does_not_paste(monkeypatch):
     import voice_edit
     assert mode.run_voice_edit("gör inget") == voice_edit.UNCHANGED
     assert pasted == []
+
+
+def test_tagged_job_routes_to_run_voice_edit(monkeypatch):
+    # A 6-tuple job tagged "voice_edit" must transcribe the instruction and
+    # call run_voice_edit(), never the dictation paste path.
+    import numpy as np
+    monkeypatch.setitem(sys.modules, "faster_whisper",
+                        SimpleNamespace(WhisperModel=object))
+    dictation = importlib.reload(importlib.import_module("dictation"))
+
+    monkeypatch.setattr(dictation, "finalize_audio",
+                        lambda a, c, r: np.ones(16000, dtype=np.float32))
+    monkeypatch.setattr(dictation, "MIN_AUDIO_SAMPLES", 1)
+
+    mode = object.__new__(dictation.DictationMode)
+    mode.min_rms = 0.0
+    mode.indicator = None
+    mode.on_status = lambda m: None
+    mode.transcriber = SimpleNamespace(
+        transcribe=lambda audio, capitalize=True: "gör det formellt")
+    captured = {}
+    mode.run_voice_edit = lambda instr: captured.setdefault("instr", instr)
+
+    audio = np.ones(16000, dtype=np.float32)
+    mode._process_job(audio, 1, 16000, 0.5, 0.0, "voice_edit")
+    assert captured["instr"] == "gör det formellt"

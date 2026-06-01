@@ -226,7 +226,8 @@ class DictationMode:
                  silence_trim_enabled: bool = True,
                  polish_skip_trivial: bool = True,
                  polish_skip_max_words: int = 6,
-                 live_transcribe_enabled: bool = False):
+                 live_transcribe_enabled: bool = False,
+                 voice_edit_hotkey: str = ""):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
@@ -250,6 +251,14 @@ class DictationMode:
         # state, not persisted — hotkey becomes a no-op while paused).
         self.cancel_hotkey = cancel_hotkey
         self._cancel_trigger, _ = _parse_hotkey(cancel_hotkey)
+        # KP3 voice-edit: separate hotkey to record an instruction for the
+        # current selection. Empty = off. Parsed like the main hotkey so it can
+        # carry its own modifiers; kept fully separate from the dictation
+        # press/release path so the latency-critical hot path is untouched.
+        self.voice_edit_hotkey = voice_edit_hotkey
+        self._voice_edit_trigger, self._voice_edit_modifiers = (
+            _parse_hotkey(voice_edit_hotkey) if voice_edit_hotkey else ("", ()))
+        self._voice_editing = False
         self.snippets_enabled = snippets_enabled
         self.silence_trim_enabled = silence_trim_enabled
         self.polish_skip_trivial = polish_skip_trivial
@@ -317,6 +326,21 @@ class DictationMode:
                                           suppress=False))
             except Exception as e:
                 log.debug("Kunde inte registrera avbryt-tangent: %s", e)
+        # KP3: voice-edit hotkey — own press/release pair, separate from the
+        # dictation hot path. Only registered when configured and distinct.
+        if (self._voice_edit_trigger
+                and self._voice_edit_trigger != self._trigger_key):
+            try:
+                self._hook_handles.append(
+                    keyboard.on_press_key(self._voice_edit_trigger,
+                                          self._on_voice_edit_press,
+                                          suppress=False))
+                self._hook_handles.append(
+                    keyboard.on_release_key(self._voice_edit_trigger,
+                                            self._on_voice_edit_release,
+                                            suppress=False))
+            except Exception as e:
+                log.debug("Kunde inte registrera röstediterings-tangent: %s", e)
         self.on_status(f"Klar — håll {self.hotkey.upper()} för att prata")
 
     def undo_last(self) -> bool:
@@ -732,6 +756,76 @@ class DictationMode:
         except Exception:
             return False
 
+    def _voice_edit_modifiers_held(self) -> bool:
+        if not self._voice_edit_modifiers:
+            return True
+        try:
+            return all(keyboard.is_pressed(m)
+                       for m in self._voice_edit_modifiers)
+        except Exception:
+            return False
+
+    def _on_voice_edit_press(self, _):
+        """KP3: start recording a voice-edit instruction. Mirrors _on_press but
+        flags the capture so the worker routes it to run_voice_edit() instead of
+        pasting it as dictation. Kept separate so the dictation hot path is
+        untouched."""
+        if not (self._active and not getattr(self, "_paused", False)
+                and not self._recording
+                and self._voice_edit_modifiers_held()):
+            return
+        try:
+            self._recording = True
+            self._voice_editing = True
+            self._t_press = time.monotonic()
+            # No context/live-transcribe for an instruction — it's a command,
+            # not dictated prose. Keeps this path minimal.
+            if self.indicator is not None:
+                self.recorder.on_level = self.indicator.push_level
+            else:
+                self.recorder.on_level = None
+            self.recorder.start()
+            sounds.play_start()
+            self.on_status("Lyssnar på redigering…")
+            if self.indicator:
+                self.indicator.show("Säg en redigering…", state="listen",
+                                    level_source=lambda: self.recorder.level)
+        except Exception as e:
+            self._recording = False
+            self._voice_editing = False
+            log.error("Mic start error (voice-edit): %s", e, exc_info=True)
+            sounds.play_error()
+
+    def _on_voice_edit_release(self, _):
+        """KP3: stop the instruction recording and enqueue it tagged as a
+        voice-edit job."""
+        if not (self._active and self._recording
+                and getattr(self, "_voice_editing", False)):
+            return
+        self._recording = False
+        self.recorder.on_level = None
+        try:
+            audio, channels, rate = self.recorder.stop_fast()
+        except Exception as e:
+            self._voice_editing = False
+            log.error("Audio stop error (voice-edit): %s", e, exc_info=True)
+            sounds.play_error()
+            return
+        sounds.play_stop()
+        rms = self.recorder.rms()
+        record_ms = (time.monotonic() - self._t_press) * 1000 if self._t_press else 0.0
+        # Tagged job: the 6th element marks this as a voice-edit instruction so
+        # the worker transcribes it and routes to run_voice_edit().
+        try:
+            self._jobs.put_nowait((audio, channels, rate, rms, record_ms, "voice_edit"))
+        except queue.Full:
+            log.warning("Kö full — hoppar över röstediteringen")
+            self._voice_editing = False
+            return
+        self.on_status("Tolkar redigering…")
+        if self.indicator:
+            self.indicator.show("Tolkar redigering…", state="transcribe")
+
     def _on_cancel(self, _):
         """AP7.2: discard the in-progress recording. No-op when not recording
         (so normal Esc is left alone)."""
@@ -865,9 +959,34 @@ class DictationMode:
                 log.error("Worker exception: %s", e, exc_info=True)
 
     def _process_job(self, audio_raw: np.ndarray, channels: int,
-                     rate: int, rms: float, record_ms: float = 0.0):
+                     rate: int, rms: float, record_ms: float = 0.0,
+                     kind: str = "dictation"):
         n_raw = audio_raw.shape[0] if audio_raw.ndim >= 1 else 0
         log.info("Audio: %d raw samples, RMS=%.5f", n_raw, rms)
+
+        # KP3: a voice-edit instruction — transcribe it, then apply it to the
+        # current selection via run_voice_edit() instead of pasting it.
+        if kind == "voice_edit":
+            self._voice_editing = False
+            try:
+                if rms < self.min_rms:
+                    log.info("Röstedigering för tyst, ignorerar")
+                    if self.indicator:
+                        self.indicator.show("Inget hördes", state="error")
+                        self.indicator.hide(delay_ms=1500)
+                    return
+                audio = finalize_audio(audio_raw, channels, rate)
+                if len(audio) < MIN_AUDIO_SAMPLES:
+                    return
+                instruction = self.transcriber.transcribe(audio, capitalize=False)
+                if instruction.strip():
+                    self.run_voice_edit(instruction)
+                elif self.indicator:
+                    self.indicator.show("Hörde ingen redigering", state="error")
+                    self.indicator.hide(delay_ms=1500)
+            except Exception as e:
+                log.error("Voice-edit job error: %s", e, exc_info=True)
+            return
 
         # L1: collect the press-time context snapshot once (bounded wait) and
         # reuse it for both the learning loop and transcription/polish.
