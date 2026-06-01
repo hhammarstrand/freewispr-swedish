@@ -498,7 +498,7 @@ def test_paste_text_serializes_clipboard_workers(monkeypatch):
     monkeypatch.setattr(paste, "_active_window_class", lambda: "NotConsole")
     monkeypatch.setattr(paste, "_release_modifiers", lambda mods=(): None)
     monkeypatch.setattr(paste, "_paste_and_keep_clipboard_async",
-                        lambda text: paste._paste_and_keep_clipboard(text))
+                        lambda text, replace_len=0: paste._paste_and_keep_clipboard(text, replace_len))
 
     paste.paste_text("first")
     paste.paste_text("second")
@@ -518,7 +518,7 @@ def test_paste_text_uses_shift_insert_for_console_windows(monkeypatch):
     monkeypatch.setattr(paste.keyboard, "send", lambda key: sent.append(key))
     monkeypatch.setattr(paste, "_release_modifiers", lambda mods=(): None)
     monkeypatch.setattr(paste, "_paste_and_keep_clipboard_async",
-                        lambda text: paste._paste_and_keep_clipboard(text))
+                        lambda text, replace_len=0: paste._paste_and_keep_clipboard(text, replace_len))
 
     paste.paste_text("hej")
 
@@ -531,7 +531,7 @@ def test_dictation_worker_does_not_paste_after_stop(monkeypatch):
 
     pasted = []
     mode = object.__new__(dictation.DictationMode)
-    mode.transcriber = SimpleNamespace(transcribe=lambda audio: "stale text")
+    mode.transcriber = SimpleNamespace(transcribe=lambda audio, **kw: "stale text")
     mode._worker_stop = __import__("threading").Event()
     mode._worker_stop.set()
     mode._active = False
@@ -557,7 +557,7 @@ def test_dictation_wait_mode_pastes_polished_not_raw(monkeypatch):
 
     pasted = []
 
-    def fake_polish_async(text, callback, on_stage=None):
+    def fake_polish_async(text, callback, on_stage=None, **kw):
         # Simulate the LLM thread: deliver polished text after a tiny delay.
         def _run():
             callback(text, "POLERAD: " + text)
@@ -565,7 +565,7 @@ def test_dictation_wait_mode_pastes_polished_not_raw(monkeypatch):
 
     mode = object.__new__(dictation.DictationMode)
     mode.transcriber = SimpleNamespace(
-        transcribe=lambda audio: "ra text",
+        transcribe=lambda audio, **kw: "ra text",
         polish_async=fake_polish_async,
         last_polish_state="llm_changed",
         llm_enabled=True,
@@ -601,13 +601,13 @@ def test_dictation_wait_mode_watchdog_pastes_raw_on_timeout(monkeypatch):
 
     pasted = []
 
-    def fake_polish_async_hang(text, callback, on_stage=None):
+    def fake_polish_async_hang(text, callback, on_stage=None, **kw):
         # Never calls back — simulating a hung LLM endpoint.
         pass
 
     mode = object.__new__(dictation.DictationMode)
     mode.transcriber = SimpleNamespace(
-        transcribe=lambda audio: "ra text",
+        transcribe=lambda audio, **kw: "ra text",
         polish_async=fake_polish_async_hang,
         last_polish_state="local",
         llm_enabled=True,
@@ -650,7 +650,7 @@ def test_dictation_no_llm_mode_pastes_raw_immediately(monkeypatch):
 
     mode = object.__new__(dictation.DictationMode)
     mode.transcriber = SimpleNamespace(
-        transcribe=lambda audio: "ra text",
+        transcribe=lambda audio, **kw: "ra text",
         polish_async=lambda *a, **kw: polish_called.append(True),
     )
     mode._worker_stop = threading.Event()
@@ -782,7 +782,7 @@ def test_transcriber_polish_async_calls_callback_with_polished_text(monkeypatch,
     inst.on_stage = None
 
     fake_llm = SimpleNamespace(
-        polish=lambda text, key, model=None, provider=None, base_url_override=None, context_text=None: SimpleNamespace(
+        polish=lambda text, key, model=None, provider=None, base_url_override=None, context_text=None, **kw: SimpleNamespace(
             text="hej!", changed=True, latency_ms=1
         )
     )
@@ -817,7 +817,7 @@ def test_transcriber_polish_async_unchanged_text(monkeypatch, fake_transcriber_d
     inst.on_stage = None
 
     fake_llm = SimpleNamespace(
-        polish=lambda text, key, model=None, provider=None, base_url_override=None, context_text=None: SimpleNamespace(
+        polish=lambda text, key, model=None, provider=None, base_url_override=None, context_text=None, **kw: SimpleNamespace(
             text="Hej", changed=False, latency_ms=1
         )
     )
@@ -893,7 +893,7 @@ def test_polish_async_on_stage_parameter_isolates_overlapping_jobs(monkeypatch, 
         return inst
 
     fake_llm = SimpleNamespace(
-        polish=lambda text, key, model=None, provider=None, base_url_override=None, context_text=None: SimpleNamespace(
+        polish=lambda text, key, model=None, provider=None, base_url_override=None, context_text=None, **kw: SimpleNamespace(
             text=text, changed=False, latency_ms=1
         )
     )

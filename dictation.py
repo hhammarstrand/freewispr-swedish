@@ -1,17 +1,54 @@
 """Push-to-talk dictation: hotkey -> record -> transcribe -> paste."""
+import collections
 import logging
 import queue
 import threading
+import time
 import keyboard
 import numpy as np
 
 from audio import MicRecorder, finalize_audio
-from transcriber import Transcriber
 from paste import paste_text
 from modifiers import normalize_all, is_modifier
+from transcriber import Transcriber
 import sounds
 
 log = logging.getLogger("freewispr")
+
+
+# Rolling latency window for p50/p95 summaries (L0 measurability).
+_LAT_WINDOW = 50
+_latency_samples: collections.deque = collections.deque(maxlen=_LAT_WINDOW)
+_LAT_KEYS = ("transcribe_ms", "llm_ms", "paste_ms", "context_hotpath_ms", "conn_ms")
+
+
+def _percentile(values: list[float], pct: float) -> float:
+    """Linear-interpolated percentile (no numpy dependency on the hot path)."""
+    if not values:
+        return 0.0
+    s = sorted(values)
+    if len(s) == 1:
+        return s[0]
+    k = (len(s) - 1) * (pct / 100.0)
+    f = int(k)
+    c = min(f + 1, len(s) - 1)
+    if f == c:
+        return s[f]
+    return s[f] + (s[c] - s[f]) * (k - f)
+
+
+def _record_latency_sample(sample: dict) -> None:
+    """Append a per-dictation sample and log a rolling p50/p95 summary."""
+    _latency_samples.append(sample)
+    if len(_latency_samples) < 3:
+        return
+    parts = []
+    for k in _LAT_KEYS:
+        vals = [s[k] for s in _latency_samples if k in s]
+        if vals:
+            parts.append(f"{k} p50={_percentile(vals, 50):.0f} "
+                         f"p95={_percentile(vals, 95):.0f}")
+    log.info("Latens p50/p95 (n=%d): %s", len(_latency_samples), " | ".join(parts))
 
 
 def _text_meta(text: str) -> str:
@@ -61,6 +98,25 @@ DEFAULT_MIN_RMS = 0.003
 # transcriptions stall (e.g. LLM-polish round-trip). Beyond this depth we
 # drop new presses and show "Upptagen" instead.
 _QUEUE_MAX = 2
+
+# How long the worker waits for the press-time context resolution to finish
+# (L1). It runs during recording, so this wait is normally ~0; the bound just
+# protects against a pathological/hung UIA provider.
+_CTX_JOIN_TIMEOUT = 0.2
+
+# Sentinel: distinguishes "_transcribe called without a context arg" (legacy /
+# tests → resolve synchronously) from "context explicitly passed as None".
+_NO_CTX = object()
+
+
+class _ContextHolder:
+    """A one-shot slot for the press-time context resolution (L1)."""
+
+    __slots__ = ("event", "ctx")
+
+    def __init__(self) -> None:
+        self.event = threading.Event()
+        self.ctx = None
 
 
 def _friendly_mic_error(exc: Exception) -> str:
@@ -143,7 +199,14 @@ class DictationMode:
     def __init__(self, transcriber: Transcriber, hotkey: str = "ctrl+space",
                  on_status=None, indicator=None,
                  mic_device: str | dict | None = None,
-                 min_rms: float = DEFAULT_MIN_RMS):
+                 min_rms: float = DEFAULT_MIN_RMS,
+                 raw_mode: bool = False,
+                 llm_timeout_sec: float = 15.0,
+                 context_awareness: bool = True,
+                 learning_enabled: bool = True,
+                 app_profiles: dict | None = None,
+                 command_mode_enabled: bool = True,
+                 llm_replace_mode: bool = False):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
@@ -151,8 +214,33 @@ class DictationMode:
         self.on_status = on_status or (lambda msg: None)
         self.indicator = indicator
         self.min_rms = min_rms
+        # "Rå direkt": when True, paste the raw transcript and skip LLM polish
+        # even if the transcriber has LLM enabled. May be overridden per app
+        # profile (AP3) once context awareness resolves a "kod"-style profile.
+        self.raw_mode = raw_mode
+        # "Rå → ersätt" (L3): paste raw first, replace with polished when ready.
+        self.llm_replace_mode = llm_replace_mode
+        # Watchdog threshold for the wait-mode polish fallback (configurable).
+        self.llm_timeout_sec = llm_timeout_sec
+        self.context_awareness = context_awareness
+        self.learning_enabled = learning_enabled
+        self.app_profiles = app_profiles or {}
+        self.command_mode_enabled = command_mode_enabled
         self._active = False
         self._recording = False
+        self._t_press = 0.0
+        # AP5 command mode: the last pasted/transformed block, edited in place
+        # by voice commands. Kept separate from _last_pasted (which AP2 clears).
+        self._last_block = ""
+        # AP2 learning loop: remember the last pasted text and read the focused
+        # field's value before the next dictation to learn manual corrections.
+        # The reader is context_win.get_focused_text (best-effort) and only
+        # wired when both context awareness and learning are on.
+        self._last_pasted = ""
+        self._field_reader = (
+            self._read_focused_text
+            if (context_awareness and learning_enabled) else None
+        )
         self._hook_handles: list = []
 
         # Bounded queue + dedicated worker thread. Replaces the old single-slot
@@ -223,6 +311,232 @@ class DictationMode:
 
     # ----------------------------------------------------------------- private
 
+    def _try_command(self, text: str) -> bool:
+        """AP5: if ``text`` is a command, transform the last block in place.
+
+        Returns True when the command ran and the result was pasted (replacing
+        the previous block); False when no command matched or it couldn't run,
+        so the caller falls back to normal dictation.
+        """
+        try:
+            import commands
+        except Exception:
+            return False
+        cmd = commands.detect_command(text)
+        if cmd is None:
+            return False
+
+        tr = self.transcriber
+
+        def _llm_transform(instruction: str, prev: str) -> str:
+            from llm_polish import instruct
+            return instruct(
+                prev, instruction,
+                api_key=getattr(tr, "llm_api_key", ""),
+                model=getattr(tr, "llm_model", ""),
+                provider=getattr(tr, "llm_provider", "github"),
+                base_url_override=getattr(tr, "llm_base_url", ""),
+            )
+
+        transform = _llm_transform if getattr(tr, "llm_enabled", False) else None
+        prev_block = self._last_block
+        result = commands.execute(cmd, prev_block, transform)
+        if not result:
+            # Recognised but couldn't run (e.g. LLM command with LLM off) —
+            # let the caller dictate the words normally instead.
+            return False
+        if self._worker_stop.is_set() or not self._active:
+            return True
+        # Replace the previous block: backspace over it (+1 for the trailing
+        # space paste_text adds), then paste the transformed text.
+        paste_text(result, active_modifiers=self._modifier_keys,
+                   replace_len=len(prev_block) + 1)
+        self._last_block = result
+        self._last_pasted = result
+        msg = f"Kommando: {cmd.phrase}"
+        self.on_status(f"{msg} — håll {self.hotkey.upper()} igen")
+        if self.indicator:
+            self.indicator.show(msg, state="done")
+            self.indicator.hide(delay_ms=1800)
+        log.info("Kommandoläge utförde '%s'", cmd.phrase)
+        return True
+
+    def _dictate_replace_mode(self, text: str, record_ms: float,
+                              transcribe_ms: float, context_hotpath_ms: float,
+                              uia_ms: float, profile_desc: str,
+                              onscreen_names: str) -> None:
+        """L3: paste the raw transcript immediately, then replace it with the
+        polished version when polish lands (editable fields only)."""
+        t_p0 = time.monotonic()
+        paste_text(text, active_modifiers=self._modifier_keys)
+        raw_paste_ms = (time.monotonic() - t_p0) * 1000
+        self._last_pasted = text
+        self._last_block = text
+        log.info("Latens (rå→ersätt) första synliga: record=%.0fms "
+                 "transcribe=%.0fms paste=%.0fms",
+                 record_ms, transcribe_ms, raw_paste_ms)
+        self.on_status("Klistrad (rå) — granskar…")
+        if self.indicator:
+            self.indicator.show("Granskar…", state="transcribe")
+
+        raw_text = text
+        t_llm0 = time.monotonic()
+
+        def _on_replace(original: str, polished: str) -> None:
+            if self._worker_stop.is_set() or not self._active:
+                return
+            llm_ms = (time.monotonic() - t_llm0) * 1000
+            tr = self.transcriber
+            replace_ms = 0.0
+            # Only replace if our raw paste is still the last thing pasted
+            # (best-effort: a newer dictation/command supersedes it; pressing
+            # Enter/Tab before polish lands may still cause a double — a
+            # documented trade-off of this mode).
+            if (polished and polished != raw_text
+                    and self._last_pasted == raw_text):
+                t_r0 = time.monotonic()
+                paste_text(polished, active_modifiers=self._modifier_keys,
+                           replace_len=len(raw_text) + 1)
+                self._last_pasted = polished
+                self._last_block = polished
+                replace_ms = (time.monotonic() - t_r0) * 1000
+            self._log_latency(
+                record_ms, transcribe_ms, llm_ms, raw_paste_ms + replace_ms,
+                context_hotpath_ms=context_hotpath_ms, uia_ms=uia_ms,
+                conn_ms=getattr(tr, "last_polish_conn_ms", 0.0),
+                conn_reused=getattr(tr, "last_polish_conn_reused", None),
+                first_token_ms=getattr(tr, "last_polish_first_token_ms", 0.0))
+            state = getattr(tr, "last_polish_state", "local")
+            msg = ("Klistrad (LLM-polerad)" if state == "llm_changed"
+                   else "Klistrad (LLM-granskad)")
+            self.on_status(f"{msg} — håll {self.hotkey.upper()} igen")
+            if self.indicator:
+                self.indicator.show(msg, state="done")
+                self.indicator.hide(delay_ms=1800)
+
+        try:
+            self.transcriber.polish_async(
+                raw_text, _on_replace, on_stage=None,
+                app_profile=profile_desc, onscreen_names=onscreen_names)
+        except Exception as e:
+            log.error("polish_async (rå→ersätt) kraschade: %s", e, exc_info=True)
+
+    @staticmethod
+    def _read_focused_text() -> str:
+        """Best-effort read of the focused field (AP3 → AP2 learning)."""
+        try:
+            import context_win
+            return context_win.get_focused_text()
+        except Exception:
+            return ""
+
+    def _resolve_context(self):
+        """AP3: resolve active-app profile + on-screen names. Best-effort.
+
+        Synchronous fallback used when no press-time snapshot is available
+        (legacy callers / tests). The hot path uses the async snapshot instead.
+        """
+        try:
+            import context_win
+            return context_win.get_context(getattr(self, "app_profiles", None))
+        except Exception as e:
+            log.debug("Kontextmedvetenhet misslyckades: %s", e)
+            return None
+
+    def _resolve_context_async(self, holder, last_pasted: str) -> None:
+        """L1: resolve context off the hot path. Reads the focused field once,
+        whose text serves both AP2 learning and AP3 biasing."""
+        try:
+            import context_win
+            app, _title = context_win.get_active_app()
+            profile_key = context_win.resolve_profile_key(
+                app, getattr(self, "app_profiles", None))
+            profile = context_win.PROFILES.get(
+                profile_key, context_win.PROFILES["default"])
+            # Skip the (expensive) field read only when nothing needs it: a
+            # polish-off profile (e.g. code) AND no prior paste to learn from.
+            need_text = profile.polish or bool(last_pasted)
+            holder.ctx = context_win.get_context(
+                getattr(self, "app_profiles", None), read_text=need_text)
+        except Exception as e:
+            log.debug("Kontext (async) misslyckades: %s", e)
+            holder.ctx = None
+        finally:
+            holder.event.set()
+
+    def _await_context(self):
+        """Return ``(ctx, hotpath_ms)`` from the press-time resolution (L1)."""
+        holder = getattr(self, "_ctx_result", None)
+        if holder is None:
+            return None, 0.0
+        t0 = time.monotonic()
+        holder.event.wait(timeout=_CTX_JOIN_TIMEOUT)
+        elapsed = (time.monotonic() - t0) * 1000
+        if not holder.event.is_set():
+            log.debug("Kontext ej klar inom %.0f ms — tom kontext", _CTX_JOIN_TIMEOUT * 1000)
+        return holder.ctx, elapsed
+
+    def _observe_corrections(self, ctx=None) -> None:
+        """AP2: compare the previously pasted text against the focused field.
+
+        Consumes the focused-field text from the press-time snapshot (``ctx``)
+        so it never issues its own UIA read on the critical path (L1). Falls
+        back to ``_field_reader`` only when no snapshot is available (legacy).
+        Best-effort and silent on any failure — never blocks dictation.
+        """
+        if not getattr(self, "learning_enabled", True):
+            return
+        last = getattr(self, "_last_pasted", "")
+        if not last:
+            return
+        self._last_pasted = ""
+        observed = ""
+        if ctx is not None and getattr(ctx, "focused_text", ""):
+            observed = ctx.focused_text
+        else:
+            reader = getattr(self, "_field_reader", None)
+            if reader is not None:
+                try:
+                    observed = reader() or ""
+                except Exception as e:
+                    log.debug("Kunde inte läsa målfält för inlärning: %s", e)
+                    return
+        if not observed:
+            return
+        try:
+            from learning import learn_from_observation
+            learn_from_observation(last, observed)
+        except Exception as e:
+            log.debug("Inlärning misslyckades: %s", e)
+
+    @staticmethod
+    def _log_latency(record_ms: float, transcribe_ms: float,
+                     llm_ms: float, paste_ms: float, *,
+                     context_hotpath_ms: float = 0.0, uia_ms: float = 0.0,
+                     conn_ms: float = 0.0, conn_reused: bool | None = None,
+                     first_token_ms: float = 0.0) -> None:
+        """Log the per-step latency breakdown for the hot path (AP1 + L0).
+
+        ``context_hotpath_ms`` is how much context/UIA work landed on the
+        critical path (≈0 once L1 overlaps it with recording); ``uia_ms`` is the
+        raw UIA read time wherever it ran; ``conn_ms``/``conn_reused`` describe
+        remote connection setup; ``first_token_ms`` is polish TTFT.
+        """
+        pipeline = transcribe_ms + llm_ms + paste_ms
+        reused = "?" if conn_reused is None else ("true" if conn_reused else "false")
+        log.info(
+            "Latens: record=%.0fms transcribe=%.0fms llm=%.0fms paste=%.0fms "
+            "context_hotpath=%.0fms uia=%.0fms conn=%.0fms conn_reused=%s "
+            "first_token=%.0fms (pipeline efter release=%.0fms)",
+            record_ms, transcribe_ms, llm_ms, paste_ms,
+            context_hotpath_ms, uia_ms, conn_ms, reused, first_token_ms, pipeline,
+        )
+        _record_latency_sample({
+            "transcribe_ms": transcribe_ms, "llm_ms": llm_ms,
+            "paste_ms": paste_ms, "context_hotpath_ms": context_hotpath_ms,
+            "conn_ms": conn_ms,
+        })
+
     def _modifier_held(self) -> bool:
         """All required modifiers must be physically held right now."""
         if not self._modifiers:
@@ -236,6 +550,18 @@ class DictationMode:
         if self._active and not self._recording and self._modifier_held():
             try:
                 self._recording = True
+                self._t_press = time.monotonic()
+                # L1: resolve active-app context + focused-field snapshot on a
+                # daemon thread *now*, overlapping the whole recording, so the
+                # UIA cost is off the critical path after key-up.
+                self._ctx_result = None
+                if getattr(self, "context_awareness", False):
+                    holder = _ContextHolder()
+                    self._ctx_result = holder
+                    threading.Thread(
+                        target=self._resolve_context_async,
+                        args=(holder, self._last_pasted),
+                        name="ctx-resolve", daemon=True).start()
                 # Wire the audio thread to push RMS levels directly to the
                 # UI indicator — replaces the 50 ms polling timer with an
                 # event-driven path. Cleared in _on_release.
@@ -281,13 +607,17 @@ class DictationMode:
 
         sounds.play_stop()
 
+        # Recording duration (press → release) — first leg of the latency
+        # breakdown logged in _transcribe.
+        record_ms = (time.monotonic() - self._t_press) * 1000 if self._t_press else 0.0
+
         # Reuse the running RMS maintained by the recorder — O(1).
         rms = self.recorder.rms()
 
         # Enqueue for the worker. Bounded queue: if full (previous job(s)
         # still being transcribed/polished), drop and tell the user.
         try:
-            self._jobs.put_nowait((audio, channels, rate, rms))
+            self._jobs.put_nowait((audio, channels, rate, rms, record_ms))
         except queue.Full:
             log.warning("Transkriberingskö full — hoppar över denna")
             self.on_status("Upptagen — vänta…")
@@ -315,9 +645,17 @@ class DictationMode:
                 log.error("Worker exception: %s", e, exc_info=True)
 
     def _process_job(self, audio_raw: np.ndarray, channels: int,
-                     rate: int, rms: float):
+                     rate: int, rms: float, record_ms: float = 0.0):
         n_raw = audio_raw.shape[0] if audio_raw.ndim >= 1 else 0
         log.info("Audio: %d raw samples, RMS=%.5f", n_raw, rms)
+
+        # L1: collect the press-time context snapshot once (bounded wait) and
+        # reuse it for both the learning loop and transcription/polish.
+        ctx, context_hotpath_ms = self._await_context()
+
+        # AP2: learn from any manual edits the user made to the last paste
+        # before starting this new dictation (best-effort, never blocks).
+        self._observe_corrections(ctx)
 
         if rms < self.min_rms:
             log.info("Inspelning för tyst (RMS=%.5f < %.5f), ignorerar",
@@ -338,30 +676,83 @@ class DictationMode:
                 self.indicator.hide(delay_ms=0)
             return
 
-        self._transcribe(audio)
+        self._transcribe(audio, record_ms, ctx=ctx,
+                         context_hotpath_ms=context_hotpath_ms)
 
-    def _transcribe(self, audio: np.ndarray):
+    def _transcribe(self, audio: np.ndarray, record_ms: float = 0.0,
+                    ctx=_NO_CTX, context_hotpath_ms: float = 0.0):
         try:
             if self._worker_stop.is_set() or not self._active:
                 log.info("Hoppar över stale transkribering efter stopp")
                 return
             log.info("Transkriberar %d samples...", len(audio))
-            llm_enabled = getattr(self.transcriber, "llm_enabled", False)
+            # "Rå direkt" disables polish even when the transcriber has LLM on.
+            llm_enabled = (
+                getattr(self.transcriber, "llm_enabled", False)
+                and not getattr(self, "raw_mode", False)
+            )
+
+            # AP3/L1 context: prefer the press-time snapshot (off the hot path).
+            # When called without one (legacy/tests) resolve synchronously.
+            if ctx is _NO_CTX:
+                ctx = None
+                context_hotpath_ms = 0.0
+                if getattr(self, "context_awareness", False):
+                    t_ctx0 = time.monotonic()
+                    ctx = self._resolve_context()
+                    context_hotpath_ms = (time.monotonic() - t_ctx0) * 1000
+
+            # A "code"-style profile disables polish and capitalisation; names
+            # bias the local decoder and (only when polishing) the LLM prompt.
+            profile_desc = ""
+            onscreen_names = ""
+            capitalize = True
+            uia_ms = 0.0
+            if ctx is not None:
+                profile_desc = ctx.profile_description
+                onscreen_names = ctx.onscreen_names
+                capitalize = ctx.capitalize
+                uia_ms = getattr(ctx, "read_ms", 0.0)
+                if not ctx.polish:
+                    llm_enabled = False
+
+            t_tx0 = time.monotonic()
             # The status message shown while transcription runs reflects
             # whether the user opted into a remote provider. Saying "lokalt"
             # when the audio is being shipped to e.g. KBLab's API is both
-            # wrong and erodes trust about where the data is going.
+            # wrong and erodes trust about where the data is going. Show
+            # the remote status even when LLM is off — the user needs
+            # transparency that audio is leaving the machine, regardless
+            # of whether LLM polish is enabled.
             tr_provider = getattr(self.transcriber, "transcription_provider", "local")
             tr_label = _provider_status_label(tr_provider)
-            if llm_enabled:
+            if llm_enabled or tr_provider != "local":
                 self.on_status(f"Transkriberar {tr_label}…")
                 if self.indicator:
                     self.indicator.show(f"Transkriberar {tr_label}…", state="transcribe")
-            text = self.transcriber.transcribe(audio)
+            text = self.transcriber.transcribe(
+                audio, capitalize=capitalize, extra_hotwords=onscreen_names)
+            transcribe_ms = (time.monotonic() - t_tx0) * 1000
             log.info("Resultat klart (%s)", _text_meta(text))
             if text.strip():
                 if self._worker_stop.is_set() or not self._active:
                     log.info("Hoppar över paste från stale transkribering")
+                    return
+
+                # AP5 command mode: if this utterance is a command on the last
+                # block, edit that block in place instead of dictating new text.
+                if (getattr(self, "command_mode_enabled", False)
+                        and getattr(self, "_last_block", "")
+                        and self._try_command(text)):
+                    return
+
+                # L3 "rå → ersätt": paste raw now, replace with polished later.
+                # Reaches here only for editable fields (code/terminal profiles
+                # disable polish, so llm_enabled is already False there).
+                if llm_enabled and getattr(self, "llm_replace_mode", False):
+                    self._dictate_replace_mode(
+                        text, record_ms, transcribe_ms, context_hotpath_ms,
+                        uia_ms, profile_desc, onscreen_names)
                     return
 
                 if llm_enabled:
@@ -385,13 +776,26 @@ class DictationMode:
 
                     polish_lock = threading.Lock()
                     polish_completed = {"done": False}
+                    t_llm0 = time.monotonic()
 
                     def _paste_and_finalize(final_text: str, polished_label: bool) -> None:
                         """Paste once and update indicator. Must be called under lock."""
                         if self._worker_stop.is_set() or not self._active:
                             log.info("Hoppar över paste efter stopp")
                             return
+                        llm_ms = (time.monotonic() - t_llm0) * 1000
+                        t_p0 = time.monotonic()
                         paste_text(final_text, active_modifiers=self._modifier_keys)
+                        self._last_pasted = final_text
+                        self._last_block = final_text
+                        tr = self.transcriber
+                        self._log_latency(
+                            record_ms, transcribe_ms, llm_ms,
+                            (time.monotonic() - t_p0) * 1000,
+                            context_hotpath_ms=context_hotpath_ms, uia_ms=uia_ms,
+                            conn_ms=getattr(tr, "last_polish_conn_ms", 0.0),
+                            conn_reused=getattr(tr, "last_polish_conn_reused", None),
+                            first_token_ms=getattr(tr, "last_polish_first_token_ms", 0.0))
                         if polished_label:
                             state = getattr(self.transcriber, "last_polish_state", "local")
                             if state == "llm_changed":
@@ -418,7 +822,9 @@ class DictationMode:
                         )
                         _paste_and_finalize(text, polished_label=False)
 
-                    watchdog = threading.Timer(15.0, _watchdog_fallback)
+                    watchdog = threading.Timer(
+                        getattr(self, "llm_timeout_sec", 15.0),
+                        _watchdog_fallback)
                     watchdog.daemon = True
                     watchdog.name = "llm-polish-watchdog"
 
@@ -438,8 +844,10 @@ class DictationMode:
                     # keeps the transcriber's per-job slot clean.
                     watchdog.start()
                     try:
-                        self.transcriber.polish_async(text, _on_polish_done,
-                                                      on_stage=None)
+                        self.transcriber.polish_async(
+                            text, _on_polish_done, on_stage=None,
+                            app_profile=profile_desc,
+                            onscreen_names=onscreen_names)
                     except Exception as e:
                         log.error("polish_async kraschade synkront: %s",
                                   e, exc_info=True)
@@ -447,7 +855,17 @@ class DictationMode:
                         _watchdog_fallback()
                 else:
                     # No LLM — paste immediately, this is the fast path.
+                    t_p0 = time.monotonic()
                     paste_text(text, active_modifiers=self._modifier_keys)
+                    self._last_pasted = text
+                    self._last_block = text
+                    tr = self.transcriber
+                    self._log_latency(
+                        record_ms, transcribe_ms, 0.0,
+                        (time.monotonic() - t_p0) * 1000,
+                        context_hotpath_ms=context_hotpath_ms, uia_ms=uia_ms,
+                        conn_ms=getattr(tr, "last_transcribe_conn_ms", 0.0),
+                        conn_reused=getattr(tr, "last_transcribe_conn_reused", None))
                     message = "Klistrad"
                     self.on_status(f"{message} — håll {self.hotkey.upper()} igen")
                     if self.indicator:

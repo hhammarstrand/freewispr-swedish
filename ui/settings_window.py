@@ -144,6 +144,18 @@ class SettingsWindow:
         current_label = style_map.get(current_style, "Modern (Slate Gray)")
         self._indicator_style_label_var = tk.StringVar(value=current_label)
 
+        # Smart features (AP1/AP2/AP3/AP5/AP6)
+        self._raw_mode_var = tk.BooleanVar(value=c.get("llm_raw_mode", False))
+        self._replace_mode_var = tk.BooleanVar(value=c.get("llm_replace_mode", False))
+        self._learning_var = tk.BooleanVar(value=c.get("learning_enabled", True))
+        self._context_var = tk.BooleanVar(
+            value=c.get("context_awareness_enabled", True)
+        )
+        self._command_var = tk.BooleanVar(
+            value=c.get("command_mode_enabled", True)
+        )
+        self._flow_var = tk.BooleanVar(value=c.get("flow_mode_enabled", False))
+
     def _stringvar(self, value: str = "") -> tk.StringVar:
         v = tk.StringVar()
         v.set(value)
@@ -265,6 +277,7 @@ class SettingsWindow:
             tab_llm = self._tabs.add("LLM-granskning")
             tab_tr = self._tabs.add("Transkribering")
             tab_ctx = self._tabs.add("Kontext")
+            tab_smart = self._tabs.add("Smart")
         else:
             self._tabs = ttk.Notebook(outer)
             self._tabs.pack(fill="both", expand=True)
@@ -272,15 +285,18 @@ class SettingsWindow:
             tab_llm = ttk.Frame(self._tabs)
             tab_tr = ttk.Frame(self._tabs)
             tab_ctx = ttk.Frame(self._tabs)
+            tab_smart = ttk.Frame(self._tabs)
             self._tabs.add(tab_general, text="Allmänt")
             self._tabs.add(tab_llm, text="LLM-granskning")
             self._tabs.add(tab_tr, text="Transkribering")
             self._tabs.add(tab_ctx, text="Kontext")
+            self._tabs.add(tab_smart, text="Smart")
 
         self._build_general(tab_general)
         self._build_llm(tab_llm)
         self._build_transcription(tab_tr)
         self._build_context(tab_ctx)
+        self._build_smart(tab_smart)
 
         # Bottom button row
         btn_row = self._frame(outer)
@@ -1045,6 +1061,60 @@ class SettingsWindow:
 
     # -- save ---------------------------------------------------------------- #
 
+    # ------- Tab: Smart ----------------------------------------------------- #
+
+    def _build_smart(self, parent):
+        pad = {"padx": 6, "pady": (10, 0)}
+
+        self._heading(parent, "Snabbare diktering").pack(anchor="w", **pad)
+        self._switch(parent, "Rå direkt (hoppa över LLM-granskning)",
+                     self._raw_mode_var).pack(anchor="w", padx=6, pady=(6, 0))
+        self._hint(parent, "Klistrar in rå transkribering direkt, även om "
+                   "LLM-granskning är på. Snabbast, ingen extra latens.").pack(
+            anchor="w", padx=6, pady=(2, 8))
+        self._switch(parent, "Rå → ersätt (klistra rått, byt mot polerat)",
+                     self._replace_mode_var).pack(anchor="w", padx=6, pady=(0, 0))
+        self._hint(parent, "Visar texten direkt och byter ut den mot den "
+                   "polerade versionen när den är klar. Endast redigerbara "
+                   "fält — inte terminal/kod.").pack(
+            anchor="w", padx=6, pady=(2, 8))
+
+        self._heading(parent, "Inlärning").pack(anchor="w", **pad)
+        self._switch(parent, "Lär av mina rättelser",
+                     self._learning_var).pack(anchor="w", padx=6, pady=(6, 0))
+        self._hint(parent, "När du rättar inklistrad text lär sig appen "
+                   "term-paren (t.ex. kammar → Kalmar) till nästa gång.").pack(
+            anchor="w", padx=6, pady=(2, 4))
+        self._button(parent, "Rensa inlärt", self._clear_learned,
+                     danger=True).pack(anchor="w", padx=6, pady=(2, 8))
+
+        self._heading(parent, "Kontext & kommandon").pack(anchor="w", **pad)
+        self._switch(parent, "Kontextmedvetenhet (app + text nära markör)",
+                     self._context_var).pack(anchor="w", padx=6, pady=(6, 0))
+        self._hint(parent, "Anpassar ton/format per app och stavar egennamn "
+                   "nära markören rätt. All skärmtext används lokalt.").pack(
+            anchor="w", padx=6, pady=(2, 4))
+        self._switch(parent, "Kommandoläge (rösta för att redigera)",
+                     self._command_var).pack(anchor="w", padx=6, pady=(6, 0))
+        self._hint(parent, "Fraser som \"gör det kortare\" eller \"punktlista\" "
+                   "redigerar det senast inklistrade i stället för att skrivas.").pack(
+            anchor="w", padx=6, pady=(2, 8))
+
+        self._heading(parent, "Flow-läge (experimentellt)").pack(anchor="w", **pad)
+        self._switch(parent, "Aktivera Flow-läge i menyn (endast lokalt)",
+                     self._flow_var).pack(anchor="w", padx=6, pady=(6, 0))
+        self._hint(parent, "Kontinuerlig diktering över pauser. Slås på/av via "
+                   "tray-menyn när det är aktiverat här.").pack(
+            anchor="w", padx=6, pady=(2, 8))
+
+    def _clear_learned(self):
+        try:
+            from learning import clear_learned
+            clear_learned()
+            messagebox.showinfo("Rensat", "Inlärda rättelser har rensats.")
+        except Exception as e:
+            messagebox.showerror("Kunde inte rensa", str(e))
+
     def _save(self):
         # Resolve labels back to provider ids in case the combobox change
         # callbacks didn't fire (rare on keyboard navigation).
@@ -1149,9 +1219,10 @@ class SettingsWindow:
         new_cfg[f"llm_model_{llm_pid}"] = self._llm_model_var.get().strip()
         new_cfg[f"llm_api_key_{llm_pid}"] = llm_key
         new_cfg["llm_custom_base_url"] = self._llm_base_url_var.get().strip()
-        new_cfg["llm_privacy_accepted"] = bool(
-            llm_enabled and (llm_local or llm_consent)
-        )
+        # Persist consent independently of llm_enabled — otherwise users
+        # who toggle LLM off later have to re-accept the consent dialog
+        # next time they enable it, which is annoying and erodes trust.
+        new_cfg["llm_privacy_accepted"] = bool(llm_local or llm_consent)
 
         # Transcription
         new_cfg["transcription_provider"] = tr_pid
@@ -1162,6 +1233,14 @@ class SettingsWindow:
         new_cfg["transcription_privacy_accepted"] = bool(
             tr_pid != "local" and self._tr_consent_var.get()
         )
+
+        # Smart features (AP1/AP2/AP3/AP5/AP6 + L3)
+        new_cfg["llm_raw_mode"] = self._raw_mode_var.get()
+        new_cfg["llm_replace_mode"] = self._replace_mode_var.get()
+        new_cfg["learning_enabled"] = self._learning_var.get()
+        new_cfg["context_awareness_enabled"] = self._context_var.get()
+        new_cfg["command_mode_enabled"] = self._command_var.get()
+        new_cfg["flow_mode_enabled"] = self._flow_var.get()
 
         # Strip removed legacy keys.
         for k in ("filter_fillers", "auto_punctuate", "language",

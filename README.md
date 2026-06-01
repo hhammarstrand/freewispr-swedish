@@ -157,6 +157,8 @@ Vilken modell som passar dig beror på din hårdvara och hur petig du vill vara 
 
 > **Tips:** När LLM-granskning är aktiverad körs appen i vänta-läge — texten klistras inte in förrän polishen är klar. Om LLM-svaret dröjer mer än 15 s klistras rå text som fallback, annars får du den granskade/polerade texten i ett enda steg.
 
+> **Rå → ersätt** (Inställningar → Smart): klistrar in den råa transkriberingen direkt så att text syns omedelbart, och byter sedan ut den mot den polerade versionen när den är klar (via backsteg + ny inklistring). Endast för redigerbara fält — aktiveras aldrig i terminal/kod-profiler. Avvägning: om du hinner trycka **Enter/Tab** innan polishen landar kan utbytet misslyckas och ge dubblerad text; lämna läget av om du ofta skickar iväg text direkt.
+
 ## Personlig kontext
 
 LLM-granskaren får en kort beskrivning av dig som referens vid varje pass — namn, fackord, vanliga feltolkningar. Du redigerar texten under **Inställningar → Kontext**.

@@ -78,6 +78,16 @@ DEFAULTS = {
     "llm_api_key_openai": "",
     "llm_api_key_custom": "",
     "llm_privacy_accepted": False,
+    # "Rå direkt": paste the raw transcript and skip LLM polish even when LLM
+    # is enabled (useful per-app via profiles, or as a global fast toggle).
+    "llm_raw_mode": False,
+    # "Rå → ersätt" (L3): paste the raw transcript immediately for instant
+    # visible text, then replace it with the polished version when it lands.
+    # Editable fields only (code/terminal profiles disable polish). Default off.
+    "llm_replace_mode": False,
+    # Watchdog threshold (seconds): if polish hasn't returned by now, the raw
+    # transcript is pasted as a fallback so the indicator never hangs.
+    "llm_timeout_sec": 15.0,
 
     # ---- Remote transcription (audio leaves the machine) ----
     # local | staik | berget | custom
@@ -94,6 +104,38 @@ DEFAULTS = {
     "transcription_api_key_custom": "",
     # Explicit consent: ljudet skickas över nätet vid remote-transkribering.
     "transcription_privacy_accepted": False,
+
+    # ---- Transkriberings-biasing (AP4) ----
+    # Lokal faster-whisper: avkodnings-/biaseringsparametrar.
+    "whisper_beam_size": 1,            # 1 = greedy (snabbast); 5 = noggrannare
+    "whisper_vad_filter": True,        # Silero VAD klipper tystnad/hallucination
+    "whisper_no_speech_threshold": 0.6,
+    "whisper_compute_type": "",        # "" = auto (float16 CUDA / int8 CPU)
+    "kblab_revision": "default",       # default | strict | subtitle (CT2-fallback)
+    # Remote OpenAI-kompatibel path: temperatur (prompt byggs automatiskt).
+    "transcription_temperature": 0.0,
+
+    # ---- Kommandoläge (AP5) ----
+    # Tolka inledande kommandofraser ("gör det kortare" m.fl.) som redigering
+    # av senaste blocket i stället för ny diktering.
+    "command_mode_enabled": True,
+
+    # ---- Inlärningsloop (AP2) ----
+    # Lär dig term-par när användaren rättar inklistrad text. Påverkar bara
+    # *inspelning* av nya rättelser; redan inlärda injiceras alltid i polish.
+    "learning_enabled": True,
+
+    # ---- Kontextmedvetenhet (AP3) ----
+    # Läs aktiv app + text nära markör för bättre egennamn/ton. Best-effort.
+    "context_awareness_enabled": True,
+    # Egna app→profil-overrides (processnamn utan .exe → "casual"/"email"/
+    # "code"). Slås ihop ovanpå context_win.DEFAULT_APP_PROFILES. Tomt = inbyggda.
+    "app_profiles": {},
+
+    # ---- Flow-läge (AP6, valfritt) ----
+    # Kontinuerlig diktering över pauser (endast lokal transkribering). Av som
+    # default; togglas via tray-menyn när påslaget.
+    "flow_mode_enabled": False,
 
     "indicator_follow_mouse": True,
     # Lägsta RMS-nivå (0.0-1.0) som räknas som tal. Se DEFAULT_MIN_RMS i dictation.py.

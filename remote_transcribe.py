@@ -37,6 +37,8 @@ _RETRY_BASE_DELAY = 0.6  # sekunder; växer exponentiellt per försök
 
 import numpy as np
 
+import http_pool
+
 log = logging.getLogger("freewispr")
 
 
@@ -178,8 +180,8 @@ def _build_multipart(fields: dict[str, str], wav_bytes: bytes,
 #  Publika operationer
 # --------------------------------------------------------------------------- #
 
-def _request_with_retry(req: urllib.request.Request, provider: str,
-                        timeout_sec: float) -> bytes:
+def _request_with_retry(url: str, headers: dict[str, str], body: bytes,
+                        provider: str, timeout_sec: float) -> bytes:
     """Skicka requesten och försök igen vid övergående serverfel.
 
     Återförsök sker bara vid 502/503/504 och vid nätverksfel (URLError),
@@ -187,15 +189,16 @@ def _request_with_retry(req: urllib.request.Request, provider: str,
     retry. Mellan försöken väntar vi med exponentiell backoff. Om alla försök
     misslyckas höjs ``RemoteTranscribeError`` med det sista felmeddelandet.
 
-    Notera: requesten innehåller ljudet i ``req.data``. urllib återanvänder
-    samma body på varje försök, så ingen ominspelning behövs.
+    Transporten går via ``http_pool`` (L2) så TCP/TLS-anslutningen återanvänds
+    mellan dikteringar i stället för en ny handskakning varje gång. Samma
+    ``body`` återanvänds på varje försök, så ingen ominspelning behövs.
     """
     last_error: Exception | None = None
 
     for attempt in range(1, _MAX_ATTEMPTS + 1):
         try:
-            with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-                return resp.read()
+            return http_pool.request(url, headers, payload=body, method="POST",
+                                     timeout=timeout_sec, parse="raw")
         except urllib.error.HTTPError as e:
             body_snippet = ""
             try:
@@ -250,11 +253,17 @@ def transcribe(
     language: str = "sv",
     base_url_override: str = "",
     timeout_sec: float = 60.0,
+    prompt: str = "",
+    temperature: float | None = None,
 ) -> str:
     """Skicka ljud till remote-leverantör. Returnerar transkriberad text.
 
     Höjer ``RemoteTranscribeError`` vid valfritt fel — anroparen ansvarar för
     att inte krascha appen.
+
+    AP4: ``prompt`` (biasing-sträng) och ``temperature`` skickas med när de
+    anges. OpenAI-kompatibla transkriberings-API:er stödjer dessa fält; en
+    leverantör som ignorerar dem gör helt enkelt no-op.
     """
     if audio is None or audio.size == 0:
         return ""
@@ -273,6 +282,14 @@ def transcribe(
     fields = {"model": used_model}
     if language:
         fields["language"] = language
+    if prompt:
+        # Whisper prompt budget is ~224 tokens; keep it short.
+        fields["prompt"] = prompt[:800]
+        log.info("Remote transcribe inkluderar prompt (%d tecken) — "
+                 "leverantörer som inte stödjer det ignorerar fältet",
+                 len(fields["prompt"]))
+    if temperature is not None:
+        fields["temperature"] = str(temperature)
 
     body, content_type = _build_multipart(fields, wav_bytes)
     headers = {
@@ -284,12 +301,11 @@ def transcribe(
         headers["Authorization"] = f"Bearer {resolved_key}"
 
     url = f"{base}/audio/transcriptions"
-    req = urllib.request.Request(url, data=body, headers=headers, method="POST")
 
     log.info("Remote transcribe -> %s (%s, %d samples, %d sr)",
              provider, used_model, audio.size, sample_rate)
 
-    raw = _request_with_retry(req, provider, timeout_sec)
+    raw = _request_with_retry(url, headers, body, provider, timeout_sec)
 
     # Body kan vara JSON ({"text": "..."}) eller ren text beroende på server.
     try:

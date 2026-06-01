@@ -216,21 +216,17 @@ def test_remote_transcribe_posts_multipart_and_parses_text(monkeypatch):
     rt = importlib.reload(importlib.import_module("remote_transcribe"))
     captured = {}
 
-    class FakeResponse:
-        def __init__(self, body): self._body = body
-        def __enter__(self): return self
-        def __exit__(self, *a): return False
-        def read(self): return self._body
+    def fake_request(url, headers, payload=None, method="POST", timeout=8.0,
+                     stream=False, parse="json"):
+        captured["url"] = url
+        captured["method"] = method
+        captured["content_type"] = headers.get("Content-Type")
+        captured["auth"] = headers.get("Authorization")
+        captured["body_prefix"] = payload[:200]
+        captured["parse"] = parse
+        return json.dumps({"text": "Hej världen"}).encode("utf-8")
 
-    def fake_urlopen(req, timeout=None):
-        captured["url"] = req.full_url
-        captured["method"] = req.get_method()
-        captured["content_type"] = req.headers.get("Content-type")
-        captured["auth"] = req.headers.get("Authorization")
-        captured["body_prefix"] = req.data[:200]
-        return FakeResponse(json.dumps({"text": "Hej världen"}).encode("utf-8"))
-
-    monkeypatch.setattr(rt.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(rt.http_pool, "request", fake_request)
 
     audio = np.ones(8000, dtype=np.float32) * 0.2
     text = rt.transcribe(audio, 16000, provider="staik",
@@ -239,6 +235,7 @@ def test_remote_transcribe_posts_multipart_and_parses_text(monkeypatch):
     assert text == "Hej världen"
     assert captured["url"] == "https://api.staik.se/v1/audio/transcriptions"
     assert captured["method"] == "POST"
+    assert captured["parse"] == "raw"
     assert captured["content_type"].startswith("multipart/form-data; boundary=")
     assert captured["auth"] == "Bearer sk-st-test"
     assert b"kb-whisper-large" in captured["body_prefix"]
@@ -248,13 +245,14 @@ def test_remote_transcribe_raises_friendly_message_on_http_error(monkeypatch):
     rt = importlib.reload(importlib.import_module("remote_transcribe"))
     audio = np.ones(1000, dtype=np.float32) * 0.1
 
-    def fake_urlopen(req, timeout=None):
+    def fake_request(url, headers, payload=None, method="POST", timeout=8.0,
+                     stream=False, parse="json"):
         raise rt.urllib.error.HTTPError(
-            url=req.full_url, code=401, msg="unauthorized",
+            url=url, code=401, msg="unauthorized",
             hdrs=None, fp=io.BytesIO(b"bad key"),
         )
 
-    monkeypatch.setattr(rt.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(rt.http_pool, "request", fake_request)
 
     with pytest.raises(rt.RemoteTranscribeError) as exc:
         rt.transcribe(audio, 16000, provider="berget", api_key="tok")
@@ -344,13 +342,13 @@ def test_retry_recovers_after_transient_502(monkeypatch):
 
     calls = {"n": 0}
 
-    def fake_urlopen(req, timeout=None):
+    def fake_request(*a, **k):
         calls["n"] += 1
         if calls["n"] < 3:
             raise _http_error(rt, 502)
-        return _FakeResp(json.dumps({"text": "Hej"}).encode("utf-8"))
+        return json.dumps({"text": "Hej"}).encode("utf-8")
 
-    monkeypatch.setattr(rt.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(rt.http_pool, "request", fake_request)
 
     audio = np.ones(8000, dtype=np.float32) * 0.2
     text = rt.transcribe(audio, 16000, provider="staik", api_key="tok")
@@ -366,11 +364,11 @@ def test_retry_exhausts_and_raises_on_persistent_503(monkeypatch):
 
     calls = {"n": 0}
 
-    def fake_urlopen(req, timeout=None):
+    def fake_request(*a, **k):
         calls["n"] += 1
         raise _http_error(rt, 503)
 
-    monkeypatch.setattr(rt.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(rt.http_pool, "request", fake_request)
 
     audio = np.ones(8000, dtype=np.float32) * 0.2
     with pytest.raises(rt.RemoteTranscribeError) as exc:
@@ -387,11 +385,11 @@ def test_no_retry_on_client_error_401(monkeypatch):
 
     calls = {"n": 0}
 
-    def fake_urlopen(req, timeout=None):
+    def fake_request(*a, **k):
         calls["n"] += 1
         raise _http_error(rt, 401)
 
-    monkeypatch.setattr(rt.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(rt.http_pool, "request", fake_request)
 
     audio = np.ones(8000, dtype=np.float32) * 0.2
     with pytest.raises(rt.RemoteTranscribeError) as exc:
