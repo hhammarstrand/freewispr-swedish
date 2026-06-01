@@ -157,6 +157,52 @@ def erase_last(n: int) -> None:
     threading.Thread(target=_run, daemon=True, name="undo-erase").start()
 
 
+def read_selection(active_modifiers: tuple[str, ...] = ()) -> str:
+    """Best-effort read of the currently selected text (voice-edit / KP3).
+
+    Sends a synthetic Ctrl+C, reads the clipboard, then restores the user's
+    previous clipboard. Returns the selected text, or "" if nothing was
+    selected (clipboard unchanged) or the copy failed. Synchronous: the caller
+    needs the selection before it can transcribe an instruction for it.
+    """
+    # The voice-edit hotkey is held while speaking; release its modifiers so the
+    # synthetic Ctrl+C isn't polluted by e.g. a held Alt.
+    _release_modifiers(active_modifiers)
+    with _PASTE_LOCK:
+        try:
+            prev_clip = pyperclip.paste()
+        except Exception:
+            prev_clip = None
+        # Sentinel so we can tell "copied nothing" (no selection) apart from
+        # "selection equals previous clipboard".
+        sentinel = "\x00freewispr-sel\x00"
+        try:
+            pyperclip.copy(sentinel)
+            keyboard.send("ctrl+c")
+        except Exception as e:
+            log.warning("Kunde inte läsa markeringen: %s", e)
+            return ""
+        # Ctrl+C is asynchronous in the target app; poll briefly for the
+        # clipboard to change away from the sentinel.
+        selected = ""
+        deadline = time.time() + 0.4
+        while time.time() < deadline:
+            try:
+                cur = pyperclip.paste()
+            except Exception:
+                cur = sentinel
+            if cur != sentinel:
+                selected = cur or ""
+                break
+            time.sleep(0.02)
+        # Restore the user's clipboard (best-effort).
+        try:
+            pyperclip.copy(prev_clip if prev_clip is not None else "")
+        except Exception:
+            pass
+        return selected.strip()
+
+
 def paste_text(text: str, active_modifiers: tuple[str, ...] = (),
                replace_len: int = 0):
     """Paste text at the current cursor position.
