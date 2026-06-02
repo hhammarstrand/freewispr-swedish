@@ -8,7 +8,7 @@ import keyboard
 import numpy as np
 
 from audio import MicRecorder, finalize_audio
-from paste import paste_text
+from paste import paste_text, replace_len_for
 from modifiers import normalize_all, is_modifier
 from transcriber import Transcriber
 import sounds
@@ -206,7 +206,8 @@ class DictationMode:
                  learning_enabled: bool = True,
                  app_profiles: dict | None = None,
                  command_mode_enabled: bool = True,
-                 llm_replace_mode: bool = False):
+                 llm_replace_mode: bool = False,
+                 context_to_remote_accepted: bool = False):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
@@ -226,6 +227,12 @@ class DictationMode:
         self.learning_enabled = learning_enabled
         self.app_profiles = app_profiles or {}
         self.command_mode_enabled = command_mode_enabled
+        # Privacy: on-screen names (AP3) are scraped from the screen and may
+        # contain data from other apps. They are a separate consent category
+        # from the audio (transcription_privacy_accepted). When False, names are
+        # never forwarded to a *remote* STT provider as a biasing prompt; the
+        # local decoder always receives them (nothing leaves the machine).
+        self.context_to_remote_accepted = context_to_remote_accepted
         self._active = False
         self._recording = False
         self._t_press = 0.0
@@ -347,10 +354,10 @@ class DictationMode:
             return False
         if self._worker_stop.is_set() or not self._active:
             return True
-        # Replace the previous block: backspace over it (+1 for the trailing
-        # space paste_text adds), then paste the transformed text.
+        # Replace the previous block: backspace over exactly what we pasted
+        # (paste_text strips + adds a trailing space), then paste the result.
         paste_text(result, active_modifiers=self._modifier_keys,
-                   replace_len=len(prev_block) + 1)
+                   replace_len=replace_len_for(prev_block))
         self._last_block = result
         self._last_pasted = result
         msg = f"Kommando: {cmd.phrase}"
@@ -396,7 +403,7 @@ class DictationMode:
                     and self._last_pasted == raw_text):
                 t_r0 = time.monotonic()
                 paste_text(polished, active_modifiers=self._modifier_keys,
-                           replace_len=len(raw_text) + 1)
+                           replace_len=replace_len_for(raw_text))
                 self._last_pasted = polished
                 self._last_block = polished
                 replace_ms = (time.monotonic() - t_r0) * 1000
@@ -730,8 +737,19 @@ class DictationMode:
                 self.on_status(f"Transkriberar {tr_label}…")
                 if self.indicator:
                     self.indicator.show(f"Transkriberar {tr_label}…", state="transcribe")
+            # Privacy gate: on-screen names bias the local decoder freely (they
+            # never leave the machine), but are only forwarded to a *remote* STT
+            # provider when the user has explicitly consented — they are a
+            # separate data category from the audio itself.
+            stt_hotwords = onscreen_names
+            if tr_provider != "local" and not getattr(
+                    self, "context_to_remote_accepted", False):
+                if onscreen_names:
+                    log.debug("Skärmnamn skickas ej till remote-STT "
+                              "(medgivande saknas)")
+                stt_hotwords = ""
             text = self.transcriber.transcribe(
-                audio, capitalize=capitalize, extra_hotwords=onscreen_names)
+                audio, capitalize=capitalize, extra_hotwords=stt_hotwords)
             transcribe_ms = (time.monotonic() - t_tx0) * 1000
             log.info("Resultat klart (%s)", _text_meta(text))
             if text.strip():

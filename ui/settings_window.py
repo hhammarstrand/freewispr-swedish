@@ -167,6 +167,46 @@ class SettingsWindow:
             return ctk.CTkFrame(parent, fg_color="transparent")
         return tk.Frame(parent, bg=BG)
 
+    def _scrollable(self, parent):
+        """Return a frame whose content scrolls vertically when it overflows.
+
+        Lets tabs taller than the window stay reachable on short screens
+        instead of pushing the Spara/Avbryt row off the bottom edge. The
+        returned widget is the *inner* content frame — pack children into it
+        as usual.
+        """
+        if _CTK_AVAILABLE:
+            return ctk.CTkScrollableFrame(parent, fg_color="transparent")
+
+        # Plain-tk fallback: Canvas + Scrollbar + inner Frame.
+        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0, bd=0)
+        scrollbar = tk.Scrollbar(parent, orient="vertical",
+                                 command=canvas.yview)
+        inner = tk.Frame(canvas, bg=BG)
+
+        inner.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
+        )
+        window = canvas.create_window((0, 0), window=inner, anchor="nw")
+        canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfigure(window, width=e.width),
+        )
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        def _on_wheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        canvas.bind("<Enter>",
+                    lambda e: canvas.bind_all("<MouseWheel>", _on_wheel))
+        canvas.bind("<Leave>",
+                    lambda e: canvas.unbind_all("<MouseWheel>"))
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        return inner
+
     def _label(self, parent, text, **kw):
         if _CTK_AVAILABLE:
             return ctk.CTkLabel(parent, text=text, anchor="w", **kw)

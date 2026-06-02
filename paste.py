@@ -99,6 +99,24 @@ def _paste_and_keep_clipboard_async(text: str, replace_len: int = 0):
     _paste_queue.put((text, replace_len))
 
 
+def replace_len_for(prev_text: str) -> int:
+    """Backspace count needed to delete a block previously sent via paste_text.
+
+    ``paste_text`` strips the text and appends exactly one trailing space, so
+    the visible glyph count of a pasted block is ``len(stripped) + 1``. Callers
+    that stored the *unstripped* text (e.g. an LLM result) would otherwise
+    miscount and over- or under-backspace; routing the count through this single
+    source of truth keeps it exact. Returns 0 for empty/whitespace-only input so
+    a replace never backspaces into unrelated content.
+
+    Note: backspacing still assumes one glyph == one backspace and that the
+    caret is right after the block — the common case just after dictation. App
+    autocorrect or a moved caret can still desync this (documented trade-off).
+    """
+    s = (prev_text or "").strip()
+    return len(s) + 1 if s else 0
+
+
 def paste_text(text: str, active_modifiers: tuple[str, ...] = (),
                replace_len: int = 0):
     """Paste text at the current cursor position.

@@ -29,6 +29,9 @@ log = logging.getLogger("freewispr")
 # longer than this and fall back to empty context.
 UIA_TIMEOUT_S = 0.15
 _uia_inited = False
+# Bounds UIA read-thread leakage to one: held while a focused-text read runs,
+# released by that read's worker (even if it outlives our timeout).
+_uia_read_lock = threading.Lock()
 
 
 class Profile(NamedTuple):
@@ -115,11 +118,27 @@ def get_active_app() -> tuple[str, str]:
 
 
 def _focused_text_with_timeout(timeout: float = UIA_TIMEOUT_S) -> str:
-    """Run get_focused_text on a daemon thread, give up after ``timeout`` (L1)."""
+    """Run get_focused_text on a daemon thread, give up after ``timeout`` (L1).
+
+    A hung UIA provider (Electron/Chromium can stall ``GetValuePattern`` for
+    hundreds of ms) leaves the read thread running after we time out — Python
+    can't kill a thread. To stop one hang from leaking a *new* thread on every
+    dictation, the read is guarded by a single non-blocking in-flight lock: if
+    the previous read is still stuck we return empty context immediately and
+    never spawn another reader. The lock is released by the worker itself once
+    the stuck call finally returns, so the leak is bounded to one thread.
+    """
+    if not _uia_read_lock.acquire(blocking=False):
+        log.debug("UIA-läsning redan pågående (förra hängde) — tom kontext")
+        return ""
+
     result = {"text": ""}
 
     def _run():
-        result["text"] = get_focused_text()
+        try:
+            result["text"] = get_focused_text()
+        finally:
+            _uia_read_lock.release()
 
     t = threading.Thread(target=_run, daemon=True, name="uia-read")
     t.start()

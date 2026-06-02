@@ -27,6 +27,10 @@ import urllib.request
 import wave
 from typing import NamedTuple
 
+import numpy as np
+
+import http_pool
+
 # HTTP status-koder som indikerar ett övergående fel hos servern/gatewayen.
 # Dessa är värda att försöka igen — till skillnad från 4xx (klientfel) som
 # inte blir bättre av en retry. STAIK:s gateway svarar tidvis 502/503 under
@@ -34,10 +38,6 @@ from typing import NamedTuple
 _RETRYABLE_HTTP_CODES = frozenset({502, 503, 504})
 _MAX_ATTEMPTS = 3
 _RETRY_BASE_DELAY = 0.6  # sekunder; växer exponentiellt per försök
-
-import numpy as np
-
-import http_pool
 
 log = logging.getLogger("freewispr")
 
