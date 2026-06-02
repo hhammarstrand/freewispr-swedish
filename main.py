@@ -862,6 +862,21 @@ def _quit(_=None):
 #  Main                                                                        #
 # --------------------------------------------------------------------------- #
 
+def _notify_already_running() -> None:
+    """Pop a modal 'already running' dialog (best-effort, Windows-only).
+
+    Extracted so tests can stub it: the underlying ``MessageBoxW`` is a
+    *blocking* modal that would hang a headless test run on Windows, while
+    silently no-op'ing on platforms without ``ctypes.windll``.
+    """
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(
+            0, "freewispr-swedish körs redan.", "freewispr-swedish", 0x40)
+    except Exception:
+        pass
+
+
 def main():
     global _tray_icon, _tk_root, _status_var, _indicator
 
@@ -873,12 +888,7 @@ def main():
     import single_instance
     if not single_instance.acquire():
         log.warning("freewispr-swedish körs redan — avslutar denna instans")
-        try:
-            import ctypes
-            ctypes.windll.user32.MessageBoxW(
-                0, "freewispr-swedish körs redan.", "freewispr-swedish", 0x40)
-        except Exception:
-            pass
+        _notify_already_running()
         return
 
     # Wire up file logging now (deferred from import time so tests can import

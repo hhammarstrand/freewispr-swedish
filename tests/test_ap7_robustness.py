@@ -175,6 +175,10 @@ def test_main_exits_early_when_locked(monkeypatch):
     import single_instance
     monkeypatch.setattr(single_instance, "acquire", lambda *a, **k: False)
 
+    # The 'already running' notice is a *blocking* modal on Windows; stub it
+    # so the early-exit path stays headless and non-blocking under test.
+    monkeypatch.setattr(main, "_notify_already_running", lambda: None)
+
     def _boom():
         raise AssertionError("main proceeded past the single-instance guard")
 
