@@ -10,7 +10,7 @@ import math
 import random
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 
 OUT = Path("docs/freewispr-swedish-demo.gif")

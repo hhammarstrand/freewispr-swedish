@@ -5,8 +5,6 @@ Vi mockar hela urllib-anropet så testerna inte rör nätverket.
 from __future__ import annotations
 
 import json
-import os
-from io import BytesIO
 from unittest.mock import patch
 from urllib import error as urlerror
 
