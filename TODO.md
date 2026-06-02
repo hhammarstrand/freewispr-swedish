@@ -464,3 +464,290 @@ Kompletterad med pre-launch-granskning 2026-05-27.
 
 - [x] `docs/vercel.json` — Vercel-config finns men Pages deployar via GitHub Actions.
   - Om Vercel inte används bör filen tas bort för att undvika förvirring.
+
+## Djupgranskning 2026-06-02 (hela repot) — konsoliderad
+
+Sammanslagning av tre oberoende djupgranskningar (hela kodbasen, inkl. moduler som
+tillkommit efter förra rundan: `flow.py`, `learning.py`, `snippets.py`, `modes.py`,
+`commands.py`, `voice_edit.py`, `http_pool.py`, `single_instance.py`, `updater.py`,
+`context_win.py`, `ui/qt_indicator*`). Dubbletter är sammanslagna; severity i hakparentes.
+Alla rader är verifierade mot källkoden.
+
+**Källtaggar:** `[OC]` = OpenCode/Claude-granskning · `[GPT]` = ChatGPT-granskning ·
+`[Gem]` = Gemini-granskning (flera taggar = samma fynd hittat oberoende av flera).
+
+### Kritiskt / hög prioritet (säkerhet + invarianter)
+
+- [ ] `text_sanitize.py:46-50` — `sanitize_output()` strippar bara ASCII/Latin-1 C0/C1.
+  Unicode bidi-overrides (U+202A–202E, U+2066–2069) och rad/stycke-separatorer
+  (U+2028/U+2029) passerar igenom. **[HIGH]** `[OC]` En komprometterad provider kan injicera
+  "Trojan Source"-sekvenser som visuellt kastar om inklistrad text (särskilt i kod).
+  Lägg dessa codepoints i `_STRIP_TABLE`.
+
+- [ ] `llm_polish.py:724-729` — `test_connection()` returnerar rå provider-`body`
+  (`f"HTTP {e.code} ({latency}ms): {body}"`) **osanerad** till Settings-UI. **[HIGH]** `[OC]`
+  Bryter invariant 2 (all provider-output till UI måste via `sanitize_output()`). Sanera bodyn.
+
+- [ ] `remote_transcribe.py:437,446-464,235` — `_http_message`/`test_connection` returnerar
+  rå provider-error-body osanerad till indikator/UI (`HTTP {code}: {snippet}`). **[HIGH]** `[OC]`
+  Samma invariant-2-brott som ovan. Kör error-snippet genom `sanitize_output()`.
+
+- [ ] `dictation.py:1214` + `ui/indicator.py:47-52` — `indicator.show(..., state="review")`
+  är en **5:e** indikator-state. `_COLORS`/`_set_static_bars` känner bara till
+  `listen/transcribe/done/error`. **[HIGH]** `[OC]` I "classic"/Tk-indikatorn faller "review"
+  tillbaka till blå + min-höjd-staplar (ser trasigt/idle ut). Bryter 4-state-invarianten —
+  mappa polish-väntan till `transcribe` i stället.
+
+- [ ] `single_instance.py:52-56` — `CreateMutexW`/`CloseHandle` anropas utan `restype`/
+  `argtypes` (HANDLE trunkeras till 32-bit på Win64) och använder `kernel32.GetLastError()`
+  i stället för `ctypes.get_last_error()` (modulen är inte byggd med `use_last_error=True`).
+  **[HIGH]** `[OC]` ctypes kan klottra last-error mellan anropen → falsk "kör redan" (blockerar
+  legitim start) eller missad dubbelinstans → två Whisper-modeller i VRAM (just det OOM
+  spärren ska förhindra). Sätt `argtypes/restype` till `wintypes.HANDLE`/`DWORD` och läs
+  felkoden via `ctypes.get_last_error()`.
+
+- [ ] `main.py:565-578` — modellreload binder `_transcriber = new_transcriber` **innan**
+  den gamla modellen släpps (`old_transcriber.close()` körs i separat daemon-tråd *efter*
+  rebind). **[HIGH]** `[OC]` Två `WhisperModel` lever samtidigt i VRAM → OOM på små CUDA-GPU:er.
+  Regression av den tidigare fixade punkten "Släpp gammal WhisperModel före rebind".
+
+- [ ] `http_pool.py:58` — `conn.timeout = timeout` på en **återanvänd** anslutning har ingen
+  effekt: `http.client` låser socket-timeout vid `connect()`. **[HIGH]** `[OC]` Warmer öppnar
+  socketen med 8 s timeout; en senare `transcribe(timeout_sec=60)` på samma varma anslutning
+  timeoutar ändå efter 8 s → legitima långa fjärrtranskriptioner failar. Öppna ny anslutning
+  vid längre timeout, eller stäng+återanslut när begärd timeout > anslutningens.
+
+- [ ] `ui/indicator.py:118-137,146-149` — `hide()`/`push_level()` anropar `self._root.after()`/
+  `after_cancel()` från keyboard-hook/worker/audio-trådar (ej Tk main-tråd). **[HIGH]** `[OC]` Kan ge
+  `RuntimeError: main thread is not in main loop` eller event-loop-korruption på icke-fritrådad
+  Tcl. `_pending_push`/`_last_push_ms` skrivs dessutom olåst från två trådar. Marshalla allt via
+  en main-thread-kö (`after` schemalagt enbart från main-tråden).
+
+- [ ] `main.py:836-858` — shutdown-/`_quit`-väg är trasig på två sätt: (a) `_quit` körs på
+  pystray-tray-daemontråden men anropar `_tk_root.quit()` **och** `destroy()` cross-thread och
+  `sys.exit(0)` i daemontråden (avslutar inte processen); (b) single-instance-låset släpps
+  **först** innan Flow, hotkeys, indikator, transcriber och tray rivits ned. **[HIGH/RACE]**
+  `[OC][GPT][Gem]` `destroy()` från fel tråd kan hänga/kasta Tcl-fel, och en ny process kan
+  starta medan den gamla fortfarande äger hooks/VRAM → dubbel hotkey-hantering eller två
+  Whisper-modeller. Signalera main-tråden att riva ner Tk och avsluta där, och släpp
+  single-instance-låset **sist** i en final cleanup efter teardown.
+
+- [ ] `ui/settings_window.py:1255-1268,1344-1347` — loopback/custom-LLM undantas korrekt från
+  nätverkssamtycke vid save, men undantaget sparas som `llm_privacy_accepted=True`.
+  **[HIGH/PRIVACY]** `[GPT]` Om användaren senare byter från lokal `http://localhost` till
+  GitHub/OpenAI/Staik/Berget kan tidigare lokalacceptans undertrycka remote-samtycket och text
+  skickas över nät utan ett nytt explicit ja. Spara inte loopback-undantaget som remote-samtycke;
+  spåra lokal endpoint som runtime-undantag eller kräv nytt samtycke när provider/base_url blir remote.
+
+- [ ] `context_win.py:231-235`, `dictation.py:1191-1194,1286-1289`, `llm_polish.py:295-299,498-500`,
+  `ui/settings_window.py:1147-1152` — kontextmedvetenhet extraherar namn från fönstertitel/
+  fokuserad text och skickar `onscreen_names` in i LLM-prompten när LLM-polish körs.
+  **[HIGH/PRIVACY]** `[GPT]` UI-texten säger "All skärmtext används lokalt", men med remote-LLM
+  lämnar dessa namn datorn. Lägg till separat samtycke/tydlig text för skärmnamn till remote-LLM,
+  eller skicka inte `onscreen_names` till LLM när providern inte är lokal loopback.
+
+- [ ] `transcriber.py:502-522`, `main.py:481-498` — LLM- och remote-STT-warmers startas med
+  snapshots av provider/base_url men läser samtidigt levande `self.*`-credentials i loopen, och
+  fast-path-inställningar stoppar inte befintliga warmer-trådar. **[HIGH/PRIVACY]** `[GPT]` Efter
+  provider/key/base_url-byte eller disable kan bakgrundstrådar fortsätta pinga gamla eller blandade
+  endpoints med fel nyckel. Stoppa/restarta warmers vid alla provider/key/base_url/model-ändringar
+  och använd en immutabel settings-snapshot per tråd.
+
+- [ ] `config.py:280-288,323-324` — migrationen `llm_model` -> `llm_model_github` uppdaterar bara
+  runtime-`cfg`, men skriver sedan den modifierade `data`-dicten där legacy-nyckeln poppats och den
+  nya nyckeln aldrig lagts in. **[HIGH/DATA-LOSS]** `[GPT]` En användares gamla modellval gäller bara
+  för aktuell process och försvinner efter nästa start. Persistiera migrerade nycklar i `data` eller
+  skriv en sanerad kopia av `cfg`.
+
+- [ ] `remote_transcribe.py:343-353`, `transcriber.py:883-889` — HTTP 200 med HTML, malformed JSON
+  eller JSON utan `text` returnerar `""` och blir i dikteringsflödet "Inget hördes". **[HIGH]** `[GPT]`
+  Provider-/proxyfel maskeras som tystnad, vilket gör felsökning och integritetsstatus missvisande.
+  Höj `RemoteTranscribeError` för 200-svar som inte innehåller användbar transkription.
+
+### Medel (hot path-race + robusthet)
+
+- [ ] `dictation.py:1027-1028` — voice-edit: `if len(audio) < MIN_AUDIO_SAMPLES: return`
+  återställer/döljer **inte** indikatorn (till skillnad från grann-grenarna). **[MEDIUM]** `[OC]`
+  Pillen fastnar i "Tolkar redigering…"/`transcribe`. Visa `error`/`done` + `hide()`.
+
+- [ ] `dictation.py:907-910,930-934` — `self._ctx_result` och `_live_*` är **enstaka delade
+  slots** som skrivs över vid nästa knapptryck (`_QUEUE_MAX=2`). **[MEDIUM]** `[OC]` Worker kan läsa
+  press#2:s kontext/live-partials för press#1:s transkription → fel app-profil/biasing.
+  Bind kontext/live-state till respektive jobb i stället för instans-attribut.
+
+- [ ] `dictation.py:641-669` — live-transcribe: `_live_loop` räknar `consumed` mot
+  `split_on_silence` av *växande* snapshots, men `_combine_live` re-splittar hela inspelningen
+  och avkodar `chunks[consumed:]`. **[MEDIUM]** `[OC]` Tystnadssegmenteringen glider när ljudet växer
+  → ord kan tappas/dubbleras; dessutom läses stale `_live_parts` om `t.join(timeout=5)` löper ut.
+
+- [ ] `config.py:298,301` — `cfg = {**DEFAULTS, **data}` / `DEFAULTS.copy()` är **grunda**.
+  Saknar `data` t.ex. `app_profiles` delas dict-objektet per referens med modulens `DEFAULTS`.
+  **[MEDIUM]** `[OC]` En caller som muterar `cfg["app_profiles"]` korrumperar `DEFAULTS` för hela
+  processen. Använd `copy.deepcopy(DEFAULTS)` (eller djup-merge).
+
+- [ ] `config.py:308,323-324` — `load()`:s migrations-skrivning (`save_json_atomic(CONFIG_FILE,…)`)
+  sker **utanför** `_save_lock`. **[MEDIUM]** `[OC]` En samtidig `save()` (Settings-flush) och en
+  migrerande `load()` ger lost-update. `save()` låstes medvetet för detta — låt även load()-skriv
+  ta `_save_lock`.
+
+- [ ] `json_store.py:95,103` — `load()` returnerar den interna cache-dicten **per referens**;
+  `save()` lagrar callerns dict per referens. **[MEDIUM]** `[OC]` Extern mutering desyncar cachen från
+  disk för alla läsare. Returnera/lagra en kopia (eller djupkopia).
+
+- [ ] `learning.py:119-145,161` — `add_hotwords()` gör icke-atomisk, **olåst** read-modify-write
+  av `hotwords.txt` (`write_text` direkt, ej temp+replace) och anropas utanför `_lock` från
+  `record_corrections`. **[MEDIUM]** `[OC]` Krasch mitt i skrivning korrumperar filen; samtidiga
+  observationer tappar hotwords. Skriv atomiskt under `_lock`.
+
+- [ ] `main.py:438,456-457 + olåsta läsare` — `_config` muteras under `_config_lock`
+  (`update()`, och `_rollback()` gör `clear()`+`update()`) men läses **olåst** i `_build_menu`,
+  `_set_tray_status`, `_make_dictation/_make_transcriber` och bakgrunds-`_reload`. **[MEDIUM]** `[OC]`
+  En läsare i gapet mellan `clear()` och `update()` ser tom dict → tysta default-fallbacks.
+  Snapshotta config eller läs under lås.
+
+- [ ] `main.py:493-497` — LLM-/remote-only-fast-path skriver `_transcriber.llm_*`/
+  `transcription_*` direkt utan `_model_lock`. **[MEDIUM]** `[OC]` En pågående `polish_async`/
+  `transcribe` kan göra torn read av provider+nyckel mitt i bytet → fel credentials mot fel
+  provider.
+
+- [ ] `ui/qt_indicator.py:151-176` — `_ensure_started()` saknar lås; `push_level` (audiotråd)
+  och `show` (worker) kan båda nå spawn-grenen → två Qt-barnprocesser, en läcker. **[MEDIUM]** `[OC]`
+  Lägg lås runt `self._process is None`-checken.
+
+- [ ] `ui/qt_indicator.py:178-188` — `_send()` skriver JSON-rader till barnets stdin från flera
+  trådar utan lås och utan non-blocking write. **[MEDIUM]** `[OC]` Om barnet stallar fylls pipe-bufferten
+  och `push_level`/`show`-tråden (hot path) blockerar. Serialisera writes + använd watchdog/
+  non-blocking.
+
+- [ ] `ui/settings_window.py:719-737,696-700,527-546` — async-trådars `root.after(0, lambda: …
+  .configure(...))` saknar widget-liveness-guard → `TclError` om Settings stängts; snabb
+  provider-växling racar resultat (äldre tråds resultat skriver över nyare). **[MEDIUM]** `[OC]` Lägg
+  `winfo_exists()`-guard + generation-token/cancellation.
+
+- [ ] `convert_model.py:71` — completeness-checken testar bara `model.bin`. **[MEDIUM]** `[OC]` Om
+  `model.bin` hämtas men en senare fil (`tokenizer.json`/`vocabulary.json`/…) failar lämnas en
+  "klar men trasig" modell; nästa körning hoppar över nedladdning och faster-whisper failar vid
+  load. Verifiera alla `_REQUIRED_FILES` (eller ladda till temp-dir + atomisk rename).
+
+- [ ] `transcriber.py:121-125` — `_patch_vocabulary` gör `vocab_path.replace(backup)` (flyttar
+  bort originalet) **före** att den trimmade filen skrivs. **[MEDIUM]** `[OC]` Om `json.dump` kraschar
+  (full disk/behörighet) lämnas snapshot:en med bara `vocabulary.json.orig` och inget
+  `vocabulary.json` → modellen går inte att ladda. Skriv ny fil först, byt sedan atomiskt.
+
+- [ ] `ui/settings_window.py:1355-1357` — `transcription_privacy_accepted` skrivs som `False` när
+  provider är `local`. **[MEDIUM/CONSENT]** `[GPT]` Det bryter designinvarianten att consent ska sparas
+  oberoende av om funktionen är aktiv; användaren tappar tidigare remote-STT-samtycke bara genom att
+  tillfälligt byta till lokal Whisper. Bevara befintligt consent vid local och ändra bara vid explicit
+  accept/revoke.
+
+- [ ] `ui/settings_window.py:1366-1378,1393-1406,1429-1431` — snippets, rättelser och personlig
+  kontext sparas innan `on_save(new_cfg)` validerar modell/config och innan huvudconfig persistieras.
+  **[MEDIUM/DATA-LOSS]** `[GPT]` Om modellreload eller config-save nekas blir settings-fönstret kvar med
+  rollbackad huvudconfig men sidofilerna är redan överskrivna. Stage:a sidofilsändringar tills `on_save`
+  lyckats, eller snapshotta och rollbacka dem vid fel.
+
+- [ ] `url_security.py:78-108`, `llm_polish.py:436`, `remote_transcribe.py:336,425` — custom `base_url`
+  tillåter querystring och fragment, t.ex. `https://host/v1?api_key=...`. **[MEDIUM/SECURITY]** `[GPT]`
+  API-nycklar eller routingdata i URL kan hamna i proxy-/serverloggar och path-konkateneringen blir
+  otydlig. Avvisa `?query` och `#fragment`; tillåt bara scheme, host, port och path-prefix och bygg
+  endpoints strukturerat.
+
+- [ ] `llm_polish.py:617-633,662-674` — `instruct()` och `test_connection()` anropar `_resolve_base_url()`
+  utanför fail-safe-`try`. **[MEDIUM]** `[GPT]` En ogiltig custom-URL kan kasta `ValueError` istället för
+  att kommandoläget returnerar originaltexten eller testet returnerar `(False, meddelande)`. Flytta
+  provider/base/model-resolution in i try-block eller fånga `ValueError` explicit.
+
+- [ ] `paste.py:82-118` — clipboard-restore-trådar saknar generation/token. **[MEDIUM/RACE]** `[GPT]`
+  Två snabba paste-operationer med `restore_clipboard=True` kan återställa urklippet i fel ordning så att
+  gammal clipboard eller föregående diktering vinner över den senaste. Ge varje paste en generation och
+  låt bara senaste restore köra.
+
+- [ ] `paste.py:178-221`, `dictation.py:425-453`, `voice_edit.py:34-76` — voice-edit läser markerad text
+  via globalt urklipp och skickar markerad text + instruktion till vald LLM. **[MEDIUM/PRIVACY]** `[GPT]`
+  Det är mer känsligt än vanlig diktering eftersom användaren kan ha markerat hemligheter/PII i en annan
+  app, och informationen kan exponeras både för clipboard-observers och remote-LLM. Lägg till explicit
+  voice-edit-disclosure/samtycke och överväg att kräva lokal LLM eller separat remote-acceptans.
+
+- [ ] `config.py:140-143`, `main.py:213-214`, `dictation.py:1132-1138`, `ui/settings_window.py:1240-1357`
+  — `context_to_remote_accepted` finns som config-gate för att skicka skärmnamn till remote-STT, men
+  Settings har ingen synlig kontroll och `_save()` persistierar inte fältet. **[MEDIUM/UX]** `[GPT]`
+  Funktionen kan i praktiken aldrig aktiveras via UI, så remote-STT får aldrig kontextnamn trots att kod
+  och tester stödjer det. Lägg till separat samtyckesruta eller ta bort död config-yta.
+
+- [ ] `remote_transcribe.py:151-174` — FLAC/Opus-kodningen flattenar flerkanaligt ljud med `reshape(-1)`
+  medan WAV-vägen mixar mono med `mean(axis=1)`. **[MEDIUM]** `[GPT]` Om någon anropar remote-encodern med
+  stereo/interleaved input korruptas tidsaxeln. Dela mono-normalisering mellan WAV/FLAC/Opus och testa
+  2D-audio.
+
+- [ ] `flow.py:179-185` (+ shutdown-väg ~122-136) — när Flow stoppas under `_process_audio()` gör
+  `if not self._active: pass` och fortsätter sedan transkribera/klistra chunks. **[MEDIUM]** `[GPT][Gem]`
+  Användaren kan få text inklistrad efter att Flow stängts av, och en stream-/worker-leak vid shutdown.
+  Om bara in-flight chunk ska flushas, gör det explicit en gång; annars `break`/`return` vid stopp och
+  städa strömmen.
+
+### Lägre prioritet (robusthet/kosmetik)
+
+- [ ] `remote_transcribe.py:426-429` — `test_connection` använder `urllib.request.urlopen` som
+  **följer redirects** och kan skicka `Authorization: Bearer` till redirect-målet. **[LOW]** `[OC]`
+  Använd no-redirect-vägen (som pool:en).
+
+- [ ] `http_pool.py:130-158` — globalt `_lock` hålls över hela nätverks-round-tripen → en 60 s
+  `transcribe()` blockerar `polish()`/warmers även mot annan origin. **[LOW/MEDIUM]** `[OC]` Lås per
+  origin/connection, inte globalt över I/O.
+
+- [ ] `http_pool.py:87,145,155` — `resp.read()`/SSE-loopen saknar storleksgräns. **[LOW/MEDIUM]** `[OC]`
+  Hostile/buggy provider kan strömma godtyckligt stor body → minnesutmattning på hot path. Inför
+  max-storlek.
+
+- [ ] `llm_polish.py:550-554` — provider-error-body loggas (`body[:200]`); vissa providers ekar
+  request-payload (transcript) i felsvar → kan läcka transcript till logg. **[LOW]** `[OC]` Brushar mot
+  invariant 6. Logga inte rå body, eller redigera.
+
+- [ ] `dictation.py:218` — `if "out of memory" in msg or "cuda" in msg and "memory" in msg:`
+  är funktionellt OK men oparentesterad precedens (RUF021). **[LOW]** `[OC]` Parentesera för tydlighet.
+
+- [ ] `migrate_context.py:46` — `if isinstance(v, str) and k` behåller whitespace-only nycklar
+  (`"   "` är truthy) → skräprad i genererad kontext. **[LOW]** `[OC][Gem]` Använd `k.strip()`.
+
+- [ ] `learning.py:153-159` — eviction vid `len > MAX_CORRECTIONS` slår på insättningsordning,
+  inte recency; ett ofta återkorrigerat gammalt ord kan vräkas före en engångs-ny post. **[LOW]** `[OC]`
+
+- [ ] `updater.py:194` — `tag.lstrip("v")` strippar en *teckenmängd*, inte prefixet. **[LOW]** `[OC]`
+  Använd `tag[1:] if tag.startswith("v") else tag`.
+
+- [ ] `ui/first_run.py:265-273,323,360-366` — `winfo_ismapped()`/`pack` körs oguardat efter
+  möjlig destroy → `TclError`; en nedladdning som blir klar *efter* cancel kastar resultatet
+  (`result` förblir `None`, behandlas som "avbruten"). **[LOW]** `[OC]`
+
+- [ ] `snippets.py:47-57` & `modes.py:73-89` — olåst read-modify-write (`dict(load()); …; save()`)
+  över delad `JsonCache`; två nära-samtidiga ändringar kan tappa en uppdatering. **[LOW]** `[OC]`
+
+- [ ] `config.py:213-216` — `_providers_validated`-flaggan läses/sätts utan lås (två samtidiga
+  `load()` kan validera två gånger). **[LOW]** `[OC]` Idempotent men osynkroniserat.
+
+- [ ] `llm_polish.py:190-218` — GitHub-token fallback kör `gh auth token` från `PATH` när explicit
+  LLM-nyckel saknas. **[LOW/SECURITY]** `[GPT]` En oväntad eller skadlig `gh.exe` tidigare i PATH kan
+  köras, och användaren får inte tydlig kontroll över att en bred GitHub CLI-token återanvänds för LLM.
+  Föredra explicit lagrad token eller resolvera `gh` via betrodd absolut sökväg och visa tydlig opt-in.
+
+### Bygg, release, supply chain & lint
+
+- [ ] `requirements.txt:4-16`, `.github/workflows/build-windows.yml:95-98` — releasebygget installerar
+  dependency-ranges från PyPI och opinnad `pyinstaller`, trots att äldre TODO-punkt om pinnade
+  dependency-versioner är markerad klar. **[LOW/MEDIUM SUPPLY-CHAIN]** `[GPT]` En ny package-release inom
+  intervallet kan hamna i EXE-bygget utan review. Skapa hash-låst requirements/constraints för release
+  och installera med `--require-hashes`.
+
+- [ ] `transcriber.py:140-149`, `convert_model.py:87-98`, `TODO.md:210-212` — TODO säger att
+  modellrevisioner/checksums är pinnade, men `KBLAB_REVISIONS` är fortfarande `None` för alla storlekar
+  och ingen SHA256-manifest verifieras. **[LOW/MEDIUM SUPPLY-CHAIN]** `[GPT]` Nedladdade modellartefakter
+  är inte reproducerbart låsta eller app-verifierade innan de laddas av ML-runtime. Pin:a revisions till
+  commit-SHA och verifiera förväntade filhashar.
+
+- [ ] `.github/workflows/pages.yml:48,51,54,60` — Pages-workflowen använder rörliga action-tags
+  (`@v4`, `@v5`, `@v3`) trots projektkonventionen att GitHub Actions ska SHA-pinnas med versionskommentar.
+  **[LOW SUPPLY-CHAIN]** `[GPT]` Pin:a actions på samma sätt som `build-windows.yml`.
+
+- [ ] `design/preview_indicator.py` (~79 fel: W293 trailing whitespace, F401, F841),
+  `make_demo_gif.py` (F401, RUF046), `tests/test_updater.py` (F401 `os`/`io.BytesIO`).
+  **[LOW]** `[OC]` Dessa ligger kvar och skulle fälla `ruff`-steget i CI. Städa eller exkludera dem.
