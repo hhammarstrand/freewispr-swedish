@@ -114,6 +114,9 @@ DEFAULTS = {
     "kblab_revision": "default",       # default | strict | subtitle (CT2-fallback)
     # Remote OpenAI-kompatibel path: temperatur (prompt byggs automatiskt).
     "transcription_temperature": 0.0,
+    # L5.2: uppladdningsformat för remote audio: wav (default) | flac | opus.
+    # flac/opus kräver soundfile; faller annars tillbaka till wav.
+    "remote_audio_format": "wav",
 
     # ---- Kommandoläge (AP5) ----
     # Tolka inledande kommandofraser ("gör det kortare" m.fl.) som redigering
@@ -143,6 +146,34 @@ DEFAULTS = {
     # Kontinuerlig diktering över pauser (endast lokal transkribering). Av som
     # default; togglas via tray-menyn när påslaget.
     "flow_mode_enabled": False,
+
+    # ---- Robusthet & saknade funktioner (AP7) ----
+    # Återställ användarens urklipp efter diktering (opt-in; av = dikterad text
+    # ligger kvar som CLI-fallback).
+    "restore_clipboard": False,
+    # Avbryt pågående inspelning (AP7.2). Aktiv endast medan inspelning pågår.
+    "cancel_hotkey": "esc",
+    # Behåll engelska facktermer bättre i svensk diktering (AP7.5, mitigering).
+    "expect_english_terms": False,
+    # Snippets / textexpansion (AP7.6) — par lagras i snippets.json.
+    "snippets_enabled": True,
+    # KP2: användardefinierade lägen (Superwhisper-stil) — definitioner lagras i
+    # modes.json, bindningar app→läge i app_profiles. Inget eget på/av-fält
+    # behövs (ett läge är aktivt bara om en app pekar på det).
+    # KP3: rösteditera markerad text. Egen hotkey: spela in instruktion, läs
+    # markeringen, kör LLM-omskrivning, ersätt. Tom = av. Kräver att LLM är på.
+    "voice_edit_hotkey": "",
+    # L5.5: trimma ledande/avslutande tystnad (RMS) före decode.
+    "silence_trim_enabled": True,
+    # L5.6: hoppa LLM-polish för triviala (korta, disfluensfria) yttranden.
+    "polish_skip_trivial": True,
+    "polish_skip_max_words": 6,
+    # L5.7: transkribera färdiga chunkar redan under inspelning (endast lokal).
+    # Av som default; experimentellt.
+    "live_transcribe_enabled": False,
+    # L5.8: BatchedInferencePipeline för längre klipp (faster-whisper). Av som
+    # default — mät innan du slår på. Faller tillbaka om klassen saknas.
+    "whisper_batched": False,
 
     "indicator_follow_mouse": True,
     # Lägsta RMS-nivå (0.0-1.0) som räknas som tal. Se DEFAULT_MIN_RMS i dictation.py.

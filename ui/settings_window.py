@@ -1,6 +1,7 @@
 """
 SettingsWindow — tabbed settings (hotkey, model, mic, GPU, LLM, transcription).
 """
+import logging
 import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
@@ -10,6 +11,8 @@ import config as cfg_module
 from ui.styles import BG, BG2, BG3, FG, FG2, ACC, ACC2, FONT, _style, apply_window_icon
 from ui._ctk import ctk, _CTK_AVAILABLE
 from ui.hotkey_capture import _HotkeyCapture
+
+log = logging.getLogger("freewispr")
 
 
 # -- lazy import helpers ---------------------------------------------------- #
@@ -155,6 +158,10 @@ class SettingsWindow:
             value=c.get("command_mode_enabled", True)
         )
         self._flow_var = tk.BooleanVar(value=c.get("flow_mode_enabled", False))
+        # AP7 toggles
+        self._restore_clip_var = tk.BooleanVar(value=c.get("restore_clipboard", False))
+        self._expect_english_var = tk.BooleanVar(value=c.get("expect_english_terms", False))
+        self._snippets_var = tk.BooleanVar(value=c.get("snippets_enabled", True))
 
     def _stringvar(self, value: str = "") -> tk.StringVar:
         v = tk.StringVar()
@@ -318,6 +325,7 @@ class SettingsWindow:
             tab_tr = self._tabs.add("Transkribering")
             tab_ctx = self._tabs.add("Kontext")
             tab_smart = self._tabs.add("Smart")
+            tab_snip = self._tabs.add("Snippets")
         else:
             self._tabs = ttk.Notebook(outer)
             self._tabs.pack(fill="both", expand=True)
@@ -326,17 +334,20 @@ class SettingsWindow:
             tab_tr = ttk.Frame(self._tabs)
             tab_ctx = ttk.Frame(self._tabs)
             tab_smart = ttk.Frame(self._tabs)
+            tab_snip = ttk.Frame(self._tabs)
             self._tabs.add(tab_general, text="Allmänt")
             self._tabs.add(tab_llm, text="LLM-granskning")
             self._tabs.add(tab_tr, text="Transkribering")
             self._tabs.add(tab_ctx, text="Kontext")
             self._tabs.add(tab_smart, text="Smart")
+            self._tabs.add(tab_snip, text="Snippets")
 
         self._build_general(tab_general)
         self._build_llm(tab_llm)
         self._build_transcription(tab_tr)
         self._build_context(tab_ctx)
         self._build_smart(tab_smart)
+        self._build_snippets(tab_snip)
 
         # Bottom button row
         btn_row = self._frame(outer)
@@ -1147,6 +1158,72 @@ class SettingsWindow:
                    "tray-menyn när det är aktiverat här.").pack(
             anchor="w", padx=6, pady=(2, 8))
 
+        self._heading(parent, "Övrigt (AP7)").pack(anchor="w", **pad)
+        self._switch(parent, "Återställ urklipp efter diktering",
+                     self._restore_clip_var).pack(anchor="w", padx=6, pady=(6, 0))
+        self._hint(parent, "Lägger tillbaka det du hade i urklippet. OBS: tar "
+                   "bort \"klistra manuellt\"-fallbacken i terminaler.").pack(
+            anchor="w", padx=6, pady=(2, 4))
+        self._switch(parent, "Förvänta engelska facktermer",
+                     self._expect_english_var).pack(anchor="w", padx=6, pady=(6, 0))
+        self._hint(parent, "Biasar igenkänning + behåller engelska facktermer "
+                   "(deploy, staging, pull request …) i svensk diktering.").pack(
+            anchor="w", padx=6, pady=(2, 4))
+        self._switch(parent, "Snippets / textexpansion",
+                     self._snippets_var).pack(anchor="w", padx=6, pady=(6, 0))
+        self._hint(parent, "Expandera ledande fraser till längre text. "
+                   "Redigeras under fliken Snippets.").pack(
+            anchor="w", padx=6, pady=(2, 8))
+
+    def _build_snippets(self, parent):
+        pad = {"padx": 6, "pady": (10, 0)}
+
+        self._heading(parent, "Snippets (textexpansion)").pack(anchor="w", **pad)
+        self._hint(parent, "En rad per snippet: trigger => expansion. Den "
+                   "ledande frasen ersätts med expansionen vid diktering.").pack(
+            anchor="w", padx=6, pady=(2, 4))
+        if _CTK_AVAILABLE:
+            self._snip_textbox = ctk.CTkTextbox(parent, height=140, wrap="word")
+        else:
+            self._snip_textbox = tk.Text(parent, height=8, wrap="word")
+        self._snip_textbox.pack(fill="both", expand=True, padx=6, pady=(0, 8))
+        try:
+            from snippets import load as _load_snips
+            lines = [f"{k} => {v}" for k, v in _load_snips().items()]
+            if lines:
+                self._snip_textbox.insert("1.0", "\n".join(lines))
+        except Exception:
+            pass
+
+        self._heading(parent, "Inlärda rättelser").pack(anchor="w", **pad)
+        self._hint(parent, "En rad per rättelse: fel => rätt. Ta bort en rad "
+                   "för att glömma den.").pack(anchor="w", padx=6, pady=(2, 4))
+        if _CTK_AVAILABLE:
+            self._corr_textbox = ctk.CTkTextbox(parent, height=140, wrap="word")
+        else:
+            self._corr_textbox = tk.Text(parent, height=8, wrap="word")
+        self._corr_textbox.pack(fill="both", expand=True, padx=6, pady=(0, 4))
+        try:
+            from learning import load_corrections as _load_corr
+            lines = [f"{k} => {v}" for k, v in _load_corr().items()]
+            if lines:
+                self._corr_textbox.insert("1.0", "\n".join(lines))
+        except Exception:
+            pass
+
+    @staticmethod
+    def _parse_pairs(raw: str) -> dict:
+        """Parse 'key => value' lines into a dict (AP7.6/7.7 editors)."""
+        out = {}
+        for line in (raw or "").splitlines():
+            if "=>" not in line:
+                continue
+            k, _, v = line.partition("=>")
+            k, v = k.strip(), v.strip()
+            if k and v:
+                out[k] = v
+        return out
+
     def _clear_learned(self):
         try:
             from learning import clear_learned
@@ -1274,9 +1351,26 @@ class SettingsWindow:
             tr_pid != "local" and self._tr_consent_var.get()
         )
 
-        # Smart features (AP1/AP2/AP3/AP5/AP6 + L3)
+        # Smart features (AP1/AP2/AP3/AP5/AP6 + L3 + AP7)
         new_cfg["llm_raw_mode"] = self._raw_mode_var.get()
         new_cfg["llm_replace_mode"] = self._replace_mode_var.get()
+        new_cfg["restore_clipboard"] = self._restore_clip_var.get()
+        new_cfg["expect_english_terms"] = self._expect_english_var.get()
+        new_cfg["snippets_enabled"] = self._snippets_var.get()
+
+        # AP7.6/7.7: persist the snippet + corrections editors (own files).
+        try:
+            if hasattr(self, "_snip_textbox"):
+                from snippets import save as _save_snips
+                _save_snips(self._parse_pairs(self._snip_textbox.get("1.0", "end-1c")))
+        except Exception as e:
+            log.warning("Kunde inte spara snippets: %s", e)
+        try:
+            if hasattr(self, "_corr_textbox"):
+                from learning import set_corrections
+                set_corrections(self._parse_pairs(self._corr_textbox.get("1.0", "end-1c")))
+        except Exception as e:
+            log.warning("Kunde inte spara rättelser: %s", e)
         new_cfg["learning_enabled"] = self._learning_var.get()
         new_cfg["context_awareness_enabled"] = self._context_var.get()
         new_cfg["command_mode_enabled"] = self._command_var.get()

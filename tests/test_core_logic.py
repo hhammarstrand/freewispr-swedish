@@ -303,6 +303,10 @@ def test_main_apply_settings_serialised(monkeypatch):
 
     pytest.importorskip("PIL")
     pytest.importorskip("pystray")
+    # main imports tkinter at module load; without it reload(main) raises
+    # ModuleNotFoundError. Gate on tkinter too so this skips cleanly on any
+    # environment missing the full GUI stack (matches test_ap7_robustness).
+    pytest.importorskip("tkinter")
     main = importlib.reload(importlib.import_module("main"))
 
     assert isinstance(main._config_lock, type(_th.Lock()))
@@ -439,6 +443,7 @@ def test_config_save_fails_if_secret_delete_fails(tmp_path):
 def test_llm_only_save_failure_restores_transcriber_state(monkeypatch):
     pytest.importorskip("PIL")
     pytest.importorskip("pystray")
+    pytest.importorskip("tkinter")
     main = importlib.reload(importlib.import_module("main"))
     old_state = {
         "hotkey": "ctrl+space",
@@ -577,6 +582,7 @@ def test_dictation_wait_mode_pastes_polished_not_raw(monkeypatch):
     mode.indicator = None
     mode.on_status = lambda msg: None
     mode.llm_enabled = True
+    mode.polish_skip_trivial = False
     monkeypatch.setattr(dictation, "paste_text",
                         lambda text, active_modifiers=(): pasted.append(text))
 
@@ -619,6 +625,7 @@ def test_dictation_wait_mode_watchdog_pastes_raw_on_timeout(monkeypatch):
     mode.indicator = None
     mode.on_status = lambda msg: None
     mode.llm_enabled = True
+    mode.polish_skip_trivial = False
     monkeypatch.setattr(dictation, "paste_text",
                         lambda text, active_modifiers=(): pasted.append(text))
     # Shrink watchdog so the test doesn't wait 15 s.
