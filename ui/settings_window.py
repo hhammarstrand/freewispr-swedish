@@ -183,7 +183,9 @@ class SettingsWindow:
         as usual.
         """
         if _CTK_AVAILABLE:
-            return ctk.CTkScrollableFrame(parent, fg_color="transparent")
+            frame = ctk.CTkScrollableFrame(parent, fg_color="transparent")
+            frame.pack(fill="both", expand=True)
+            return frame
 
         # Plain-tk fallback: Canvas + Scrollbar + inner Frame.
         canvas = tk.Canvas(parent, bg=BG, highlightthickness=0, bd=0)
@@ -317,6 +319,17 @@ class SettingsWindow:
 
         self._heading(outer, "Inställningar").pack(anchor="w", pady=(0, 12))
 
+        # Pin the button row to the bottom *before* the tabs so Spara/Avbryt
+        # stay visible on short screens even when a tab overflows.
+        btn_row = self._frame(outer)
+        btn_row.pack(side="bottom", fill="x", pady=(14, 0))
+        self._button(btn_row, "Avbryt", self.root.destroy).pack(
+            side="right", padx=(8, 0)
+        )
+        self._button(btn_row, "Spara", self._save, primary=True).pack(
+            side="right"
+        )
+
         if _CTK_AVAILABLE:
             self._tabs = ctk.CTkTabview(outer, anchor="nw")
             self._tabs.pack(fill="both", expand=True)
@@ -342,22 +355,14 @@ class SettingsWindow:
             self._tabs.add(tab_smart, text="Smart")
             self._tabs.add(tab_snip, text="Snippets")
 
-        self._build_general(tab_general)
-        self._build_llm(tab_llm)
-        self._build_transcription(tab_tr)
+        # Wrap overflow-prone tabs in a scrollable frame. Kontext is left
+        # unwrapped because its textbox already expands to fill the tab.
+        self._build_general(self._scrollable(tab_general))
+        self._build_llm(self._scrollable(tab_llm))
+        self._build_transcription(self._scrollable(tab_tr))
         self._build_context(tab_ctx)
-        self._build_smart(tab_smart)
-        self._build_snippets(tab_snip)
-
-        # Bottom button row
-        btn_row = self._frame(outer)
-        btn_row.pack(fill="x", pady=(14, 0))
-        self._button(btn_row, "Avbryt", self.root.destroy).pack(
-            side="right", padx=(8, 0)
-        )
-        self._button(btn_row, "Spara", self._save, primary=True).pack(
-            side="right"
-        )
+        self._build_smart(self._scrollable(tab_smart))
+        self._build_snippets(self._scrollable(tab_snip))
 
     # ------- Tab: Allmänt --------------------------------------------------- #
 
