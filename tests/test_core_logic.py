@@ -366,10 +366,17 @@ def test_pyinstaller_build_bundles_icon_for_tk_taskbar():
     repo = Path(__file__).resolve().parents[1]
     build_bat = (repo / "build.bat").read_text(encoding="utf-8")
     workflow = (repo / ".github" / "workflows" / "build-windows.yml").read_text(encoding="utf-8")
-    spec = (repo / "freewispr-swedish.spec").read_text(encoding="utf-8")
 
     assert '--add-data "assets/icon.ico;assets"' in build_bat
     assert '--add-data "assets/icon.ico;assets"' in workflow
+
+    # freewispr-swedish.spec is a machine-specific PyInstaller artifact and is
+    # gitignored (*.spec), so it is absent on CI. Only assert on it when a local
+    # spec exists.
+    spec_path = repo / "freewispr-swedish.spec"
+    if not spec_path.exists():
+        pytest.skip("freewispr-swedish.spec is gitignored and absent (CI/build artifact)")
+    spec = spec_path.read_text(encoding="utf-8")
     assert "('assets/icon.ico', 'assets')" in spec
 
 
