@@ -107,6 +107,75 @@ def invalidate_device_cache() -> None:
     _hostapis_cache = None
 
 
+def _reinit_portaudio() -> None:
+    """Best-effort re-init of PortAudio so its device table + default device
+    reflect the *current* OS state (mics plugged/unplugged, default switched).
+
+    sounddevice/PortAudio snapshot the device list at init and never refresh
+    it on their own, so without this the app keeps following whatever was the
+    default when the process started. Teams stays current because it talks to
+    the Windows audio engine directly; this is our equivalent. Private API,
+    so it's guarded and a no-op when unavailable (e.g. the test stub).
+    """
+    try:
+        if hasattr(sd, "_terminate") and hasattr(sd, "_initialize"):
+            sd._terminate()
+            sd._initialize()
+    except Exception as e:
+        log.debug("PortAudio re-init hoppades över: %s", e)
+
+
+# Endpoints auto-select must never pick: the Realtek "Stereo Mix" loopback
+# (records system *output*, not the mic) and nameless phantom WDM-KS endpoints
+# Windows exposes as "<something> ()" — they open but deliver silence/0 samples.
+_BLACKLIST_SUBSTR = ("stereo mix",)
+
+
+def _is_blacklisted_input(name: str) -> bool:
+    """True for input endpoints auto-select should skip (loopback/phantoms).
+
+    Explicit user selection is *not* filtered through here — only the auto
+    fallback is, so a user who deliberately picks "Stereo Mix" still gets it.
+    """
+    n = (name or "").strip().lower()
+    if not n:
+        return True
+    if any(s in n for s in _BLACKLIST_SUBSTR):
+        return True
+    # "Mikrofonuppsättning 1 ()", "Input ()": empty device descriptor = phantom.
+    if n.endswith("()"):
+        return True
+    return False
+
+
+def _default_input_index() -> int | None:
+    """Windows default INPUT device index, or None. This is what Teams follows
+    so swapping the default mic (laptop ↔ Yealink ↔ AirPods) is seamless."""
+    try:
+        dev = sd.default.device
+    except Exception:
+        return None
+    try:
+        idx = dev[0] if isinstance(dev, (list, tuple)) else dev
+    except (TypeError, IndexError):
+        return None
+    return idx if isinstance(idx, int) and idx >= 0 else None
+
+
+def _default_input_name() -> str | None:
+    """Name of the Windows default input device, or None."""
+    idx = _default_input_index()
+    if idx is None:
+        return None
+    try:
+        devs = _devices()
+        if 0 <= idx < len(devs):
+            return devs[idx]["name"] or None
+    except Exception:
+        pass
+    return None
+
+
 def _api_priority() -> dict[int, int]:
     """Map host-api index -> priority (lower = better)."""
     prio = {}
@@ -125,6 +194,8 @@ def list_input_devices() -> list[dict]:
     devices = []
     for i, dev in enumerate(_devices()):
         if dev["max_input_channels"] < 1:
+            continue
+        if _is_blacklisted_input(dev["name"]):
             continue
         devices.append({
             "index": i,
@@ -232,6 +303,10 @@ class MicRecorder:
         # (which would put Windows into communications mode and degrade
         # audio quality / duck other apps).
         self._cached_spec: tuple[int, int, int, str] | None = None  # (dev, rate, ch, label)
+        # Windows default-input index we last resolved against (auto mode only).
+        # When the OS default changes between recordings we drop the cached spec
+        # and re-probe so dictation follows the new mic, the way Teams does.
+        self._auto_default_index: int | None = None
 
     def start(self):
         """Start recording. Tries multiple device/channel combos until one works.
@@ -258,6 +333,19 @@ class MicRecorder:
         self._buffer_overflow = False
         self.recording = True
 
+        # Auto mode: follow the OS default input device. If Windows' default
+        # changed since the last recording, drop the cached spec so we re-probe
+        # and pick up the new mic (laptop ↔ Yealink ↔ AirPods) like Teams.
+        auto_mode = self._device_name is None and self._device_index is None
+        if auto_mode:
+            cur_default = _default_input_index()
+            if (self._auto_default_index is not None
+                    and cur_default != self._auto_default_index
+                    and self._cached_spec is not None):
+                log.info("Standard-mik bytt (idx %s → %s) — väljer om enhet",
+                         self._auto_default_index, cur_default)
+                self._cached_spec = None
+
         # Fast path: try the cached winning spec first. If the device was
         # unplugged or the driver state changed we fall through to the full
         # probe loop below.
@@ -275,6 +363,14 @@ class MicRecorder:
                          "kör ny probe", e)
                 self._cached_spec = None
 
+        # Fresh probe: refresh PortAudio's snapshot so we see the current OS
+        # default + any plugged/unplugged mics. Only on the slow path, so
+        # cached repeats stay fast and this stays off the transcribe→paste hot
+        # path (it runs at record *start*, while the user is still pressing).
+        if auto_mode:
+            _reinit_portaudio()
+            invalidate_device_cache()
+
         candidates = self._build_candidates()
         last_err = None
 
@@ -287,6 +383,10 @@ class MicRecorder:
                 self._rate = rate
                 # Cache the winning spec so the next start() skips the probe.
                 self._cached_spec = (dev_idx, rate, ch, label)
+                if auto_mode:
+                    # Record the (possibly re-indexed) default we resolved
+                    # against so the next start compares against a stable value.
+                    self._auto_default_index = _default_input_index()
                 log.info("Inspelning startad: %s (dev=%d, %dHz, %dch)",
                          label, dev_idx, rate, ch)
                 return
@@ -336,17 +436,27 @@ class MicRecorder:
                     if entry not in candidates:
                         candidates.append(entry)
 
-        # Then try all input devices sorted by API preference
+        # Then try all input devices sorted by API preference, but follow the
+        # Windows default input device first (like Teams) and skip loopback /
+        # phantom endpoints so auto never lands on something silent.
+        default_name = None
+        if self._device_name is None and self._device_index is None:
+            default_name = _default_input_name()
+
         prio = _api_priority()
         all_devs = []
         for i, dev in enumerate(devs):
             if dev["max_input_channels"] < 1:
                 continue
+            if _is_blacklisted_input(dev["name"]):
+                continue
             rank = prio.get(dev["hostapi"], 99)
-            all_devs.append((rank, i, dev))
-        all_devs.sort(key=lambda x: x[0])
+            # 0 = this is the OS default input device → try its endpoints first.
+            is_default = 0 if (default_name and dev["name"] == default_name) else 1
+            all_devs.append((is_default, rank, i, dev))
+        all_devs.sort(key=lambda x: (x[0], x[1], x[2]))
 
-        for _, i, dev in all_devs:
+        for _is_default, _rank, i, dev in all_devs:
             rate = int(dev["default_samplerate"])
             for ch in sorted(set([1, dev["max_input_channels"]])):
                 label = f"{dev['name']} (auto)"

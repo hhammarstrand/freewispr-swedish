@@ -104,6 +104,9 @@ class SettingsWindow:
         self._indicator_follow_var = tk.BooleanVar(
             value=c.get("indicator_follow_mouse", True)
         )
+        self._indicator_style_var = tk.StringVar(
+            value=c.get("indicator_style", "modern")
+        )
         self._model_var = tk.StringVar(value=c.get("model_size", "small"))
         self._cuda_var = tk.BooleanVar(value=c.get("use_cuda", True))
         self._mic_var = tk.StringVar()  # filled in _build_general
@@ -135,6 +138,14 @@ class SettingsWindow:
         self._tr_consent_var = tk.BooleanVar(
             value=c.get("transcription_privacy_accepted", False)
         )
+        style_map = {
+            "classic": "Klassisk (Tkinter-staplar)",
+            "modern": "Modern (Slate Gray)",
+            "transparent": "Transparent (Endast våg)",
+        }
+        current_style = self._indicator_style_var.get()
+        current_label = style_map.get(current_style, "Modern (Slate Gray)")
+        self._indicator_style_label_var = tk.StringVar(value=current_label)
 
         # Smart features (AP1/AP2/AP3/AP5/AP6)
         self._raw_mode_var = tk.BooleanVar(value=c.get("llm_raw_mode", False))
@@ -162,6 +173,48 @@ class SettingsWindow:
         if _CTK_AVAILABLE:
             return ctk.CTkFrame(parent, fg_color="transparent")
         return tk.Frame(parent, bg=BG)
+
+    def _scrollable(self, parent):
+        """Return a frame whose content scrolls vertically when it overflows.
+
+        Lets tabs taller than the window stay reachable on short screens
+        instead of pushing the Spara/Avbryt row off the bottom edge. The
+        returned widget is the *inner* content frame — pack children into it
+        as usual.
+        """
+        if _CTK_AVAILABLE:
+            frame = ctk.CTkScrollableFrame(parent, fg_color="transparent")
+            frame.pack(fill="both", expand=True)
+            return frame
+
+        # Plain-tk fallback: Canvas + Scrollbar + inner Frame.
+        canvas = tk.Canvas(parent, bg=BG, highlightthickness=0, bd=0)
+        scrollbar = tk.Scrollbar(parent, orient="vertical",
+                                 command=canvas.yview)
+        inner = tk.Frame(canvas, bg=BG)
+
+        inner.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all")),
+        )
+        window = canvas.create_window((0, 0), window=inner, anchor="nw")
+        canvas.bind(
+            "<Configure>",
+            lambda e: canvas.itemconfigure(window, width=e.width),
+        )
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        def _on_wheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        canvas.bind("<Enter>",
+                    lambda e: canvas.bind_all("<MouseWheel>", _on_wheel))
+        canvas.bind("<Leave>",
+                    lambda e: canvas.unbind_all("<MouseWheel>"))
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+        return inner
 
     def _label(self, parent, text, **kw):
         if _CTK_AVAILABLE:
@@ -266,6 +319,17 @@ class SettingsWindow:
 
         self._heading(outer, "Inställningar").pack(anchor="w", pady=(0, 12))
 
+        # Pin the button row to the bottom *before* the tabs so Spara/Avbryt
+        # stay visible on short screens even when a tab overflows.
+        btn_row = self._frame(outer)
+        btn_row.pack(side="bottom", fill="x", pady=(14, 0))
+        self._button(btn_row, "Avbryt", self.root.destroy).pack(
+            side="right", padx=(8, 0)
+        )
+        self._button(btn_row, "Spara", self._save, primary=True).pack(
+            side="right"
+        )
+
         if _CTK_AVAILABLE:
             self._tabs = ctk.CTkTabview(outer, anchor="nw")
             self._tabs.pack(fill="both", expand=True)
@@ -291,22 +355,14 @@ class SettingsWindow:
             self._tabs.add(tab_smart, text="Smart")
             self._tabs.add(tab_snip, text="Snippets")
 
-        self._build_general(tab_general)
-        self._build_llm(tab_llm)
-        self._build_transcription(tab_tr)
+        # Wrap overflow-prone tabs in a scrollable frame. Kontext is left
+        # unwrapped because its textbox already expands to fill the tab.
+        self._build_general(self._scrollable(tab_general))
+        self._build_llm(self._scrollable(tab_llm))
+        self._build_transcription(self._scrollable(tab_tr))
         self._build_context(tab_ctx)
-        self._build_smart(tab_smart)
-        self._build_snippets(tab_snip)
-
-        # Bottom button row
-        btn_row = self._frame(outer)
-        btn_row.pack(fill="x", pady=(14, 0))
-        self._button(btn_row, "Avbryt", self.root.destroy).pack(
-            side="right", padx=(8, 0)
-        )
-        self._button(btn_row, "Spara", self._save, primary=True).pack(
-            side="right"
-        )
+        self._build_smart(self._scrollable(tab_smart))
+        self._build_snippets(self._scrollable(tab_snip))
 
     # ------- Tab: Allmänt --------------------------------------------------- #
 
@@ -330,8 +386,21 @@ class SettingsWindow:
             anchor="w", padx=6, pady=(6, 0)
         )
         self._hint(parent, "Av = fast position överst på huvudskärmen.").pack(
-            anchor="w", padx=6, pady=(2, 8)
+            anchor="w", padx=6, pady=(2, 6)
         )
+
+        self._label(parent, "Stil").pack(anchor="w", padx=6, pady=(4, 0))
+        indicator_styles = [
+            "Klassisk (Tkinter-staplar)",
+            "Modern (Slate Gray)",
+            "Transparent (Endast våg)",
+        ]
+        self._combobox(
+            parent,
+            self._indicator_style_label_var,
+            indicator_styles,
+            width=240,
+        ).pack(anchor="w", padx=6, pady=(2, 8))
 
         # Mikrofon
         self._label(parent, "Mikrofon",
@@ -378,6 +447,111 @@ class SettingsWindow:
                    "Samma toggle finns i tray-menyn.").pack(
             anchor="w", padx=6, pady=(2, 8)
         )
+
+        # Om & uppdateringar
+        self._label(parent, "Om appen",
+                    font=ctk.CTkFont(weight="bold") if _CTK_AVAILABLE else None
+                    ).pack(anchor="w", **pad)
+
+        try:
+            from main import __version__ as _app_version
+        except Exception:
+            _app_version = "okänd"
+
+        self._version_label = self._hint(
+            parent, f"freewispr-swedish v{_app_version}"
+        )
+        self._version_label.pack(anchor="w", padx=6, pady=(4, 0))
+
+        self._update_status_label = self._hint(parent, "")
+        self._update_status_label.pack(anchor="w", padx=6, pady=(2, 4))
+
+        self._update_button = self._button(
+            parent, "Sök efter uppdateringar",
+            command=self._on_check_updates,
+        )
+        self._update_button.pack(anchor="w", padx=6, pady=(2, 8))
+
+        # Visa befintligt cachat resultat direkt om main redan hittat en
+        # uppdatering. Anropet är synkront och berör bara process-globaler.
+        self._refresh_update_status()
+
+    def _refresh_update_status(self):
+        """Uppdatera etiketten under versionen baserat på _pending_update i main."""
+        try:
+            from main import _pending_update
+        except Exception:
+            _pending_update = None
+        if _pending_update is not None:
+            self._update_status_label.configure(
+                text=f"Ny version v{_pending_update.version} finns att hämta — "
+                     f"klicka i tray-menyn för att öppna release-sidan."
+            )
+        else:
+            self._update_status_label.configure(text="Du har senaste versionen.")
+
+    def _on_check_updates(self):
+        """Knappen: kör en manuell update-check i bakgrunden och visa resultatet."""
+        import threading
+
+        try:
+            self._update_button.configure(state="disabled", text="Söker...")
+        except Exception:
+            pass
+        self._update_status_label.configure(text="Kontrollerar GitHub...")
+
+        def _worker():
+            info = None
+            try:
+                from updater import check_for_update
+                from main import __version__ as _v
+                info = check_for_update(_v, force=True)
+            except Exception as e:
+                err = str(e)
+                def _show_err():
+                    self._update_status_label.configure(
+                        text=f"Kunde inte söka: {err}"
+                    )
+                    try:
+                        self._update_button.configure(
+                            state="normal", text="Sök efter uppdateringar"
+                        )
+                    except Exception:
+                        pass
+                try:
+                    self.root.after(0, _show_err)
+                except Exception:
+                    pass
+                return
+
+            def _apply():
+                # Synka mot main._pending_update så tray-menyn och Settings
+                # visar samma sak.
+                try:
+                    import main as _main
+                    if info is not None:
+                        _main._pending_update = info
+                        try:
+                            _main._rebuild_menu()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+                self._refresh_update_status()
+                try:
+                    self._update_button.configure(
+                        state="normal", text="Sök efter uppdateringar"
+                    )
+                except Exception:
+                    pass
+
+            try:
+                self.root.after(0, _apply)
+            except Exception:
+                pass
+
+        threading.Thread(target=_worker, name="settings-update-check",
+                         daemon=True).start()
 
     def _update_mic_info(self):
         name = self._mic_var.get()
@@ -1135,6 +1309,14 @@ class SettingsWindow:
         new_cfg["model_size"] = self._model_var.get()
         new_cfg["use_cuda"] = self._cuda_var.get()
         new_cfg["indicator_follow_mouse"] = self._indicator_follow_var.get()
+
+        style_map = {
+            "Klassisk (Tkinter-staplar)": "classic",
+            "Modern (Slate Gray)": "modern",
+            "Transparent (Endast våg)": "transparent",
+        }
+        picked_style_label = self._indicator_style_label_var.get()
+        new_cfg["indicator_style"] = style_map.get(picked_style_label, "modern")
 
         mic = self._mic_var.get()
         if mic == "Auto":

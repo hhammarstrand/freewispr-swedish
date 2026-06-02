@@ -322,6 +322,64 @@ def test_main_apply_settings_serialised(monkeypatch):
     assert holds == [True]
 
 
+def test_apply_window_icon_lazily_loads_taskbar_photo(monkeypatch, tmp_path):
+    """Settings can be created outside the root-icon path; the visible
+    Toplevel still needs iconphoto(), otherwise Windows shows Python in
+    the taskbar."""
+    styles = importlib.reload(importlib.import_module("ui.styles"))
+    icon_path = tmp_path / "assets" / "icon.ico"
+    icon_path.parent.mkdir()
+    icon_path.write_bytes(b"fake icon; loader is mocked")
+    calls = []
+
+    class FakeWindow:
+        def iconbitmap(self, path):
+            calls.append(("bitmap", path))
+
+        def iconphoto(self, default, photo):
+            calls.append(("photo", default, photo))
+
+        def after(self, delay, fn):
+            calls.append(("after", delay, fn))
+
+    monkeypatch.setattr(styles, "_resolve_icon_path", lambda: icon_path)
+    monkeypatch.setattr(styles, "_load_largest_ico_frame_as_photo", lambda root: "photo")
+    styles._root_photo = None
+
+    styles.apply_window_icon(FakeWindow())
+
+    assert ("bitmap", str(icon_path)) in calls
+    assert ("photo", False, "photo") in calls
+    delayed = [call for call in calls if call[0] == "after"]
+    assert len(delayed) == 1
+    assert delayed[0][1] == 500
+
+    calls.clear()
+    delayed[0][2]()
+    assert ("bitmap", str(icon_path)) in calls
+    assert ("photo", False, "photo") in calls
+
+
+def test_pyinstaller_build_bundles_icon_for_tk_taskbar():
+    """--icon brands the exe, but Tk taskbar icons need icon.ico available
+    as runtime data under assets/ too."""
+    repo = Path(__file__).resolve().parents[1]
+    build_bat = (repo / "build.bat").read_text(encoding="utf-8")
+    workflow = (repo / ".github" / "workflows" / "build-windows.yml").read_text(encoding="utf-8")
+
+    assert '--add-data "assets/icon.ico;assets"' in build_bat
+    assert '--add-data "assets/icon.ico;assets"' in workflow
+
+    # freewispr-swedish.spec is a machine-specific PyInstaller artifact and is
+    # gitignored (*.spec), so it is absent on CI. Only assert on it when a local
+    # spec exists.
+    spec_path = repo / "freewispr-swedish.spec"
+    if not spec_path.exists():
+        pytest.skip("freewispr-swedish.spec is gitignored and absent (CI/build artifact)")
+    spec = spec_path.read_text(encoding="utf-8")
+    assert "('assets/icon.ico', 'assets')" in spec
+
+
 def test_config_load_keeps_legacy_secret_when_keyring_migration_fails(tmp_path):
     config = importlib.reload(importlib.import_module("config"))
     config.CONFIG_DIR = tmp_path

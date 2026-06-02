@@ -9,7 +9,7 @@ import keyboard
 import numpy as np
 
 from audio import MicRecorder, finalize_audio
-from paste import paste_text
+from paste import paste_text, replace_len_for
 from modifiers import normalize_all, is_modifier
 from transcriber import Transcriber
 import sounds
@@ -107,6 +107,32 @@ def _text_meta(text: str) -> str:
     return f"chars={len(text)}, words={words}"
 
 
+# Short, human-friendly names for the status pill. The provider ids stored in
+# config (``staik``, ``github``, …) are fine for code but look unpolished in the
+# UI. We keep these short — the full labels in llm_polish/remote_transcribe
+# (e.g. "staik.se (SE)") are too long for a compact pill.
+_PROVIDER_DISPLAY_NAMES = {
+    "github": "GitHub Models",
+    "staik":  "Staik",
+    "berget": "Berget AI",
+    "openai": "OpenAI",
+    "custom": "egen server",
+}
+
+
+def _provider_status_label(provider: str) -> str:
+    """Return the suffix shown after Transkriberar/Polerar for a provider.
+
+    ``local`` becomes "lokalt" (nothing leaves the machine); every remote
+    provider becomes "via <Namn>" so the user always sees where the text/audio
+    is going.
+    """
+    if provider == "local":
+        return "lokalt"
+    name = _PROVIDER_DISPLAY_NAMES.get(provider, provider)
+    return f"via {name}"
+
+
 MIN_AUDIO_SAMPLES = 3200   # 0.2 s at 16 kHz — ignore accidental taps
 # Default RMS gate. Audio quieter than this is treated as silence and dropped
 # without invoking Whisper (saves ~1 s of CPU per phantom press).
@@ -174,6 +200,21 @@ def _friendly_transcribe_error(exc: Exception) -> str:
         or "modellen verkar korrupt" in msg
     ):
         return raw
+    # Remote-provider errors already carry a short, user-facing Swedish
+    # message (e.g. "Serverfel (HTTP 502)", "Ogiltig API-nyckel (HTTP 401)",
+    # "Nätverksfel: ..."). Pass these through verbatim so the user sees the
+    # real cause instead of a misleading "Inget hördes".
+    if (
+        "serverfel" in msg
+        or "servern tillfälligt otillgänglig" in msg
+        or "rate limit" in msg
+        or "åtkomst nekad" in msg
+        or "modellen finns inte" in msg
+        or "ljudfilen är för stor" in msg
+        or "filformatet stöds inte" in msg
+        or raw.startswith("Nätverksfel")
+    ):
+        return raw
     if "out of memory" in msg or "cuda" in msg and "memory" in msg:
         return "GPU-minne slut — byt till en mindre modell i Inställningar"
     if "no module named" in msg:
@@ -221,6 +262,7 @@ class DictationMode:
                  app_profiles: dict | None = None,
                  command_mode_enabled: bool = True,
                  llm_replace_mode: bool = False,
+                 context_to_remote_accepted: bool = False,
                  cancel_hotkey: str = "esc",
                  snippets_enabled: bool = True,
                  silence_trim_enabled: bool = True,
@@ -247,6 +289,12 @@ class DictationMode:
         self.learning_enabled = learning_enabled
         self.app_profiles = app_profiles or {}
         self.command_mode_enabled = command_mode_enabled
+        # Privacy: on-screen names (AP3) are scraped from the screen and may
+        # contain data from other apps. They are a separate consent category
+        # from the audio (transcription_privacy_accepted). When False, names are
+        # never forwarded to a *remote* STT provider as a biasing prompt; the
+        # local decoder always receives them (nothing leaves the machine).
+        self.context_to_remote_accepted = context_to_remote_accepted
         # AP7.2 cancel key (only active while recording); AP7.3 pause (session
         # state, not persisted — hotkey becomes a no-op while paused).
         self.cancel_hotkey = cancel_hotkey
@@ -503,10 +551,10 @@ class DictationMode:
             return False
         if self._worker_stop.is_set() or not self._active:
             return True
-        # Replace the previous block: backspace over it (+1 for the trailing
-        # space paste_text adds), then paste the transformed text.
+        # Replace the previous block: backspace over exactly what we pasted
+        # (paste_text strips + adds a trailing space), then paste the result.
         paste_text(result, active_modifiers=self._modifier_keys,
-                   replace_len=len(prev_block) + 1)
+                   replace_len=replace_len_for(prev_block))
         self._last_block = result
         self._last_pasted = result
         msg = f"Kommando: {cmd.phrase}"
@@ -552,7 +600,7 @@ class DictationMode:
                     and self._last_pasted == raw_text):
                 t_r0 = time.monotonic()
                 paste_text(polished, active_modifiers=self._modifier_keys,
-                           replace_len=len(raw_text) + 1)
+                           replace_len=replace_len_for(raw_text))
                 self._last_pasted = polished
                 self._last_block = polished
                 replace_ms = (time.monotonic() - t_r0) * 1000
@@ -1072,18 +1120,30 @@ class DictationMode:
             # transparency that audio is leaving the machine, regardless
             # of whether LLM polish is enabled.
             tr_provider = getattr(self.transcriber, "transcription_provider", "local")
-            tr_label = "lokalt" if tr_provider == "local" else f"via {tr_provider}"
+            tr_label = _provider_status_label(tr_provider)
             if llm_enabled or tr_provider != "local":
                 self.on_status(f"Transkriberar {tr_label}…")
                 if self.indicator:
                     self.indicator.show(f"Transkriberar {tr_label}…", state="transcribe")
+            # Privacy gate: on-screen names bias the local decoder freely (they
+            # never leave the machine), but are only forwarded to a *remote* STT
+            # provider when the user has explicitly consented — they are a
+            # separate data category from the audio itself.
+            stt_hotwords = onscreen_names
+            if tr_provider != "local" and not getattr(
+                    self, "context_to_remote_accepted", False):
+                if onscreen_names:
+                    log.debug("Skärmnamn skickas ej till remote-STT "
+                              "(medgivande saknas)")
+                stt_hotwords = ""
             if getattr(self, "_live_active", False):
                 # L5.7: most of the audio was already decoded during recording;
-                # only the tail remains.
+                # only the tail remains. Live mode is local-only, so the remote
+                # privacy gate above is a no-op there (stt_hotwords == names).
                 text = self._combine_live(audio)
             else:
                 text = self.transcriber.transcribe(
-                    audio, capitalize=capitalize, extra_hotwords=onscreen_names)
+                    audio, capitalize=capitalize, extra_hotwords=stt_hotwords)
             transcribe_ms = (time.monotonic() - t_tx0) * 1000
             log.info("Resultat klart (%s)", _text_meta(text))
             if text.strip():
@@ -1145,9 +1205,13 @@ class DictationMode:
                     # appears, but they get exactly one paste of the final
                     # text. Watchdog falls back to pasting the raw transcript
                     # if polish hangs past 15s.
-                    self.on_status("LLM-granskar…")
+                    # Mirror the transcription status: name where the text is
+                    # going so the user always sees which service polishes it.
+                    llm_provider = getattr(self.transcriber, "llm_provider", "local")
+                    polish_label = _provider_status_label(llm_provider)
+                    self.on_status(f"Polerar {polish_label}…")
                     if self.indicator:
-                        self.indicator.show("LLM-granskar…", state="transcribe")
+                        self.indicator.show(f"Polerar {polish_label}…", state="review")
 
                     polish_lock = threading.Lock()
                     polish_completed = {"done": False}
@@ -1184,7 +1248,7 @@ class DictationMode:
                         self.on_status(f"{msg} — håll {self.hotkey.upper()} igen")
                         if self.indicator:
                             self.indicator.show(msg, state="done")
-                            self.indicator.hide(delay_ms=1800)
+                            self.indicator.hide(delay_ms=950)
 
                     def _watchdog_fallback() -> None:
                         with polish_lock:
@@ -1245,7 +1309,7 @@ class DictationMode:
                     self.on_status(f"{message} — håll {self.hotkey.upper()} igen")
                     if self.indicator:
                         self.indicator.show(message, state="done")
-                        self.indicator.hide(delay_ms=1800)
+                        self.indicator.hide(delay_ms=950)
             else:
                 self.on_status(f"Inget hördes — håll {self.hotkey.upper()}")
                 if self.indicator:

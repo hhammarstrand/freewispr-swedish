@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <!-- Definitions for gradients -->
+  <defs>
+    <radialGradient id="cyan-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00f0ff" stop-opacity="0.95"/>
+      <stop offset="60%" stop-color="#00f0ff" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#00f0ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="magenta-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff007f" stop-opacity="0.95"/>
+      <stop offset="60%" stop-color="#ff007f" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#ff007f" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="purple-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.95"/>
+      <stop offset="60%" stop-color="#8b5cf6" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="gold-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.95"/>
+      <stop offset="60%" stop-color="#f59e0b" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="blur-effect">
+      <feGaussianBlur stdDeviation="3" />
+    </filter>
+  </defs>
+
+  <!-- Background Windows 11 Card Representation (rx="8" instead of rx="30") -->
+  <rect width="100" height="100" rx="8" fill="#10141c" stroke="rgba(255,255,255,0.11)" stroke-width="1.5"/>
+
+  <!-- Glowing Blending Orbs with Blur and Screen Mode -->
+  <g filter="url(#blur-effect)" style="mix-blend-mode: screen;">
+    <!-- Purple Orb -->
+    <circle cx="50" cy="50" r="28" fill="url(#purple-glow)">
+      <animateTransform attributeName="transform" type="translate" values="-4,-4; 4,4; -3,5; -4,-4" dur="5s" repeatCount="indefinite" />
+      <animate attributeName="r" values="24;32;24" dur="4s" repeatCount="indefinite" />
+    </circle>
+    <!-- Cyan Orb -->
+    <circle cx="50" cy="50" r="26" fill="url(#cyan-glow)">
+      <animateTransform attributeName="transform" type="translate" values="4,4; -4,-4; 3,-5; 4,4" dur="4.2s" repeatCount="indefinite" />
+      <animate attributeName="r" values="26;20;26" dur="3.5s" repeatCount="indefinite" />
+    </circle>
+    <!-- Magenta Orb -->
+    <circle cx="50" cy="50" r="24" fill="url(#magenta-glow)">
+      <animateTransform attributeName="transform" type="translate" values="-6,3; 6,-3; -4,-5; -6,3" dur="4.8s" repeatCount="indefinite" />
+      <animate attributeName="r" values="20;28;20" dur="4.5s" repeatCount="indefinite" />
+    </circle>
+    <!-- Gold Orb -->
+    <circle cx="50" cy="50" r="22" fill="url(#gold-glow)">
+      <animateTransform attributeName="transform" type="translate" values="3,-5; -5,3; 4,4; 3,-5" dur="5.5s" repeatCount="indefinite" />
+      <animate attributeName="r" values="22;18;22" dur="5s" repeatCount="indefinite" />
+    </circle>
+  </g>
+
+  <!-- Mic Icon Overlay for contrast -->
+  <g fill="#ffffff" transform="translate(36, 35)">
+    <!-- Shadow for icon readability -->
+    <rect x="8" y="4" width="12" height="18" rx="4" fill="#10141c" opacity="0.4" transform="translate(-2,-2) scale(1.2)" />
+    <!-- Mic Body -->
+    <rect x="10" y="5" width="8" height="13" rx="4" fill="#ffffff" />
+    <!-- Mic Stand -->
+    <path d="M5,12 A7,7 0 0,0 23,12" stroke="#ffffff" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+    <line x1="14" y1="20" x2="14" y2="24" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"/>
+    <line x1="9" y1="24" x2="19" y2="24" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round"/>
+  </g>
+</svg>

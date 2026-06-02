@@ -265,3 +265,135 @@ def test_remote_transcribe_custom_requires_base_url():
     with pytest.raises(rt.RemoteTranscribeError):
         rt.transcribe(audio, 16000, provider="custom",
                       api_key="tok", model="x", base_url_override="")
+
+
+# --------------------------------------------------------------------------- #
+#  Server-error visibility (regression: HTTP 502 showed "Inget hördes")
+# --------------------------------------------------------------------------- #
+
+def test_transcriber_remote_reraises_server_error(monkeypatch):
+    """A failing remote request must propagate the error, NOT return "".
+
+    Regression: a 502 used to be swallowed into an empty string, which the
+    dictation layer rendered as "Inget hördes" — falsely telling the user the
+    mic was silent when it was actually a server failure.
+
+    Calls the unbound ``_transcribe_remote`` against a lightweight stand-in to
+    avoid constructing the full Transcriber (which imports torch).
+    """
+    transcriber = importlib.import_module("transcriber")
+    rt = importlib.import_module("remote_transcribe")
+
+    def boom(*a, **k):
+        raise rt.RemoteTranscribeError("Serverfel (HTTP 502)")
+
+    monkeypatch.setattr(rt, "transcribe", boom)
+
+    stub = SimpleNamespace(
+        transcription_provider="staik",
+        transcription_api_key="tok",
+        transcription_model="kb-whisper-large",
+        transcription_base_url="",
+        language="sv",
+        on_stage=None,
+    )
+
+    audio = np.ones(8000, dtype=np.float32) * 0.2
+    with pytest.raises(rt.RemoteTranscribeError) as exc:
+        transcriber.Transcriber._transcribe_remote(stub, audio)
+    assert "502" in str(exc.value)
+
+
+def test_friendly_error_surfaces_server_error_not_silence():
+    """_friendly_transcribe_error must report a server error verbatim, never
+    map it to a silence/"Inget hördes" style message."""
+    dictation = importlib.import_module("dictation")
+    rt = importlib.import_module("remote_transcribe")
+
+    msg = dictation._friendly_transcribe_error(
+        rt.RemoteTranscribeError("Serverfel (HTTP 502)"))
+    assert "Serverfel" in msg
+    assert "HTTP 502" in msg
+    assert "hörde" not in msg.lower()
+
+
+# --------------------------------------------------------------------------- #
+#  Retry on transient 5xx (502/503/504)
+# --------------------------------------------------------------------------- #
+
+def _http_error(rt, code):
+    return rt.urllib.error.HTTPError(
+        url="https://api.staik.se/v1/audio/transcriptions",
+        code=code, msg="x", hdrs=None, fp=io.BytesIO(b""),
+    )
+
+
+class _FakeResp:
+    def __init__(self, body): self._body = body
+    def __enter__(self): return self
+    def __exit__(self, *a): return False
+    def read(self): return self._body
+
+
+def test_retry_recovers_after_transient_502(monkeypatch):
+    """Two 502s followed by a 200 must succeed transparently after retries."""
+    rt = importlib.reload(importlib.import_module("remote_transcribe"))
+    monkeypatch.setattr(rt.time, "sleep", lambda *_: None)
+
+    calls = {"n": 0}
+
+    def fake_request(*a, **k):
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise _http_error(rt, 502)
+        return json.dumps({"text": "Hej"}).encode("utf-8")
+
+    monkeypatch.setattr(rt.http_pool, "request", fake_request)
+
+    audio = np.ones(8000, dtype=np.float32) * 0.2
+    text = rt.transcribe(audio, 16000, provider="staik", api_key="tok")
+
+    assert text == "Hej"
+    assert calls["n"] == 3
+
+
+def test_retry_exhausts_and_raises_on_persistent_503(monkeypatch):
+    """Persistent 503 must retry up to the cap, then raise."""
+    rt = importlib.reload(importlib.import_module("remote_transcribe"))
+    monkeypatch.setattr(rt.time, "sleep", lambda *_: None)
+
+    calls = {"n": 0}
+
+    def fake_request(*a, **k):
+        calls["n"] += 1
+        raise _http_error(rt, 503)
+
+    monkeypatch.setattr(rt.http_pool, "request", fake_request)
+
+    audio = np.ones(8000, dtype=np.float32) * 0.2
+    with pytest.raises(rt.RemoteTranscribeError) as exc:
+        rt.transcribe(audio, 16000, provider="staik", api_key="tok")
+
+    assert calls["n"] == rt._MAX_ATTEMPTS
+    assert "503" in str(exc.value)
+
+
+def test_no_retry_on_client_error_401(monkeypatch):
+    """A 401 must fail immediately without burning retry attempts."""
+    rt = importlib.reload(importlib.import_module("remote_transcribe"))
+    monkeypatch.setattr(rt.time, "sleep", lambda *_: None)
+
+    calls = {"n": 0}
+
+    def fake_request(*a, **k):
+        calls["n"] += 1
+        raise _http_error(rt, 401)
+
+    monkeypatch.setattr(rt.http_pool, "request", fake_request)
+
+    audio = np.ones(8000, dtype=np.float32) * 0.2
+    with pytest.raises(rt.RemoteTranscribeError) as exc:
+        rt.transcribe(audio, 16000, provider="staik", api_key="tok")
+
+    assert calls["n"] == 1
+    assert "401" in str(exc.value)

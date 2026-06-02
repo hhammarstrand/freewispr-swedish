@@ -10,7 +10,9 @@ log = logging.getLogger(__name__)
 
 # Resolve once at import time. The .ico lives in the repo at assets/icon.ico
 # and is bundled into the frozen app under the same relative assets path.
-_ICON_PATH = Path(__file__).resolve().parent.parent / "assets" / "icon.ico"
+def _resolve_icon_path() -> Path:
+    return Path(__file__).resolve().parent.parent / "assets" / "icon.ico"
+
 
 # Windows AppUserModelID. Without this, Windows groups our pythonw.exe
 # process under Python's own AUMID and shows the Python logo in the
@@ -45,11 +47,12 @@ def _load_largest_ico_frame_as_photo(root):
     Windows uses the iconphoto() image — so we extract the biggest
     frame from the .ico via Pillow and hand it to Tk.
     """
-    if not _ICON_PATH.exists():
+    icon_path = _resolve_icon_path()
+    if not icon_path.exists():
         return None
     try:
         from PIL import Image, ImageTk
-        with Image.open(_ICON_PATH) as im:
+        with Image.open(icon_path) as im:
             # .ico containers expose sizes via im.ico.entry; pick the largest.
             try:
                 sizes = im.ico.sizes()
@@ -85,11 +88,12 @@ def apply_window_icon(window) -> None:
     Failures are logged at debug level and never raised — a wrong icon
     must not break the UI.
     """
-    if not _ICON_PATH.exists():
-        log.debug("Ikon saknas: %s", _ICON_PATH)
+    icon_path = _resolve_icon_path()
+    if not icon_path.exists():
+        log.debug("Ikon saknas: %s", icon_path)
         return
 
-    path_str = str(_ICON_PATH)
+    path_str = str(icon_path)
 
     def _set_icon() -> None:
         try:
@@ -101,6 +105,8 @@ def apply_window_icon(window) -> None:
         # Re-apply the PhotoImage too. iconbitmap controls the titlebar;
         # iconphoto controls the taskbar / Alt-Tab on Windows.
         global _root_photo
+        if _root_photo is None:
+            _root_photo = _load_largest_ico_frame_as_photo(window)
         if _root_photo is not None:
             try:
                 window.iconphoto(False, _root_photo)
@@ -128,10 +134,11 @@ def apply_root_icon(root) -> None:
     be right from the start.
     """
     _set_app_user_model_id()
-    if not _ICON_PATH.exists():
+    icon_path = _resolve_icon_path()
+    if not icon_path.exists():
         return
     try:
-        root.iconbitmap(default=str(_ICON_PATH))
+        root.iconbitmap(default=str(icon_path))
     except Exception as exc:  # pragma: no cover
         log.debug("Kunde inte sätta default-ikon på root: %s", exc)
     # Load PhotoImage once and stash a strong ref. Apply to root and to

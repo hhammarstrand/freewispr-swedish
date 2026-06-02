@@ -1,0 +1,91 @@
+<svg width="820" height="260" viewBox="0 0 820 260" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="pillShadow" x="-20%" y="-80%" width="140%" height="260%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#000" flood-opacity=".30"/>
+    </filter>
+    <filter id="orbBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2"/>
+    </filter>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbfaf7"/>
+      <stop offset="1" stop-color="#f2efe8"/>
+    </linearGradient>
+    <linearGradient id="pillFill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="1" stop-color="#0d1118"/>
+    </linearGradient>
+
+    <radialGradient id="orbCore" cx="0.4" cy="0.35" r="0.7">
+      <stop offset="0"    stop-color="#fff7c2"/>
+      <stop offset="0.35" stop-color="#FECC02"/>
+      <stop offset="0.75" stop-color="#3b8fd6"/>
+      <stop offset="1"    stop-color="#006AA7"/>
+    </radialGradient>
+    <radialGradient id="orbHalo" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0"    stop-color="#FECC02" stop-opacity="0.55"/>
+      <stop offset="0.55" stop-color="#3b8fd6" stop-opacity="0.30"/>
+      <stop offset="1"    stop-color="#006AA7" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="shimmer" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0"    stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.45" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="0.50" stop-color="#ffffff" stop-opacity="0.85"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="1"    stop-color="#ffffff" stop-opacity="0"/>
+    </linearGradient>
+    <mask id="textMask">
+      <rect width="100%" height="100%" fill="black"/>
+      <text x="78" y="34" font-family="Segoe UI, Arial" font-weight="700" font-size="16" fill="white">Transkriberar</text>
+    </mask>
+
+    <style>
+      .title{fill:#111827;font:700 24px 'Segoe UI',Arial}
+      .desc{fill:#5f6878;font:400 14px 'Segoe UI',Arial}
+      .label{fill:#e6ecf2;font:700 16px 'Segoe UI',Arial}
+    </style>
+  </defs>
+
+  <rect fill="url(#bg)" width="820" height="260"/>
+  <text x="34" y="46" class="title">2. Siri Orb Bloom</text>
+  <text x="34" y="74" class="desc">Ikonen ersätts av pulserande gradient-orb · två motroterande halvringar · halo-blur · inspiration: Siri</text>
+
+  <g transform="translate(34 130)">
+    <rect width="232" height="56" rx="19" fill="url(#pillFill)" filter="url(#pillShadow)"/>
+    <rect x="14" y="1" width="204" height="1" fill="#ffffff" fill-opacity="0.18"/>
+
+    <!-- Outer breathing halo -->
+    <circle cx="40" cy="28" r="22" fill="url(#orbHalo)" filter="url(#orbBlur)">
+      <animate attributeName="r" values="18;24;18" dur="1.8s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.6;1;0.6" dur="1.8s" repeatCount="indefinite"/>
+    </circle>
+
+    <!-- Two counter-rotating ring arcs -->
+    <g transform="translate(40 28)">
+      <g>
+        <path d="M -16 0 A 16 16 0 0 1 16 0" fill="none" stroke="#FECC02" stroke-width="2.2" stroke-linecap="round" opacity="0.9"/>
+        <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="2.2s" repeatCount="indefinite"/>
+      </g>
+      <g>
+        <path d="M -13 0 A 13 13 0 0 1 13 0" fill="none" stroke="#7aa6ff" stroke-width="1.8" stroke-linecap="round" opacity="0.85"/>
+        <animateTransform attributeName="transform" type="rotate" from="360" to="0" dur="2.8s" repeatCount="indefinite"/>
+      </g>
+    </g>
+
+    <!-- Central orb -->
+    <circle cx="40" cy="28" r="10" fill="url(#orbCore)">
+      <animate attributeName="r" values="8.5;11.5;8.5" dur="1.8s" repeatCount="indefinite"/>
+    </circle>
+    <!-- Specular highlight -->
+    <ellipse cx="37" cy="25" rx="3" ry="2" fill="#ffffff" opacity="0.55"/>
+
+    <!-- Label -->
+    <text x="78" y="34" class="label">Transkriberar</text>
+
+    <g mask="url(#textMask)">
+      <rect x="-120" y="0" width="120" height="56" fill="url(#shimmer)">
+        <animate attributeName="x" from="-120" to="232" dur="2.2s" repeatCount="indefinite"/>
+      </rect>
+    </g>
+  </g>
+</svg>

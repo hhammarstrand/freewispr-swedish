@@ -1,0 +1,11 @@
+<svg width="760" height="220" viewBox="0 0 760 220" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="pill" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#20242d"/><stop offset="1" stop-color="#151820"/></linearGradient>
+    <linearGradient id="blueYellow" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#006AA7"/><stop offset="1" stop-color="#FECC02"/></linearGradient>
+    <style>.bg{fill:#0f1117}.pill{fill:url(#pill)}.label{fill:#eaedf2;font:700 15px 'Segoe UI',Arial}.title{fill:#f4f6fb;font:700 22px 'Segoe UI',Arial}.desc{fill:#98a2b3;font:400 14px 'Segoe UI',Arial}</style>
+  </defs>
+  <rect class="bg" width="760" height="220"/><text x="34" y="42" class="title">1. Signal Capsule</text><text x="34" y="68" class="desc">Ren, kompakt live-signal och diskret progress.</text>
+  <g transform="translate(34,112)"><rect class="pill" width="180" height="54" rx="20"/><rect x="17" y="17" width="40" height="20" rx="10" fill="#006AA7" opacity=".18"/><path d="M22 27 H30 C32 20 35 20 37 27 S42 34 45 27 H52" fill="none" stroke="#40C7FF" stroke-width="2.4" stroke-linecap="round"/><path d="M34 39 H47" fill="none" stroke="#FECC02" stroke-width="2.2" stroke-linecap="round"/><text x="74" y="33" class="label">Lyssnar</text></g>
+  <g transform="translate(268,112)"><rect class="pill" width="218" height="54" rx="20"/><rect x="18" y="18" width="42" height="18" rx="9" fill="#006AA7" opacity=".14"/><path d="M23 27 H55" fill="none" stroke="#2e3a49" stroke-width="2.5" stroke-linecap="round"/><path d="M23 27 H43" fill="none" stroke="url(#blueYellow)" stroke-width="2.5" stroke-linecap="round"/><circle cx="50" cy="27" r="3" fill="#FECC02"/><text x="74" y="33" class="label">Transkriberar</text></g>
+  <g transform="translate(540,112)"><rect class="pill" width="218" height="54" rx="20"/><rect x="19" y="16" width="38" height="22" rx="11" fill="#006AA7" opacity=".13"/><path d="M26 30 L33 23 L41 31 L50 21" fill="none" stroke="#FECC02" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/><circle cx="26" cy="30" r="2.3" fill="#7F9B55"/><circle cx="50" cy="21" r="2.3" fill="#FECC02"/><text x="74" y="33" class="label">LLM-granskar</text></g>
+</svg>

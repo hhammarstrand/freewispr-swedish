@@ -1,0 +1,201 @@
+<svg width="1500" height="1180" viewBox="0 0 1500 1180" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="premiumShadow" x="-18%" y="-70%" width="136%" height="240%">
+      <feDropShadow dx="0" dy="18" stdDeviation="22" flood-color="#111827" flood-opacity="0.16"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#111827" flood-opacity="0.08"/>
+    </filter>
+    <filter id="darkShadow" x="-18%" y="-70%" width="136%" height="240%">
+      <feDropShadow dx="0" dy="18" stdDeviation="24" flood-color="#000000" flood-opacity="0.30"/>
+    </filter>
+    <filter id="edgeGlow" x="-40%" y="-120%" width="180%" height="340%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="siteBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbfaf7"/>
+      <stop offset="1" stop-color="#f2efe8"/>
+    </linearGradient>
+    <linearGradient id="frostPill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.96"/>
+      <stop offset="1" stop-color="#f5f2ea" stop-opacity="0.92"/>
+    </linearGradient>
+    <linearGradient id="darkPill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="0.55" stop-color="#172235"/>
+      <stop offset="1" stop-color="#0d1118"/>
+    </linearGradient>
+    <linearGradient id="blueGold" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#006AA7"/>
+      <stop offset="0.65" stop-color="#2b88b9"/>
+      <stop offset="1" stop-color="#FECC02"/>
+    </linearGradient>
+    <linearGradient id="softBlue" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#006AA7" stop-opacity="0.10"/>
+      <stop offset="0.5" stop-color="#006AA7" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#FECC02" stop-opacity="0.26"/>
+    </linearGradient>
+    <radialGradient id="blueWash" cx="22%" cy="50%" r="70%">
+      <stop offset="0" stop-color="#006AA7" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#006AA7" stop-opacity="0"/>
+    </radialGradient>
+    <style>
+      .page { fill: url(#siteBg); }
+      .ink { fill: #111827; }
+      .muted { fill: #5f6878; }
+      .card { fill: rgba(255,255,255,0.74); stroke: #e6e1d8; stroke-width: 1; }
+      .pill-light { fill: url(#frostPill); stroke: #e6e1d8; stroke-width: 1; filter: url(#premiumShadow); }
+      .pill-dark { fill: url(#darkPill); filter: url(#darkShadow); }
+      .label-dark { fill: #111827; font: 760 15px 'Segoe UI', Arial, sans-serif; letter-spacing: -0.02em; }
+      .label-light { fill: #f8fafc; font: 760 15px 'Segoe UI', Arial, sans-serif; letter-spacing: -0.02em; }
+      .eyebrow { fill: #006AA7; font: 700 11px 'Cascadia Mono', Consolas, monospace; letter-spacing: 0.09em; text-transform: uppercase; }
+      .title { fill: #111827; font: 760 25px 'Segoe UI', Arial, sans-serif; letter-spacing: -0.04em; }
+      .desc { fill: #5f6878; font: 400 14px 'Segoe UI', Arial, sans-serif; }
+      .small { fill: #667085; font: 600 12px 'Segoe UI', Arial, sans-serif; }
+      .round { stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+
+  <rect class="page" width="1500" height="1180"/>
+  <circle cx="235" cy="130" r="210" fill="url(#blueWash)"/>
+  <text x="72" y="64" class="eyebrow">PREMIUM DIRECTIONS</text>
+  <text x="72" y="104" class="title">Indicator concepts closer to the website language</text>
+  <text x="72" y="132" class="desc">Mjukare, mer product-card/frosted, subtil svensk blå/gul accent. Varje rad: Lyssnar, Transkriberar, LLM-granskar.</text>
+
+  <!-- 1 -->
+  <g transform="translate(70,180)">
+    <rect class="card" width="1360" height="150" rx="30"/>
+    <text x="30" y="40" class="eyebrow">01 PRODUCT CARD PILL</text>
+    <text x="30" y="72" class="title" font-size="20">Website-native: ljus frosted pill, elegant och tydlig</text>
+    <text x="30" y="98" class="desc">Bra om appindikatorn ska kännas som webbsidans produktkort snarare än en system-widget.</text>
+    <g transform="translate(520,48)">
+      <rect class="pill-light" width="178" height="56" rx="19"/>
+      <rect x="17" y="17" width="40" height="22" rx="11" fill="#f2efe8" stroke="#e6e1d8"/>
+      <path d="M24 29 C27 19 31 39 35 29 S43 19 47 29" fill="none" stroke="#006AA7" stroke-width="2.4" class="round"/>
+      <path d="M38 42 H51" stroke="#FECC02" stroke-width="2.4" class="round"/>
+      <text x="73" y="34" class="label-dark">Lyssnar</text>
+    </g>
+    <g transform="translate(740,48)">
+      <rect class="pill-light" width="230" height="56" rx="19"/>
+      <rect x="18" y="23" width="44" height="10" rx="5" fill="#f2efe8" stroke="#e6e1d8"/>
+      <rect x="18" y="23" width="28" height="10" rx="5" fill="url(#blueGold)"/>
+      <circle cx="51" cy="28" r="3.5" fill="#FECC02"/>
+      <text x="77" y="34" class="label-dark">Transkriberar</text>
+    </g>
+    <g transform="translate(1010,48)">
+      <rect class="pill-light" width="230" height="56" rx="19"/>
+      <path d="M24 35 H30 C33 23 38 23 41 35 H47 C49 30 52 27 57 25" fill="none" stroke="#006AA7" stroke-width="2.3" class="round"/>
+      <path d="M50 25 H61" stroke="#FECC02" stroke-width="2.3" class="round"/>
+      <text x="77" y="34" class="label-dark">LLM-granskar</text>
+    </g>
+  </g>
+
+  <!-- 2 -->
+  <g transform="translate(70,360)">
+    <rect class="card" width="1360" height="150" rx="30"/>
+    <text x="30" y="40" class="eyebrow">02 INK STATUS BEACON</text>
+    <text x="30" y="72" class="title" font-size="20">Mörk premium-pill med en enda stark statusyta</text>
+    <text x="30" y="98" class="desc">Mer kontrast och “app-känsla”. Rena former, men fortfarande lyxigare än basic bars.</text>
+    <g transform="translate(520,48)">
+      <rect class="pill-dark" width="176" height="56" rx="19"/>
+      <rect x="17" y="14" width="42" height="28" rx="14" fill="#ffffff" opacity="0.06"/>
+      <circle cx="32" cy="28" r="6" fill="#006AA7"/>
+      <path d="M44 20 V36" stroke="#FECC02" stroke-width="2.6" class="round"/>
+      <text x="74" y="34" class="label-light">Lyssnar</text>
+    </g>
+    <g transform="translate(740,48)">
+      <rect class="pill-dark" width="230" height="56" rx="19"/>
+      <circle cx="38" cy="28" r="15" fill="#006AA7" opacity="0.20"/>
+      <path d="M38 13 A15 15 0 0 1 53 28" fill="none" stroke="#FECC02" stroke-width="3" class="round"/>
+      <circle cx="38" cy="28" r="5.5" fill="#FECC02"/>
+      <text x="77" y="34" class="label-light">Transkriberar</text>
+    </g>
+    <g transform="translate(1010,48)">
+      <rect class="pill-dark" width="230" height="56" rx="19"/>
+      <rect x="21" y="18" width="34" height="20" rx="10" fill="#ffffff" opacity="0.06"/>
+      <circle cx="29" cy="28" r="3.8" fill="#006AA7"/>
+      <circle cx="39" cy="28" r="3.8" fill="#7F9B55"/>
+      <circle cx="49" cy="28" r="3.8" fill="#FECC02"/>
+      <text x="77" y="34" class="label-light">LLM-granskar</text>
+    </g>
+  </g>
+
+  <!-- 3 -->
+  <g transform="translate(70,540)">
+    <rect class="card" width="1360" height="150" rx="30"/>
+    <text x="30" y="40" class="eyebrow">03 AUDIO RIBBON</text>
+    <text x="30" y="72" class="title" font-size="20">En sammanhållen “ribbon” som känns mer custom</text>
+    <text x="30" y="98" class="desc">Lyssnar kan vara live-wave i en tunn blå/gul ribbon. Transcribe/LLM byter rytm, inte form.</text>
+    <g transform="translate(520,48)">
+      <rect class="pill-dark" width="182" height="56" rx="19"/>
+      <path d="M18 28 C25 16 30 40 37 28 S50 17 57 28" fill="none" stroke="#2d3a49" stroke-width="8" class="round"/>
+      <path d="M18 28 C25 16 30 40 37 28 S50 17 57 28" fill="none" stroke="url(#blueGold)" stroke-width="3" class="round"/>
+      <text x="76" y="34" class="label-light">Lyssnar</text>
+    </g>
+    <g transform="translate(740,48)">
+      <rect class="pill-dark" width="232" height="56" rx="19"/>
+      <path d="M20 29 C31 21 42 21 54 29" fill="none" stroke="#2d3a49" stroke-width="8" class="round"/>
+      <path d="M20 29 C31 21 42 21 54 29" fill="none" stroke="#006AA7" stroke-width="3" class="round"/>
+      <path d="M44 27 C48 25 52 26 56 29" fill="none" stroke="#FECC02" stroke-width="3" class="round"/>
+      <text x="78" y="34" class="label-light">Transkriberar</text>
+    </g>
+    <g transform="translate(1010,48)">
+      <rect class="pill-dark" width="232" height="56" rx="19"/>
+      <path d="M20 33 C27 20 35 20 42 33 S54 37 58 24" fill="none" stroke="#006AA7" stroke-width="2.6" class="round"/>
+      <path d="M43 33 S54 37 58 24" fill="none" stroke="#FECC02" stroke-width="2.6" class="round"/>
+      <text x="78" y="34" class="label-light">LLM-granskar</text>
+    </g>
+  </g>
+
+  <!-- 4 -->
+  <g transform="translate(70,720)">
+    <rect class="card" width="1360" height="150" rx="30"/>
+    <text x="30" y="40" class="eyebrow">04 MICRO WINDOW</text>
+    <text x="30" y="72" class="title" font-size="20">Som ett mini-produktfönster från webbsidan</text>
+    <text x="30" y="98" class="desc">Lite mer karaktär: små window-dots och statusytor. Premium, men inte sci-fi.</text>
+    <g transform="translate(520,48)">
+      <rect class="pill-light" width="190" height="58" rx="16"/>
+      <circle cx="22" cy="18" r="3" fill="#d4d0c7"/><circle cx="32" cy="18" r="3" fill="#d4d0c7"/><circle cx="42" cy="18" r="3" fill="#d4d0c7"/>
+      <rect x="20" y="29" width="40" height="10" rx="5" fill="#f2efe8"/>
+      <rect x="22" y="31" width="8" height="6" rx="3" fill="#006AA7"/><rect x="33" y="31" width="12" height="6" rx="3" fill="#006AA7"/><rect x="48" y="31" width="7" height="6" rx="3" fill="#FECC02"/>
+      <text x="76" y="37" class="label-dark">Lyssnar</text>
+    </g>
+    <g transform="translate(740,48)">
+      <rect class="pill-light" width="238" height="58" rx="16"/>
+      <circle cx="22" cy="18" r="3" fill="#d4d0c7"/><circle cx="32" cy="18" r="3" fill="#d4d0c7"/><circle cx="42" cy="18" r="3" fill="#d4d0c7"/>
+      <rect x="20" y="30" width="43" height="8" rx="4" fill="#f2efe8"/><rect x="20" y="30" width="31" height="8" rx="4" fill="url(#blueGold)"/>
+      <text x="78" y="37" class="label-dark">Transkriberar</text>
+    </g>
+    <g transform="translate(1010,48)">
+      <rect class="pill-light" width="238" height="58" rx="16"/>
+      <circle cx="22" cy="18" r="3" fill="#d4d0c7"/><circle cx="32" cy="18" r="3" fill="#d4d0c7"/><circle cx="42" cy="18" r="3" fill="#d4d0c7"/>
+      <path d="M22 38 H30 L36 28 L43 38 H58" fill="none" stroke="#006AA7" stroke-width="2.2" class="round"/><path d="M47 38 H60" stroke="#FECC02" stroke-width="2.2" class="round"/>
+      <text x="78" y="37" class="label-dark">LLM-granskar</text>
+    </g>
+  </g>
+
+  <!-- 5 -->
+  <g transform="translate(70,900)">
+    <rect class="card" width="1360" height="150" rx="30"/>
+    <text x="30" y="40" class="eyebrow">05 EDITOR CURSOR</text>
+    <text x="30" y="72" class="title" font-size="20">Mer “text appears where you type” än mikrofon-gadget</text>
+    <text x="30" y="98" class="desc">Kopplar animationen till slutnyttan: text/cursor. Kan kännas mest unikt för appen.</text>
+    <g transform="translate(520,48)">
+      <rect class="pill-light" width="186" height="56" rx="19"/>
+      <rect x="20" y="18" width="38" height="20" rx="7" fill="#f2efe8" stroke="#e6e1d8"/>
+      <path d="M28 29 H43" stroke="#006AA7" stroke-width="2.2" class="round"/><path d="M49 22 V36" stroke="#FECC02" stroke-width="2.2" class="round"/>
+      <text x="74" y="34" class="label-dark">Lyssnar</text>
+    </g>
+    <g transform="translate(740,48)">
+      <rect class="pill-light" width="235" height="56" rx="19"/>
+      <rect x="20" y="18" width="42" height="20" rx="7" fill="#f2efe8" stroke="#e6e1d8"/>
+      <path d="M28 25 H53" stroke="#006AA7" stroke-width="2.1" class="round"/><path d="M28 32 H42" stroke="#FECC02" stroke-width="2.1" class="round"/>
+      <text x="78" y="34" class="label-dark">Transkriberar</text>
+    </g>
+    <g transform="translate(1010,48)">
+      <rect class="pill-light" width="235" height="56" rx="19"/>
+      <rect x="20" y="18" width="42" height="20" rx="7" fill="#f2efe8" stroke="#e6e1d8"/>
+      <path d="M28 25 H48" stroke="#006AA7" stroke-width="2.1" class="round"/><path d="M28 32 H55" stroke="#7F9B55" stroke-width="2.1" class="round"/><path d="M55 20 V36" stroke="#FECC02" stroke-width="2.1" class="round"/>
+      <text x="78" y="34" class="label-dark">LLM-granskar</text>
+    </g>
+  </g>
+</svg>

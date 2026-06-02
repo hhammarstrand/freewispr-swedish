@@ -62,6 +62,7 @@ def _attach_file_logging() -> None:
         log.warning("Kunde inte aktivera filloggning: %s", e)
 
 try:
+    import multiprocessing as mp
     import threading
     import tkinter as tk
 
@@ -71,7 +72,8 @@ try:
     import config as cfg_module
     # Heavy modules are imported lazily via _make_transcriber/_make_dictation
     # so the tray icon appears in <1 second.
-    from ui import SettingsWindow, FloatingIndicator, _style
+    from ui import SettingsWindow, _style
+    from ui.qt_indicator import FloatingIndicator
     log.info("Snabb-imports OK")
 except Exception:
     log.critical("Import kraschade", exc_info=True)
@@ -92,6 +94,11 @@ _indicator: FloatingIndicator | None = None
 # Singleton reference — _show_settings reuses the live window when one is
 # already open instead of spawning unlimited copies.
 _settings_window = None
+
+# Set by the background update-check thread when a newer release is
+# detected on GitHub. Read by _build_menu() to surface the menu entry and
+# by _open_release_page() to know where to send the user.
+_pending_update = None  # updater.UpdateInfo | None
 
 # Serializes settings-driven reloads. Without it, a user spamming Save
 # could spawn two _reload threads, double-loading the model into VRAM
@@ -203,6 +210,8 @@ def _make_dictation(transcriber):
         app_profiles=_config.get("app_profiles") or {},
         command_mode_enabled=bool(_config.get("command_mode_enabled", True)),
         llm_replace_mode=bool(_config.get("llm_replace_mode", False)),
+        context_to_remote_accepted=bool(
+            _config.get("context_to_remote_accepted", False)),
         cancel_hotkey=_config.get("cancel_hotkey", "esc"),
         snippets_enabled=bool(_config.get("snippets_enabled", True)),
         silence_trim_enabled=bool(_config.get("silence_trim_enabled", True)),
@@ -512,6 +521,7 @@ def _apply_settings_locked(new_cfg: dict):
     if model_changed:
         if _indicator:
             _indicator.set_follow_mouse(_config.get("indicator_follow_mouse", True))
+            _indicator.set_style(_config.get("indicator_style", "modern"))
         # Acquire before returning to the event loop so a second Save cannot
         # mutate _config in the gap before the background thread starts.
         if not _reload_lock.acquire(blocking=False):
@@ -588,6 +598,7 @@ def _apply_settings_locked(new_cfg: dict):
     # No model/LLM change — just hotkey/mic. Restart dictation cheaply.
     if _indicator:
         _indicator.set_follow_mouse(_config.get("indicator_follow_mouse", True))
+        _indicator.set_style(_config.get("indicator_style", "modern"))
     _restart_dictation()
     if not _persist():
         _rollback()
@@ -735,8 +746,13 @@ def _build_menu():
         # default=True makes this the action that runs on left double-click
         # of the tray icon (in addition to being the bold first menu entry).
         pystray.MenuItem("Inställningar", _open_settings, default=True),
-        pystray.MenuItem(startup_label, _toggle_startup),
     ]
+    if _pending_update is not None:
+        items.append(pystray.MenuItem(
+            f"Uppdatering tillgänglig (v{_pending_update.version})",
+            _open_release_page,
+        ))
+    items.append(pystray.MenuItem(startup_label, _toggle_startup))
     if _dictation is not None:
         pause_label = "Återuppta diktering" if _dictation_paused() else "Pausa diktering"
         items.append(pystray.MenuItem(pause_label, _toggle_pause))
@@ -746,9 +762,75 @@ def _build_menu():
         items.append(pystray.MenuItem(flow_label, _toggle_flow))
     items += [
         pystray.Menu.SEPARATOR,
+        pystray.MenuItem("Sök efter uppdateringar", _manual_update_check),
         pystray.MenuItem("Avsluta freewispr-swedish", _quit),
     ]
     return pystray.Menu(*items)
+
+
+# --------------------------------------------------------------------------- #
+#  Update-check (GitHub Releases)                                              #
+# --------------------------------------------------------------------------- #
+
+def _open_release_page(_=None):
+    """Öppna release-sidan för den väntande uppdateringen i webbläsaren."""
+    if _pending_update is None:
+        return
+    import webbrowser
+    try:
+        webbrowser.open(_pending_update.url)
+    except Exception as e:
+        log.warning("Kunde inte öppna release-sida: %s", e)
+
+
+def _show_update_toast():
+    """Visa Windows-toast om en uppdatering finns. Körs på Tk-tråden."""
+    if _pending_update is None or _tray_icon is None:
+        return
+    try:
+        _tray_icon.notify(
+            f"Ny version v{_pending_update.version} finns att hämta",
+            "freewispr-swedish — uppdatering",
+        )
+    except Exception as e:
+        # Äldre Windows / saknad notification-stöd — menyposten räcker.
+        log.debug("Kunde inte visa update-toast: %s", e)
+
+
+def _check_updates_bg(force: bool = False):
+    """Kör update-check i bakgrunden. Krascher sväljs — check får aldrig
+    påverka appens funktion."""
+    global _pending_update
+    try:
+        from updater import check_for_update
+        info = check_for_update(__version__, force=force)
+        if info is not None:
+            _pending_update = info
+            log.info("Uppdatering hittad: v%s (%s)", info.version, info.url)
+            if _tk_root is not None:
+                _tk_root.after(0, _show_update_toast)
+                _tk_root.after(0, _rebuild_menu)
+        elif force:
+            # Manuell check — ge alltid återkoppling.
+            if _tray_icon is not None:
+                try:
+                    _tray_icon.notify(
+                        f"Du har senaste versionen (v{__version__})",
+                        "freewispr-swedish",
+                    )
+                except Exception:
+                    pass
+    except Exception as e:
+        log.debug("Update-check misslyckades: %s", e)
+
+
+def _manual_update_check(_=None):
+    """Tray-menyns 'Sök efter uppdateringar'-knapp."""
+    threading.Thread(
+        target=lambda: _check_updates_bg(force=True),
+        name="update-check-manual",
+        daemon=True,
+    ).start()
 
 
 def _quit(_=None):
@@ -761,6 +843,11 @@ def _quit(_=None):
         _flow.stop(wait=False)
     if _dictation:
         _dictation.stop()
+    if _indicator:
+        try:
+            _indicator.close()
+        except Exception:
+            log.debug("Kunde inte stänga indikatorn rent", exc_info=True)
     if _transcriber:
         _transcriber.close()
     if _tray_icon:
@@ -775,8 +862,25 @@ def _quit(_=None):
 #  Main                                                                        #
 # --------------------------------------------------------------------------- #
 
+def _notify_already_running() -> None:
+    """Pop a modal 'already running' dialog (best-effort, Windows-only).
+
+    Extracted so tests can stub it: the underlying ``MessageBoxW`` is a
+    *blocking* modal that would hang a headless test run on Windows, while
+    silently no-op'ing on platforms without ``ctypes.windll``.
+    """
+    try:
+        import ctypes
+        ctypes.windll.user32.MessageBoxW(
+            0, "freewispr-swedish körs redan.", "freewispr-swedish", 0x40)
+    except Exception:
+        pass
+
+
 def main():
     global _tray_icon, _tk_root, _status_var, _indicator
+
+    mp.freeze_support()
 
     # AP7.1: single-instance guard. A second instance would register duplicate
     # hotkeys and load a second Whisper model into VRAM (OOM). Bail out early —
@@ -784,12 +888,7 @@ def main():
     import single_instance
     if not single_instance.acquire():
         log.warning("freewispr-swedish körs redan — avslutar denna instans")
-        try:
-            import ctypes
-            ctypes.windll.user32.MessageBoxW(
-                0, "freewispr-swedish körs redan.", "freewispr-swedish", 0x40)
-        except Exception:
-            pass
+        _notify_already_running()
         return
 
     # Wire up file logging now (deferred from import time so tests can import
@@ -819,6 +918,15 @@ def main():
 
     # Load model in background so the tray appears immediately
     threading.Thread(target=_load_app, daemon=True).start()
+
+    # Check for updates in the background. Runs once at startup; never blocks
+    # the UI and never raises into the main thread. Skipped automatically when
+    # not running as a frozen PyInstaller exe (dev script mode).
+    threading.Thread(
+        target=_check_updates_bg,
+        name="update-check",
+        daemon=True,
+    ).start()
 
     # Run tray in a background thread; tkinter runs on main thread
     tray_thread = threading.Thread(target=_tray_icon.run, daemon=True)

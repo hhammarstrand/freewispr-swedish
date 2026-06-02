@@ -21,6 +21,7 @@ import json
 import logging
 import os
 import secrets
+import time
 import urllib.error
 import urllib.request
 import wave
@@ -29,6 +30,14 @@ from typing import NamedTuple
 import numpy as np
 
 import http_pool
+
+# HTTP status-koder som indikerar ett övergående fel hos servern/gatewayen.
+# Dessa är värda att försöka igen — till skillnad från 4xx (klientfel) som
+# inte blir bättre av en retry. STAIK:s gateway svarar tidvis 502/503 under
+# last; ett par återförsök med backoff räddar de flesta sådana fallen.
+_RETRYABLE_HTTP_CODES = frozenset({502, 503, 504})
+_MAX_ATTEMPTS = 3
+_RETRY_BASE_DELAY = 0.6  # sekunder; växer exponentiellt per försök
 
 log = logging.getLogger("freewispr")
 
@@ -198,6 +207,70 @@ def _build_multipart(fields: dict[str, str], file_bytes: bytes,
 #  Publika operationer
 # --------------------------------------------------------------------------- #
 
+def _request_with_retry(url: str, headers: dict[str, str], body: bytes,
+                        provider: str, timeout_sec: float) -> bytes:
+    """Skicka requesten och försök igen vid övergående serverfel.
+
+    Återförsök sker bara vid 502/503/504 och vid nätverksfel (URLError),
+    eftersom dessa typiskt är tillfälliga. Klientfel (4xx) höjs direkt utan
+    retry. Mellan försöken väntar vi med exponentiell backoff. Om alla försök
+    misslyckas höjs ``RemoteTranscribeError`` med det sista felmeddelandet.
+
+    Transporten går via ``http_pool`` (L2) så TCP/TLS-anslutningen återanvänds
+    mellan dikteringar i stället för en ny handskakning varje gång. Samma
+    ``body`` återanvänds på varje försök, så ingen ominspelning behövs.
+    """
+    last_error: Exception | None = None
+
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        try:
+            return http_pool.request(url, headers, payload=body, method="POST",
+                                     timeout=timeout_sec, parse="raw")
+        except urllib.error.HTTPError as e:
+            body_snippet = ""
+            try:
+                body_snippet = e.read().decode("utf-8", errors="replace")[:200]
+            except Exception:
+                pass
+            msg = _http_message(e.code, body_snippet)
+            last_error = RemoteTranscribeError(msg)
+
+            if e.code in _RETRYABLE_HTTP_CODES and attempt < _MAX_ATTEMPTS:
+                delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                log.warning(
+                    "Remote transcribe HTTP %d (%s): %s — försöker igen "
+                    "(%d/%d) om %.1fs",
+                    e.code, provider, msg, attempt, _MAX_ATTEMPTS, delay,
+                )
+                time.sleep(delay)
+                continue
+
+            log.warning("Remote transcribe HTTP %d (%s): %s",
+                        e.code, provider, msg)
+            raise last_error from e
+        except urllib.error.URLError as e:
+            last_error = RemoteTranscribeError(f"Nätverksfel: {e.reason}")
+            if attempt < _MAX_ATTEMPTS:
+                delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                log.warning(
+                    "Remote transcribe nätverksfel (%s): %s — försöker igen "
+                    "(%d/%d) om %.1fs",
+                    provider, e.reason, attempt, _MAX_ATTEMPTS, delay,
+                )
+                time.sleep(delay)
+                continue
+            log.warning("Remote transcribe nätverksfel (%s): %s",
+                        provider, e.reason)
+            raise last_error from e
+        except Exception as e:
+            log.warning("Remote transcribe oväntat fel (%s): %s", provider, e)
+            raise RemoteTranscribeError(f"Fel: {e}") from e
+
+    # Bör inte nås — loopen returnerar eller höjer alltid. Skyddsnät:
+    assert last_error is not None
+    raise last_error
+
+
 def transcribe(
     audio: np.ndarray,
     sample_rate: int,
@@ -265,27 +338,7 @@ def transcribe(
     log.info("Remote transcribe -> %s (%s, %d samples, %d sr)",
              provider, used_model, audio.size, sample_rate)
 
-    try:
-        # Keep-alive pooled transport (L2): reuse the TCP/TLS connection across
-        # dictations instead of a fresh handshake each time.
-        raw = http_pool.request(url, headers, payload=body, method="POST",
-                                timeout=timeout_sec, parse="raw")
-    except urllib.error.HTTPError as e:
-        # Försök läsa kropp för bättre felmeddelande men logga inte audio.
-        body_snippet = ""
-        try:
-            body_snippet = e.read().decode("utf-8", errors="replace")[:200]
-        except Exception:
-            pass
-        msg = _http_message(e.code, body_snippet)
-        log.warning("Remote transcribe HTTP %d (%s): %s", e.code, provider, msg)
-        raise RemoteTranscribeError(msg) from e
-    except urllib.error.URLError as e:
-        log.warning("Remote transcribe nätverksfel (%s): %s", provider, e.reason)
-        raise RemoteTranscribeError(f"Nätverksfel: {e.reason}") from e
-    except Exception as e:
-        log.warning("Remote transcribe oväntat fel (%s): %s", provider, e)
-        raise RemoteTranscribeError(f"Fel: {e}") from e
+    raw = _request_with_retry(url, headers, body, provider, timeout_sec)
 
     # Body kan vara JSON ({"text": "..."}) eller ren text beroende på server.
     try:
@@ -404,6 +457,8 @@ def _http_message(code: int, body: str) -> str:
     if code == 429:
         return "Rate limit eller daglig token-cap nådd (HTTP 429)"
     if 500 <= code < 600:
+        if code in _RETRYABLE_HTTP_CODES:
+            return f"Servern tillfälligt otillgänglig (HTTP {code}) — försök igen"
         return f"Serverfel (HTTP {code})"
     snippet = body[:120] if body else ""
     return f"HTTP {code}: {snippet}".rstrip(": ")

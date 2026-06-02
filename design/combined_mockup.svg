@@ -1,0 +1,395 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 720" width="100%" height="100%">
+  <!-- Definitions of all gradients and filters from the individual proposals -->
+  <defs>
+    <!-- Common styling and fonts -->
+    <style>
+      .title { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; font-weight: 800; font-size: 24px; fill: #ffffff; letter-spacing: 1px; }
+      .subtitle { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; font-weight: 400; font-size: 13px; fill: #94a3b8; }
+      .card-title { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; font-weight: 700; font-size: 14px; fill: #f8fafc; }
+      .card-desc { font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif; font-weight: 400; font-size: 12px; fill: #64748b; }
+      .pill-text { font-family: 'Segoe UI', -apple-system, sans-serif; font-weight: bold; font-size: 13px; fill: url(#comb-shimmer-grad); }
+      .badge { font-family: 'Segoe UI', -apple-system, sans-serif; font-weight: 600; font-size: 10px; fill: #f59e0b; }
+    </style>
+
+    <filter id="card-shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="4" stdDeviation="6" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+    <filter id="pill-shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+    <filter id="text-shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-color="#000000" flood-opacity="0.95"/>
+    </filter>
+
+    <!-- Premium Animated Shimmer Gradient for Text -->
+    <linearGradient id="comb-shimmer-grad" x1="-100%" y1="0%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="#d1d5db" />
+      <stop offset="35%" stop-color="#d1d5db" />
+      <stop offset="50%" stop-color="#ffffff" />
+      <stop offset="65%" stop-color="#d1d5db" />
+      <stop offset="100%" stop-color="#d1d5db" />
+      <animate attributeName="x1" values="-100%; 100%" dur="2.4s" repeatCount="indefinite" />
+      <animate attributeName="x2" values="0%; 200%" dur="2.4s" repeatCount="indefinite" />
+    </linearGradient>
+
+    <!-- Aura Orb gradients -->
+    <radialGradient id="comb-cyan-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00f0ff" stop-opacity="0.95"/>
+      <stop offset="60%" stop-color="#00f0ff" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#00f0ff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="comb-magenta-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff007f" stop-opacity="0.95"/>
+      <stop offset="60%" stop-color="#ff007f" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#ff007f" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="comb-purple-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#8b5cf6" stop-opacity="0.95"/>
+      <stop offset="60%" stop-color="#8b5cf6" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="comb-gold-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.95"/>
+      <stop offset="60%" stop-color="#f59e0b" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="comb-blur">
+      <feGaussianBlur stdDeviation="3.5" />
+    </filter>
+
+    <!-- Siri Waveform gradients -->
+    <linearGradient id="comb-siri-cyan" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00f0ff" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#0072ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="comb-siri-magenta" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff007f" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#7f00ff" stop-opacity="0"/>
+    </linearGradient>
+    <linearGradient id="comb-siri-yellow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#ff007f" stop-opacity="0"/>
+    </linearGradient>
+
+    <!-- Full-Background Siri Waveform gradients -->
+    <linearGradient id="comb-bg-siri-cyan" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00f0ff" stop-opacity="0.15"/>
+      <stop offset="50%" stop-color="#0072ff" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#00f0ff" stop-opacity="0.15"/>
+    </linearGradient>
+    <linearGradient id="comb-bg-siri-magenta" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#ff007f" stop-opacity="0.15"/>
+      <stop offset="50%" stop-color="#7f00ff" stop-opacity="0.35"/>
+      <stop offset="100%" stop-color="#ff007f" stop-opacity="0.15"/>
+    </linearGradient>
+    <linearGradient id="comb-bg-siri-yellow" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.1"/>
+      <stop offset="50%" stop-color="#ff007f" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0.1"/>
+    </linearGradient>
+
+    <!-- Gold Halo gradients -->
+    <radialGradient id="comb-gold-halo-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#f59e0b" stop-opacity="0.3"/>
+      <stop offset="100%" stop-color="#f59e0b" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Infinity Ribbon gradients -->
+    <linearGradient id="comb-infinity-grad-1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8b5cf6" />
+      <stop offset="50%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#00f0ff" />
+    </linearGradient>
+    <linearGradient id="comb-infinity-grad-2" x1="100%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#f59e0b" />
+      <stop offset="50%" stop-color="#ff007f" />
+      <stop offset="100%" stop-color="#8b5cf6" />
+    </linearGradient>
+    <filter id="comb-glow-filter">
+      <feGaussianBlur stdDeviation="2.2" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Premium Deep Dark Workspace Background -->
+  <rect width="100%" height="100%" fill="#0a0d16" />
+  
+  <!-- Subtle Grid Lines for "Designer Canvas" look -->
+  <g stroke="#ffffff" stroke-width="1" opacity="0.03">
+    <line x1="0" y1="90" x2="850" y2="90" />
+    <line x1="0" y1="300" x2="850" y2="300" />
+    <line x1="0" y1="510" x2="850" y2="510" />
+    <line x1="425" y1="90" x2="425" y2="720" />
+  </g>
+
+  <!-- Header Banner -->
+  <g transform="translate(40, 50)">
+    <text x="0" y="0" class="title">FREEWISPR SWEDISH</text>
+    <text x="0" y="22" class="subtitle">Designmockups för ny transkriberingsanimering — Windows 11 Formspråk med Text Shimmer</text>
+    <!-- Premium Accent Bar -->
+    <rect x="0" y="-28" width="55" height="4" rx="2" fill="#f59e0b" />
+  </g>
+
+  <!-- ==================== GRID OF PROPOSALS ==================== -->
+
+  <!-- CARD 1: THE GEMINI AURA ORB -->
+  <g transform="translate(40, 110)">
+    <!-- Card Frame -->
+    <rect width="360" height="170" rx="12" fill="#0f1420" stroke="rgba(255,255,255,0.05)" stroke-width="1" filter="url(#card-shadow)" />
+    <text x="25" y="30" class="card-title">1. THE GEMINI AURA ORB</text>
+    <rect x="25" y="38" width="85" height="16" rx="4" fill="rgba(245, 158, 11, 0.15)" />
+    <text x="32" y="50" class="badge">MAXIMAL AI-KÄNSLA</text>
+    <text x="25" y="145" class="card-desc">Organisk, flytande färg-aura som smälter samman.</text>
+
+    <!-- Simulated Floating Indicator App UI (rx="8" for Windows 11) -->
+    <g transform="translate(25, 65)" filter="url(#pill-shadow)">
+      <!-- Outer Pill -->
+      <rect width="210" height="52" rx="8" fill="#10141c" stroke="rgba(255,255,255,0.11)" stroke-width="1.2" />
+      <line x1="14" y1="1" x2="196" y2="1" stroke="rgba(255,255,255,0.15)" stroke-width="1" />
+      
+      <!-- Embedded Live Animation Component (Aura Orb) -->
+      <g transform="translate(10, 10)">
+        <!-- Small Background for indicator circle -->
+        <rect width="32" height="32" rx="6" fill="rgba(255,255,255,0.06)" />
+        <g filter="url(#comb-blur)" style="mix-blend-mode: screen;" transform="translate(16, 16)">
+          <!-- Purple -->
+          <circle cx="0" cy="0" r="10" fill="url(#comb-purple-glow)">
+            <animateTransform attributeName="transform" type="translate" values="-2,-2; 2,2; -1,3; -2,-2" dur="4s" repeatCount="indefinite" />
+          </circle>
+          <!-- Cyan -->
+          <circle cx="0" cy="0" r="9" fill="url(#comb-cyan-glow)">
+            <animateTransform attributeName="transform" type="translate" values="2,2; -2,-2; 1,-3; 2,2" dur="3.2s" repeatCount="indefinite" />
+          </circle>
+          <!-- Magenta -->
+          <circle cx="0" cy="0" r="8" fill="url(#comb-magenta-glow)">
+            <animateTransform attributeName="transform" type="translate" values="-3,1; 3,-1; -2,-2; -3,1" dur="3.8s" repeatCount="indefinite" />
+          </circle>
+        </g>
+        <!-- Overlay micro-mic -->
+        <g fill="#ffffff" transform="translate(10, 9) scale(0.55)">
+          <rect x="10" y="5" width="8" height="13" rx="4" />
+          <path d="M5,12 A7,7 0 0,0 23,12" stroke="#ffffff" stroke-width="2.2" fill="none"/>
+        </g>
+      </g>
+      <!-- Label with Shimmer -->
+      <text x="54" y="31" class="pill-text" filter="url(#text-shadow)">Transkriberar...</text>
+    </g>
+  </g>
+
+
+  <!-- CARD 2: THE SIRI WAVEFORM -->
+  <g transform="translate(440, 110)">
+    <!-- Card Frame -->
+    <rect width="360" height="170" rx="12" fill="#0f1420" stroke="rgba(255,255,255,0.05)" stroke-width="1" filter="url(#card-shadow)" />
+    <text x="25" y="30" class="card-title">2. THE SIRI WAVEFORM</text>
+    <rect x="25" y="38" width="70" height="16" rx="4" fill="rgba(245, 158, 11, 0.15)" />
+    <text x="32" y="50" class="badge">RÖST-REAKTIV</text>
+    <text x="25" y="145" class="card-desc">Böljande ljus- och ljudvågor i konstant rörelse.</text>
+
+    <!-- Simulated Floating Indicator App UI (rx="8") -->
+    <g transform="translate(25, 65)" filter="url(#pill-shadow)">
+      <!-- Outer Pill -->
+      <rect width="210" height="52" rx="8" fill="#10141c" stroke="rgba(255,255,255,0.11)" stroke-width="1.2" />
+      <line x1="14" y1="1" x2="196" y2="1" stroke="rgba(255,255,255,0.15)" stroke-width="1" />
+      
+      <!-- Embedded Waveform Animation -->
+      <g transform="translate(10, 10)">
+        <rect width="32" height="32" rx="6" fill="rgba(255,255,255,0.06)" />
+        <g transform="translate(4, 3) scale(0.35)">
+          <path fill="none" stroke="url(#comb-siri-cyan)" stroke-width="3" stroke-linecap="round">
+            <animate attributeName="d" values="M 0,35 Q 17.5,15 35,35 T 70,35; M 0,35 Q 17.5,55 35,35 T 70,35; M 0,35 Q 17.5,15 35,35 T 70,35" dur="3s" repeatCount="indefinite"/>
+          </path>
+          <path fill="none" stroke="url(#comb-siri-magenta)" stroke-width="2.5" stroke-linecap="round">
+            <animate attributeName="d" values="M 0,35 Q 17.5,50 35,35 T 70,35; M 0,35 Q 17.5,20 35,35 T 70,35; M 0,35 Q 17.5,50 35,35 T 70,35" dur="2.2s" repeatCount="indefinite"/>
+          </path>
+          <path fill="none" stroke="url(#comb-siri-yellow)" stroke-width="2" stroke-linecap="round">
+            <animate attributeName="d" values="M 0,35 Q 17.5,25 35,35 T 70,35; M 0,35 Q 17.5,45 35,35 T 70,35; M 0,35 Q 17.5,25 35,35 T 70,35" dur="1.6s" repeatCount="indefinite"/>
+          </path>
+        </g>
+      </g>
+      <!-- Label with Shimmer -->
+      <text x="54" y="31" class="pill-text" filter="url(#text-shadow)">Transkriberar...</text>
+    </g>
+  </g>
+
+
+  <!-- CARD 3: THE GOLD SPARKLE HALO -->
+  <g transform="translate(40, 300)">
+    <!-- Card Frame -->
+    <rect width="360" height="170" rx="12" fill="#0f1420" stroke="rgba(255,255,255,0.05)" stroke-width="1" filter="url(#card-shadow)" />
+    <text x="25" y="30" class="card-title">3. THE GOLD SPARKLE HALO</text>
+    <rect x="25" y="38" width="85" height="16" rx="4" fill="rgba(245, 158, 11, 0.15)" />
+    <text x="32" y="50" class="badge">LYXIG &amp; EXKLUSIV</text>
+    <text x="25" y="145" class="card-desc">Guldstjärnor i snabba banor med tonade ljusspår.</text>
+
+    <!-- Simulated Floating Indicator App UI (rx="8") -->
+    <g transform="translate(25, 65)" filter="url(#pill-shadow)">
+      <!-- Outer Pill -->
+      <rect width="210" height="52" rx="8" fill="#10141c" stroke="rgba(255,255,255,0.11)" stroke-width="1.2" />
+      <line x1="14" y1="1" x2="196" y2="1" stroke="rgba(255,255,255,0.15)" stroke-width="1" />
+      
+      <!-- Embedded Gold Halo -->
+      <g transform="translate(10, 10)">
+        <rect width="32" height="32" rx="6" fill="rgba(255,255,255,0.06)" />
+        <circle cx="16" cy="16" r="10" fill="url(#comb-gold-halo-glow)" />
+        <circle cx="16" cy="16" r="8" fill="none" stroke="rgba(245, 158, 11, 0.2)" stroke-width="1" />
+        
+        <!-- Rotating groups -->
+        <g transform="translate(16, 16)">
+          <g>
+            <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="4s" repeatCount="indefinite" />
+            <circle cx="8" cy="0" r="1.5" fill="#f59e0b" />
+            <circle cx="7.2" cy="-2.5" r="1.1" fill="#f59e0b" opacity="0.6" />
+            <circle cx="5.8" cy="-5" r="0.7" fill="#f59e0b" opacity="0.3" />
+          </g>
+          <g>
+            <animateTransform attributeName="transform" type="rotate" from="180" to="-180" dur="2s" repeatCount="indefinite" />
+            <circle cx="-8" cy="0" r="1.3" fill="#ffffff" />
+            <circle cx="-7.2" cy="2.5" r="0.9" fill="#f59e0b" opacity="0.5" />
+          </g>
+          <!-- Center Sparkle -->
+          <path d="M 0,-3 Q 0,0 3,0 Q 0,0 0,3 Q 0,0 -3,0 Q 0,0 0,-3 Z" fill="#ffffff" />
+        </g>
+      </g>
+      <!-- Label with Shimmer -->
+      <text x="54" y="31" class="pill-text" filter="url(#text-shadow)">Transkriberar...</text>
+    </g>
+  </g>
+
+
+  <!-- CARD 4: THE QUANTUM PULSE -->
+  <g transform="translate(440, 300)">
+    <!-- Card Frame -->
+    <rect width="360" height="170" rx="12" fill="#0f1420" stroke="rgba(255,255,255,0.05)" stroke-width="1" filter="url(#card-shadow)" />
+    <text x="25" y="30" class="card-title">4. THE QUANTUM PULSE</text>
+    <rect x="25" y="38" width="85" height="16" rx="4" fill="rgba(245, 158, 11, 0.15)" />
+    <text x="32" y="50" class="badge">MINIMALISTISK</text>
+    <text x="25" y="145" class="card-desc">Andande ringar som pulserar utåt och tonar ut.</text>
+
+    <!-- Simulated Floating Indicator App UI (rx="8") -->
+    <g transform="translate(25, 65)" filter="url(#pill-shadow)">
+      <!-- Outer Pill -->
+      <rect width="210" height="52" rx="8" fill="#10141c" stroke="rgba(255,255,255,0.11)" stroke-width="1.2" />
+      <line x1="14" y1="1" x2="196" y2="1" stroke="rgba(255,255,255,0.15)" stroke-width="1" />
+      
+      <!-- Embedded Quantum Pulse -->
+      <g transform="translate(10, 10)">
+        <rect width="32" height="32" rx="6" fill="rgba(255,255,255,0.06)" />
+        <g transform="translate(16, 16)">
+          <circle cx="0" cy="0" r="3" fill="none" stroke="#38bdf8" stroke-width="1.2">
+            <animate attributeName="r" values="3; 13" dur="2s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.9; 0" dur="2s" repeatCount="indefinite" />
+          </circle>
+          <circle cx="0" cy="0" r="3" fill="none" stroke="#6366f1" stroke-width="1">
+            <animate attributeName="r" values="3; 13" dur="2s" begin="0.66s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.9; 0" dur="2s" begin="0.66s" repeatCount="indefinite" />
+          </circle>
+          <circle cx="0" cy="0" r="3" fill="none" stroke="#a5b4fc" stroke-width="0.8">
+            <animate attributeName="r" values="3; 13" dur="2s" begin="1.33s" repeatCount="indefinite" />
+            <animate attributeName="opacity" values="0.8; 0" dur="2s" begin="1.33s" repeatCount="indefinite" />
+          </circle>
+          <!-- Mic in center -->
+          <g fill="#ffffff" transform="translate(-5, -5) scale(0.35)">
+            <rect x="10" y="5" width="8" height="13" rx="4" />
+            <path d="M5,12 A7,7 0 0,0 23,12" stroke="#ffffff" stroke-width="2.2" fill="none"/>
+          </g>
+        </g>
+      </g>
+      <!-- Label with Shimmer -->
+      <text x="54" y="31" class="pill-text" filter="url(#text-shadow)">Transkriberar...</text>
+    </g>
+  </g>
+
+
+  <!-- CARD 5: THE INFINITY RIBBON -->
+  <g transform="translate(40, 490)">
+    <!-- Card Frame -->
+    <rect width="360" height="170" rx="12" fill="#0f1420" stroke="rgba(255,255,255,0.05)" stroke-width="1" filter="url(#card-shadow)" />
+    <text x="25" y="30" class="card-title">5. THE INFINITY RIBBON</text>
+    <rect x="25" y="38" width="85" height="16" rx="4" fill="rgba(245, 158, 11, 0.15)" />
+    <text x="32" y="50" class="badge">ELEGANT GEOMETRI</text>
+    <text x="25" y="145" class="card-desc">Slingrande Möbius-loop i 3D-liknande rotation.</text>
+
+    <!-- Simulated Floating Indicator App UI (rx="8") -->
+    <g transform="translate(25, 65)" filter="url(#pill-shadow)">
+      <!-- Outer Pill -->
+      <rect width="210" height="52" rx="8" fill="#10141c" stroke="rgba(255,255,255,0.11)" stroke-width="1.2" />
+      <line x1="14" y1="1" x2="196" y2="1" stroke="rgba(255,255,255,0.15)" stroke-width="1" />
+      
+      <!-- Embedded Infinity Ribbon -->
+      <g transform="translate(10, 10)">
+        <rect width="32" height="32" rx="6" fill="rgba(255,255,255,0.06)" />
+        <g transform="translate(16, 16) scale(0.42)">
+          <g>
+            <animateTransform attributeName="transform" type="rotate" values="0; 360" dur="15s" repeatCount="indefinite"/>
+            <path d="M -16,0 C -16,-9 -6,-9 0,0 C 6,9 16,9 16,0 C 16,-9 6,-9 0,0 C -6,9 -16,9 -16,0 Z" 
+                  fill="none" stroke="url(#comb-infinity-grad-1)" stroke-width="3" stroke-linecap="round" filter="url(#comb-glow-filter)" />
+            <path d="M -16,0 C -16,-9 -6,-9 0,0 C 6,9 16,9 16,0 C 16,-9 6,-9 0,0 C -6,9 -16,9 -16,0 Z" 
+                  fill="none" stroke="url(#comb-infinity-grad-2)" stroke-width="1.2" stroke-linecap="round" opacity="0.8">
+              <animate attributeName="stroke-dashoffset" values="0; 100" dur="2s" repeatCount="indefinite"/>
+              <animate attributeName="stroke-dasharray" values="15,15; 10,20; 15,15" dur="2s" repeatCount="indefinite"/>
+            </path>
+          </g>
+        </g>
+      </g>
+      <!-- Label with Shimmer -->
+      <text x="54" y="31" class="pill-text" filter="url(#text-shadow)">Transkriberar...</text>
+    </g>
+  </g>
+
+
+  <!-- CARD 6: THE BACKGROUND WAVEFORM (NO ICON) -->
+  <g transform="translate(440, 490)">
+    <!-- Card Frame -->
+    <rect width="360" height="170" rx="12" fill="#0f1420" stroke="rgba(255,255,255,0.05)" stroke-width="1" filter="url(#card-shadow)" />
+    <text x="25" y="30" class="card-title">6. THE BACKGROUND WAVEFORM</text>
+    <rect x="25" y="38" width="115" height="16" rx="4" fill="rgba(245, 158, 11, 0.15)" />
+    <text x="32" y="50" class="badge">INTEGRERAD BAKGRUND</text>
+    <text x="25" y="145" class="card-desc">Siri-vågformer sträcker sig bakom texten (ingen ikon).</text>
+
+    <!-- Simulated Floating Indicator App UI (With Full Background Animation, rx="8" for Windows 11) -->
+    <g transform="translate(25, 65)" filter="url(#pill-shadow)">
+      <!-- Outer Pill -->
+      <rect width="210" height="52" rx="8" fill="#0c0e15" stroke="rgba(255,255,255,0.12)" stroke-width="1.2" />
+      
+      <!-- Live Background Waveform -->
+      <g opacity="0.8" style="mix-blend-mode: screen;">
+        <!-- Cyan Wave -->
+        <path fill="none" stroke="url(#comb-bg-siri-cyan)" stroke-width="4" stroke-linecap="round">
+          <animate attributeName="d" 
+                   values="M -10,26 Q 25,6 60,26 T 130,26 T 180,26 T 220,26;
+                           M -10,26 Q 25,46 60,26 T 130,26 T 180,26 T 220,26;
+                           M -10,26 Q 25,6 60,26 T 130,26 T 180,26 T 220,26" 
+                   dur="4.5s" repeatCount="indefinite"/>
+        </path>
+        <!-- Magenta Wave -->
+        <path fill="none" stroke="url(#comb-bg-siri-magenta)" stroke-width="3" stroke-linecap="round">
+          <animate attributeName="d" 
+                   values="M -10,26 Q 30,38 75,26 T 145,26 T 180,26 T 220,26;
+                           M -10,26 Q 30,14 75,26 T 145,26 T 180,26 T 220,26;
+                           M -10,26 Q 30,38 75,26 T 145,26 T 180,26 T 220,26" 
+                   dur="3.6s" repeatCount="indefinite"/>
+        </path>
+        <!-- Yellow Wave -->
+        <path fill="none" stroke="url(#comb-bg-siri-yellow)" stroke-width="2" stroke-linecap="round">
+          <animate attributeName="d" 
+                   values="M -10,26 Q 40,16 85,26 T 140,26 T 180,26 T 220,26;
+                           M -10,26 Q 40,36 85,26 T 140,26 T 180,26 T 220,26;
+                           M -10,26 Q 40,16 85,26 T 140,26 T 180,26 T 220,26" 
+                   dur="2.8s" repeatCount="indefinite"/>
+        </path>
+      </g>
+
+      <!-- Glass overlay with rx="8" -->
+      <rect width="210" height="52" rx="8" fill="rgba(16, 20, 28, 0.55)" pointer-events="none" />
+      <path d="M 5,1 Q 105,1 195,1" stroke="rgba(255,255,255,0.18)" stroke-width="0.8" fill="none" pointer-events="none" />
+
+      <!-- Label centered over the wave with Shimmer -->
+      <text x="105" y="31" class="pill-text" text-anchor="middle" filter="url(#text-shadow)">Transkriberar...</text>
+    </g>
+  </g>
+
+</svg>

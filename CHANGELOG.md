@@ -5,6 +5,20 @@ Alla väsentliga ändringar i `freewispr-swedish` dokumenteras i denna fil.
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och
 projektet använder [semantisk versionshantering](https://semver.org/lang/sv/).
 
+## [Ej släppt]
+
+### Tillagt
+
+- **Uppdateringsnotis via GitHub Releases.** Vid varje start kontrollerar
+  appen om en nyare stabil version finns publicerad på
+  `github.com/hhammarstrand/freewispr-swedish/releases`. Om så är fallet
+  visas en native Windows-toast och en menyrad i tray-ikonen som öppnar
+  release-sidan i webbläsaren. Ingen automatisk nedladdning — användaren
+  installerar själv. Pre-releases och drafts ignoreras. En manuell knapp
+  "Sök efter uppdateringar" finns också i tray-menyn. Check skippas i
+  utvecklarläge (icke-frozen) om inte miljövariabeln
+  `FREEWISPR_FORCE_UPDATE_CHECK=1` är satt.
+
 ## [1.0.0] — 2026-05-28
 
 Första publika releasen av den svenska forken. Stabil och produktionsklar

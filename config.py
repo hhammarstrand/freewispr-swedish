@@ -134,6 +134,13 @@ DEFAULTS = {
     # Egna app→profil-overrides (processnamn utan .exe → "casual"/"email"/
     # "code"). Slås ihop ovanpå context_win.DEFAULT_APP_PROFILES. Tomt = inbyggda.
     "app_profiles": {},
+    # Uttryckligt medgivande: namn som skrapas från skärmen (nära markören /
+    # fönstertitel) får skickas som biasing-prompt till en *remote*-
+    # transkriberingsleverantör. Detta är en EGEN datakategori, skild från
+    # ljudet som transcription_privacy_accepted täcker — skärmtext kan innehålla
+    # uppgifter från andra appar. Av som default; lokal transkribering påverkas
+    # aldrig (namnen lämnar då aldrig maskinen).
+    "context_to_remote_accepted": False,
 
     # ---- Flow-läge (AP6, valfritt) ----
     # Kontinuerlig diktering över pauser (endast lokal transkribering). Av som

@@ -1,0 +1,187 @@
+<svg width="1400" height="980" viewBox="0 0 1400 980" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="shadow" x="-20%" y="-50%" width="140%" height="200%">
+      <feDropShadow dx="0" dy="12" stdDeviation="18" flood-color="#000" flood-opacity="0.28"/>
+    </filter>
+    <filter id="softGlow" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="4" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <linearGradient id="pill" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#20242d"/>
+      <stop offset="1" stop-color="#151820"/>
+    </linearGradient>
+    <linearGradient id="blueYellow" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#006AA7"/>
+      <stop offset="1" stop-color="#FECC02"/>
+    </linearGradient>
+    <linearGradient id="blueCyan" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#006AA7"/>
+      <stop offset="1" stop-color="#40C7FF"/>
+    </linearGradient>
+    <style>
+      .bg { fill: #0f1117; }
+      .card { fill: #171a22; stroke: #2a2f3b; stroke-width: 1; }
+      .pill { fill: url(#pill); filter: url(#shadow); }
+      .title { fill: #f4f6fb; font: 700 24px 'Segoe UI', Arial, sans-serif; }
+      .desc { fill: #98a2b3; font: 400 14px 'Segoe UI', Arial, sans-serif; }
+      .label { fill: #eaedf2; font: 700 15px 'Segoe UI', Arial, sans-serif; }
+      .small { fill: #aab2c0; font: 500 12px 'Segoe UI', Arial, sans-serif; }
+      .muted { stroke: #2d3442; }
+      .blue { fill: #006AA7; }
+      .yellow { fill: #FECC02; }
+      .mix { fill: #7F9B55; }
+      .stroke-blue { stroke: #006AA7; }
+      .stroke-yellow { stroke: #FECC02; }
+      .stroke-mix { stroke: #7F9B55; }
+      .no-fill { fill: none; }
+      .round { stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1400" height="980"/>
+  <text x="70" y="62" class="title">freewispr indicator concepts</text>
+  <text x="70" y="88" class="desc">Fem statiska riktningar. Varje rad visar Lyssnar, Transkriberar och LLM-granskar.</text>
+
+  <!-- Option 1 -->
+  <g transform="translate(70,125)">
+    <rect class="card" width="1260" height="145" rx="24"/>
+    <text x="28" y="36" class="title" font-size="20">1. Signal Capsule</text>
+    <text x="28" y="61" class="desc">Ren, produktiv, minst risk. Fokus på kompakt live-signal och diskret processlinje.</text>
+    <g transform="translate(420,39)">
+      <rect class="pill" width="180" height="54" rx="20"/>
+      <rect x="17" y="17" width="40" height="20" rx="10" fill="#006AA7" opacity="0.18"/>
+      <path d="M22 27 H30 C32 20 35 20 37 27 S42 34 45 27 H52" fill="none" stroke="#40C7FF" stroke-width="2.4" stroke-linecap="round"/>
+      <path d="M34 39 H47" fill="none" stroke="#FECC02" stroke-width="2.2" stroke-linecap="round"/>
+      <text x="74" y="33" class="label">Lyssnar</text>
+    </g>
+    <g transform="translate(635,39)">
+      <rect class="pill" width="218" height="54" rx="20"/>
+      <rect x="18" y="18" width="42" height="18" rx="9" fill="#006AA7" opacity="0.14"/>
+      <path d="M23 27 H55" fill="none" stroke="#2e3a49" stroke-width="2.5" stroke-linecap="round"/>
+      <path d="M23 27 H43" fill="none" stroke="url(#blueYellow)" stroke-width="2.5" stroke-linecap="round"/>
+      <circle cx="50" cy="27" r="3" fill="#FECC02"/>
+      <text x="74" y="33" class="label">Transkriberar</text>
+    </g>
+    <g transform="translate(890,39)">
+      <rect class="pill" width="218" height="54" rx="20"/>
+      <rect x="19" y="16" width="38" height="22" rx="11" fill="#006AA7" opacity="0.13"/>
+      <path d="M26 30 L33 23 L41 31 L50 21" fill="none" stroke="#FECC02" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="26" cy="30" r="2.3" fill="#7F9B55"/>
+      <circle cx="50" cy="21" r="2.3" fill="#FECC02"/>
+      <text x="74" y="33" class="label">LLM-granskar</text>
+    </g>
+  </g>
+
+  <!-- Option 2 -->
+  <g transform="translate(70,295)">
+    <rect class="card" width="1260" height="145" rx="24"/>
+    <text x="28" y="36" class="title" font-size="20">2. Nordic Dot</text>
+    <text x="28" y="61" class="desc">Minimalistisk statuspunkt. Känns native och premium, med olika rörelsemönster per state.</text>
+    <g transform="translate(420,39)">
+      <rect class="pill" width="165" height="54" rx="20"/>
+      <circle cx="33" cy="27" r="12" fill="#006AA7" opacity="0.18"/>
+      <circle cx="33" cy="27" r="5" fill="#006AA7"/>
+      <circle cx="46" cy="27" r="2.4" fill="#FECC02"/>
+      <text x="67" y="33" class="label">Lyssnar</text>
+    </g>
+    <g transform="translate(635,39)">
+      <rect class="pill" width="213" height="54" rx="20"/>
+      <circle cx="33" cy="27" r="15" fill="#006AA7" opacity="0.12"/>
+      <circle cx="33" cy="27" r="6" fill="#FECC02"/>
+      <path d="M33 12 A15 15 0 0 1 48 28" fill="none" stroke="#006AA7" stroke-width="2.5" stroke-linecap="round"/>
+      <text x="67" y="33" class="label">Transkriberar</text>
+    </g>
+    <g transform="translate(890,39)">
+      <rect class="pill" width="213" height="54" rx="20"/>
+      <circle cx="27" cy="27" r="4" fill="#006AA7"/>
+      <circle cx="38" cy="20" r="3" fill="#7F9B55"/>
+      <circle cx="49" cy="29" r="4" fill="#FECC02"/>
+      <path d="M27 27 L38 20 L49 29" fill="none" stroke="#3c4656" stroke-width="1.5"/>
+      <text x="67" y="33" class="label">LLM-granskar</text>
+    </g>
+  </g>
+
+  <!-- Option 3 -->
+  <g transform="translate(70,465)">
+    <rect class="card" width="1260" height="145" rx="24"/>
+    <text x="28" y="36" class="title" font-size="20">3. Studio Meter</text>
+    <text x="28" y="61" class="desc">Mer audio/professionellt. Lyssnar känns tydligt live, processlägen blir ren progress.</text>
+    <g transform="translate(420,39)">
+      <rect class="pill" width="172" height="54" rx="20"/>
+      <rect x="18" y="18" width="34" height="18" rx="9" fill="#10151d" stroke="#293241"/>
+      <rect x="24" y="25" width="3" height="8" rx="1.5" fill="#006AA7"/>
+      <rect x="31" y="21" width="3" height="16" rx="1.5" fill="#006AA7"/>
+      <rect x="38" y="24" width="3" height="10" rx="1.5" fill="#FECC02"/>
+      <text x="68" y="33" class="label">Lyssnar</text>
+    </g>
+    <g transform="translate(635,39)">
+      <rect class="pill" width="220" height="54" rx="20"/>
+      <rect x="19" y="25" width="38" height="4" rx="2" fill="#2b3340"/>
+      <rect x="19" y="25" width="24" height="4" rx="2" fill="#006AA7"/>
+      <rect x="44" y="25" width="8" height="4" rx="2" fill="#FECC02"/>
+      <text x="72" y="33" class="label">Transkriberar</text>
+    </g>
+    <g transform="translate(890,39)">
+      <rect class="pill" width="220" height="54" rx="20"/>
+      <path d="M20 33 H32 L36 21 L42 33 H55" fill="none" stroke="#006AA7" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M47 33 H57" fill="none" stroke="#FECC02" stroke-width="2.3" stroke-linecap="round"/>
+      <text x="72" y="33" class="label">LLM-granskar</text>
+    </g>
+  </g>
+
+  <!-- Option 4 -->
+  <g transform="translate(70,635)">
+    <rect class="card" width="1260" height="145" rx="24"/>
+    <text x="28" y="36" class="title" font-size="20">4. Glass Rail</text>
+    <text x="28" y="61" class="desc">Elegant och något mer “designad”. En tunn ljusrail bär all feedback.</text>
+    <g transform="translate(420,39)">
+      <rect class="pill" width="170" height="54" rx="20"/>
+      <path d="M19 27 H55" stroke="#283443" stroke-width="7" stroke-linecap="round"/>
+      <path d="M22 27 H39" stroke="#006AA7" stroke-width="7" stroke-linecap="round"/>
+      <path d="M40 27 H50" stroke="#FECC02" stroke-width="7" stroke-linecap="round" opacity="0.8"/>
+      <text x="70" y="33" class="label">Lyssnar</text>
+    </g>
+    <g transform="translate(635,39)">
+      <rect class="pill" width="218" height="54" rx="20"/>
+      <path d="M20 27 H56" stroke="#283443" stroke-width="7" stroke-linecap="round"/>
+      <path d="M23 27 H35" stroke="#006AA7" stroke-width="7" stroke-linecap="round"/>
+      <path d="M39 27 H53" stroke="#FECC02" stroke-width="7" stroke-linecap="round"/>
+      <text x="72" y="33" class="label">Transkriberar</text>
+    </g>
+    <g transform="translate(890,39)">
+      <rect class="pill" width="218" height="54" rx="20"/>
+      <path d="M20 27 H56" stroke="#283443" stroke-width="7" stroke-linecap="round"/>
+      <circle cx="27" cy="27" r="4" fill="#006AA7"/>
+      <circle cx="39" cy="27" r="4" fill="#7F9B55"/>
+      <circle cx="51" cy="27" r="4" fill="#FECC02"/>
+      <text x="72" y="33" class="label">LLM-granskar</text>
+    </g>
+  </g>
+
+  <!-- Option 5 -->
+  <g transform="translate(70,805)">
+    <rect class="card" width="1260" height="145" rx="24"/>
+    <text x="28" y="36" class="title" font-size="20">5. Micro Glyph</text>
+    <text x="28" y="61" class="desc">Brandad men stillsam: små symboler snarare än animationseffekter. Mest minimalistisk.</text>
+    <g transform="translate(420,39)">
+      <rect class="pill" width="168" height="54" rx="20"/>
+      <path d="M35 16 v16 a7 7 0 0 1 -14 0 V16 a7 7 0 0 1 14 0Z" fill="none" stroke="#006AA7" stroke-width="2.2"/>
+      <path d="M18 30 a10 10 0 0 0 20 0" fill="none" stroke="#FECC02" stroke-width="2.2" stroke-linecap="round"/>
+      <text x="67" y="33" class="label">Lyssnar</text>
+    </g>
+    <g transform="translate(635,39)">
+      <rect class="pill" width="216" height="54" rx="20"/>
+      <rect x="21" y="17" width="26" height="20" rx="8" fill="none" stroke="#006AA7" stroke-width="2"/>
+      <path d="M27 27 H42" stroke="#FECC02" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M34 20 v14" stroke="#7F9B55" stroke-width="1.8" stroke-linecap="round"/>
+      <text x="68" y="33" class="label">Transkriberar</text>
+    </g>
+    <g transform="translate(890,39)">
+      <rect class="pill" width="216" height="54" rx="20"/>
+      <path d="M25 32 L34 18 L43 32" fill="none" stroke="#006AA7" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M30 28 H39" stroke="#FECC02" stroke-width="2" stroke-linecap="round"/>
+      <text x="68" y="33" class="label">LLM-granskar</text>
+    </g>
+  </g>
+</svg>
