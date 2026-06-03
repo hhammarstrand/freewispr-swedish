@@ -15,6 +15,19 @@ from ui.hotkey_capture import _HotkeyCapture
 log = logging.getLogger("freewispr")
 
 
+def _widget_alive(widget) -> bool:
+    """True iff *widget* still exists in the Tk tree.
+
+    Async worker threads marshal UI updates back via ``root.after(0, ...)``;
+    by the time the callback runs the Settings window may already be closed,
+    so guard configure() calls with this to avoid TclError.
+    """
+    try:
+        return bool(widget is not None and widget.winfo_exists())
+    except Exception:
+        return False
+
+
 # -- lazy import helpers ---------------------------------------------------- #
 
 def _llm_providers():
@@ -693,9 +706,14 @@ class SettingsWindow:
             self._llm_base_hint.pack(anchor="w", padx=6, pady=(0, 8))
 
         # Async fetch updated models from the server. Best-effort.
+        # Tag each fetch with a generation so a slow result from a previously
+        # selected provider can't overwrite the dropdown after the user has
+        # already switched to another provider.
+        self._llm_fetch_gen = getattr(self, "_llm_fetch_gen", 0) + 1
         threading.Thread(
             target=self._fetch_llm_models_async,
-            args=(pid, self._llm_key_var.get(), self._llm_base_url_var.get()),
+            args=(pid, self._llm_key_var.get(), self._llm_base_url_var.get(),
+                  self._llm_fetch_gen),
             daemon=True,
         ).start()
 
@@ -716,7 +734,8 @@ class SettingsWindow:
         if cur not in values:
             self._llm_model_var.set(values[0])
 
-    def _fetch_llm_models_async(self, pid: str, key: str, base_url: str):
+    def _fetch_llm_models_async(self, pid: str, key: str, base_url: str,
+                                gen: int = 0):
         try:
             llm = _llm_providers()
             models = llm["fetch_models"](key, pid, base_url)
@@ -725,14 +744,24 @@ class SettingsWindow:
         if not models:
             return
         names = list(models.keys())
-        try:
-            self.root.after(0, lambda: self._set_llm_model_choices(names))
-            self.root.after(
-                0,
-                lambda: self._llm_models_status.configure(
+
+        def _apply():
+            # Drop stale results from a superseded provider selection, and
+            # bail out if the Settings window has since been closed.
+            if gen != getattr(self, "_llm_fetch_gen", gen):
+                return
+            if not _widget_alive(self._llm_models_status):
+                return
+            self._set_llm_model_choices(names)
+            try:
+                self._llm_models_status.configure(
                     text=f"{len(names)} modeller hittade hos leverantören."
-                ),
-            )
+                )
+            except Exception:
+                pass
+
+        try:
+            self.root.after(0, _apply)
         except Exception:
             return
 
@@ -1099,6 +1128,10 @@ class SettingsWindow:
         verbatim copies so a future tweak (e.g. fading the colour, swapping
         symbols) only lives in one place.
         """
+        # The network test runs on a worker thread; the window may have been
+        # closed before this result is marshalled back. Skip cleanly.
+        if not _widget_alive(label):
+            return
         try:
             button.configure(state="normal", text="Testa anslutning")
         except Exception:
@@ -1113,7 +1146,10 @@ class SettingsWindow:
                     text=prefix + msg, fg="#27ae60" if ok else "#c0392b"
                 )
         except Exception:
-            label.configure(text=prefix + msg)
+            try:
+                label.configure(text=prefix + msg)
+            except Exception:
+                pass
 
     # -- save ---------------------------------------------------------------- #
 

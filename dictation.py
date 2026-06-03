@@ -1025,6 +1025,11 @@ class DictationMode:
                     return
                 audio = finalize_audio(audio_raw, channels, rate)
                 if len(audio) < MIN_AUDIO_SAMPLES:
+                    # Mirror the sibling branches: don't leave the pill stuck
+                    # in "Tolkar redigering…" when the clip is too short.
+                    if self.indicator:
+                        self.indicator.show("Inget hördes", state="error")
+                        self.indicator.hide(delay_ms=1500)
                     return
                 instruction = self.transcriber.transcribe(audio, capitalize=False)
                 if instruction.strip():
@@ -1211,7 +1216,10 @@ class DictationMode:
                     polish_label = _provider_status_label(llm_provider)
                     self.on_status(f"Polerar {polish_label}…")
                     if self.indicator:
-                        self.indicator.show(f"Polerar {polish_label}…", state="review")
+                        # Polish is still "processing" — reuse the transcribe
+                        # state (orange). The indicator only supports the four
+                        # canonical states (listen/transcribe/done/error).
+                        self.indicator.show(f"Polerar {polish_label}…", state="transcribe")
 
                     polish_lock = threading.Lock()
                     polish_completed = {"done": False}
