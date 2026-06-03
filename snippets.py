@@ -14,12 +14,16 @@ via ``json_store``. Allt lokalt; ingen nätverkstrafik.
 """
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from json_store import JsonCache
 
 _PATH = Path.home() / ".freewispr-swedish" / "snippets.json"
 _store = JsonCache(_PATH, default={})
+# Serialise add()/remove() read-modify-write so two near-simultaneous edits
+# can't lose an update against each other.
+_lock = threading.Lock()
 
 _PUNCT = ".,;:!?\"'()[]{}…"
 
@@ -45,16 +49,18 @@ def save(mapping: dict[str, str]) -> None:
 
 
 def add(trigger: str, expansion: str) -> None:
-    data = dict(load())
-    if trigger.strip() and expansion:
-        data[trigger.strip()] = expansion
-        save(data)
+    with _lock:
+        data = dict(load())
+        if trigger.strip() and expansion:
+            data[trigger.strip()] = expansion
+            save(data)
 
 
 def remove(trigger: str) -> None:
-    data = dict(load())
-    if data.pop(trigger, None) is not None or data.pop(trigger.strip(), None) is not None:
-        save(data)
+    with _lock:
+        data = dict(load())
+        if data.pop(trigger, None) is not None or data.pop(trigger.strip(), None) is not None:
+            save(data)
 
 
 def expand(text: str, snippets: dict[str, str] | None = None) -> str:

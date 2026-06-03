@@ -86,8 +86,10 @@ def test_config_load_migrates_legacy_secret_off_disk(tmp_path):
     assert loaded["llm_api_key_github"] == "legacy-secret"
     assert (config._KEYRING_SERVICE, config._keyring_user("github")) in secrets
     assert (config._KEYRING_SERVICE, config._LEGACY_KEYRING_USERNAME) not in secrets
-    # llm_model migrerat till llm_model_github.
+    # llm_model migrerat till llm_model_github — och *persisterat* till disk,
+    # inte bara i runtime-cfg (annars förloras valet vid nästa start).
     assert loaded["llm_model_github"] == "openai/gpt-4.1"
+    assert saved["llm_model_github"] == "openai/gpt-4.1"
     assert "llm_api_key" not in saved
     assert "llm_model" not in saved
     assert saved["model_size"] == "base"

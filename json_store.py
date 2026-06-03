@@ -1,4 +1,5 @@
 """Atomic JSON file I/O with corruption recovery and mtime-based caching."""
+import copy
 import json
 import logging
 import os
@@ -89,16 +90,22 @@ class JsonCache:
             return 0.0
 
     def load(self) -> dict:
-        """Return cached data, re-reading from disk only when mtime changes."""
+        """Return cached data, re-reading from disk only when mtime changes.
+
+        Returns a deep copy so a caller mutating the result (the common
+        ``d = dict(load()); d[k] = v; save(d)`` pattern) can't desync the
+        in-memory cache — which every other reader shares — from disk.
+        """
         current_mt = self.mtime()
-        if self._data is not None and current_mt == self._data_mtime:
-            return self._data
-        self._data = dict(load_json(self._path, self._default))
-        self._data_mtime = current_mt
-        return self._data
+        if self._data is None or current_mt != self._data_mtime:
+            self._data = dict(load_json(self._path, self._default))
+            self._data_mtime = current_mt
+        return copy.deepcopy(self._data)
 
     def save(self, data: dict) -> None:
         """Write *data* atomically and update the in-memory cache."""
         save_json_atomic(self._path, data)
-        self._data = data
+        # Store a copy so a later mutation of the caller's dict doesn't leak
+        # into the cache without going through disk.
+        self._data = copy.deepcopy(data)
         self._data_mtime = self.mtime()
