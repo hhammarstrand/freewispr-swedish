@@ -630,7 +630,12 @@ def instruct(
     resolved_key = resolve_api_key(api_key, provider)
     if not resolved_key and provider != "custom":
         return text
-    base = _resolve_base_url(provider, base_url_override)
+    try:
+        base = _resolve_base_url(provider, base_url_override)
+    except ValueError:
+        # Invalid custom URL — command mode must never crash dictation;
+        # return the text unchanged instead of propagating.
+        return text
     used_model = normalize_model(model, provider) or p.default_model
     if not base or not used_model:
         return text
@@ -672,7 +677,12 @@ def test_connection(
     import time
 
     p = _get_provider(provider)
-    base = _resolve_base_url(provider, base_url_override)
+    try:
+        base = _resolve_base_url(provider, base_url_override)
+    except ValueError as e:
+        # Invalid custom URL — return a friendly (False, message) instead of
+        # letting the ValueError escape the test button.
+        return False, str(e)
     if not base:
         return False, "Ingen base_url angiven för custom-leverantör"
 

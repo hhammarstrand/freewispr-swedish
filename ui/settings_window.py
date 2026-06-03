@@ -1415,6 +1415,24 @@ class SettingsWindow:
         new_cfg["expect_english_terms"] = self._expect_english_var.get()
         new_cfg["snippets_enabled"] = self._snippets_var.get()
 
+        new_cfg["learning_enabled"] = self._learning_var.get()
+        new_cfg["context_awareness_enabled"] = self._context_var.get()
+        new_cfg["command_mode_enabled"] = self._command_var.get()
+        new_cfg["flow_mode_enabled"] = self._flow_var.get()
+
+        # Strip removed legacy keys.
+        for k in ("filter_fillers", "auto_punctuate", "language",
+                  "llm_api_key", "llm_model"):
+            new_cfg.pop(k, None)
+
+        # Validate + persist the main config FIRST. The side files (snippets,
+        # corrections, personal context) are written only after on_save
+        # succeeds — otherwise a rejected model reload / config save would
+        # leave the side files overwritten while the main config rolled back.
+        if self.on_save:
+            if self.on_save(new_cfg) is False:
+                return
+
         # AP7.6/7.7: persist the snippet + corrections editors (own files).
         try:
             if hasattr(self, "_snip_textbox"):
@@ -1428,15 +1446,6 @@ class SettingsWindow:
                 set_corrections(self._parse_pairs(self._corr_textbox.get("1.0", "end-1c")))
         except Exception as e:
             log.warning("Kunde inte spara rättelser: %s", e)
-        new_cfg["learning_enabled"] = self._learning_var.get()
-        new_cfg["context_awareness_enabled"] = self._context_var.get()
-        new_cfg["command_mode_enabled"] = self._command_var.get()
-        new_cfg["flow_mode_enabled"] = self._flow_var.get()
-
-        # Strip removed legacy keys.
-        for k in ("filter_fillers", "auto_punctuate", "language",
-                  "llm_api_key", "llm_model"):
-            new_cfg.pop(k, None)
 
         # Personal context — save to its own JSON file, not to config.
         # The textbox holds the placeholder text when the user never
@@ -1464,8 +1473,7 @@ class SettingsWindow:
             return
 
         # Starta med Windows — sync HKCU\...\Run with the switch state.
-        # Done after context save so an exception here doesn't block the
-        # rest of the save flow. Failure is logged but non-fatal.
+        # Failure is logged but non-fatal.
         try:
             from main import _is_startup_enabled, _toggle_startup
             want = bool(self._startup_var.get())
@@ -1478,7 +1486,4 @@ class SettingsWindow:
                 f"{su_err}",
             )
 
-        if self.on_save:
-            if self.on_save(new_cfg) is False:
-                return
         self.root.destroy()
