@@ -54,7 +54,24 @@ class TestSanitizeOutput:
         assert once == twice == "escseqbell"
 
     def test_unicode_zero_width_preserved(self):
-        # We only strip ASCII/Latin-1 controls. Whisper sometimes emits
-        # \u200b inside Swedish compounds; leave it alone.
+        # Zero-width space is not a Trojan-Source vector. Whisper sometimes
+        # emits \u200b inside Swedish compounds; leave it alone.
         s = "ord\u200bdelning"
         assert sanitize_output(s) == s
+
+    @pytest.mark.parametrize("cp", [
+        0x202a, 0x202b, 0x202c, 0x202d, 0x202e,  # bidi embeddings/overrides
+        0x2066, 0x2067, 0x2068, 0x2069,          # bidi isolates
+    ])
+    def test_bidi_overrides_stripped(self, cp):
+        # Trojan Source (CVE-2021-42574): these reorder rendered text without
+        # changing logical content. Must not survive sanitisation.
+        payload = f"safe{chr(cp)}danger"
+        assert sanitize_output(payload) == "safedanger"
+
+    @pytest.mark.parametrize("cp", [0x2028, 0x2029])
+    def test_line_paragraph_separators_stripped(self, cp):
+        # Treated as line terminators by some parsers (e.g. JS); strip so they
+        # can't smuggle a break past a single-line consumer.
+        payload = f"a{chr(cp)}b"
+        assert sanitize_output(payload) == "ab"

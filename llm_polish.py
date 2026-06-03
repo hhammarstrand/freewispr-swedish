@@ -545,13 +545,16 @@ def polish(
 
     except urllib.error.HTTPError as e:
         latency = int((time.perf_counter() - t0) * 1000)
-        body = ""
+        # Invariant 6: never log the transcript. Some providers echo the
+        # request payload (which contains the user's dictated text) back in
+        # their error body, so we log only its size, not its content.
+        body_len = 0
         try:
-            body = e.read().decode("utf-8", errors="replace")[:200]
+            body_len = len(e.read())
         except Exception:
             pass
-        log.warning("LLM HTTP %d (%dms, provider=%s, model=%s): %s",
-                    e.code, latency, provider, used_model, body)
+        log.warning("LLM HTTP %d (%dms, provider=%s, model=%s, body=%dB)",
+                    e.code, latency, provider, used_model, body_len)
         return PolishResult(text=text, model=used_model, latency_ms=latency,
                             changed=False)
 
@@ -723,7 +726,11 @@ def test_connection(
             return False, f"Rate limit — för många anrop (HTTP 429, {latency}ms)"
         body = ""
         try:
-            body = e.read().decode("utf-8", errors="replace")[:200]
+            from text_sanitize import sanitize_output
+            # Invariant 2: provider-controlled body must be sanitised before it
+            # reaches the Settings UI — a hostile provider could embed control
+            # sequences in the error response too.
+            body = sanitize_output(e.read().decode("utf-8", errors="replace"))[:200]
         except Exception:
             pass
         return False, f"HTTP {e.code} ({latency}ms): {body}"

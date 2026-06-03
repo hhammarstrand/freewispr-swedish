@@ -23,7 +23,6 @@ import os
 import secrets
 import time
 import urllib.error
-import urllib.request
 import wave
 from typing import NamedTuple
 
@@ -423,11 +422,13 @@ def test_connection(
         headers["Authorization"] = f"Bearer {resolved_key}"
 
     url = f"{base}/models"
-    req = urllib.request.Request(url, headers=headers, method="GET")
 
     try:
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-            resp.read(1024)  # förbruka lite av kroppen för att stänga TLS rent
+        # Route via the pool (raw http.client) instead of urlopen: urlopen
+        # follows redirects and would resend the Authorization: Bearer header
+        # to the redirect target. http.client does not auto-follow 3xx.
+        http_pool.request(url, headers, method="GET",
+                          timeout=timeout_sec, parse="raw")
     except urllib.error.HTTPError as e:
         body_snippet = ""
         try:
@@ -460,5 +461,8 @@ def _http_message(code: int, body: str) -> str:
         if code in _RETRYABLE_HTTP_CODES:
             return f"Servern tillfälligt otillgänglig (HTTP {code}) — försök igen"
         return f"Serverfel (HTTP {code})"
-    snippet = body[:120] if body else ""
+    # Invariant 2: provider-controlled body must pass through sanitize_output()
+    # before it reaches the indicator / Settings UI.
+    from text_sanitize import sanitize_output
+    snippet = sanitize_output(body)[:120] if body else ""
     return f"HTTP {code}: {snippet}".rstrip(": ")

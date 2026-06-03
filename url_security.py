@@ -91,6 +91,21 @@ def validate_base_url(url: str, *, allow_plaintext_loopback: bool = False
             "(user:pass@host)."
         )
 
+    # A base URL is only scheme/host/port/path — endpoints are built by
+    # appending paths. A querystring or fragment is almost always a sign that
+    # the user pasted a full URL with credentials (e.g. ?api_key=...), which
+    # would leak into proxy/server logs and make path concatenation ambiguous.
+    if parts.query:
+        return False, (
+            "URL:en får inte innehålla en frågesträng (?...). "
+            "Ange bara bas-URL:en till API:et, t.ex. https://host/v1."
+        )
+    if parts.fragment:
+        return False, (
+            "URL:en får inte innehålla ett fragment (#...). "
+            "Ange bara bas-URL:en till API:et, t.ex. https://host/v1."
+        )
+
     if scheme == "http":
         if not allow_plaintext_loopback:
             return False, (

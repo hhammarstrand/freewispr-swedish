@@ -48,14 +48,24 @@ def connection_for(url: str, timeout: float
     port = parts.port or (443 if parts.scheme == "https" else 80)
     key = (parts.scheme, host, port)
     conn = _connections.get(key)
+    if conn is not None:
+        # http.client locks the socket timeout at connect() time; reassigning
+        # conn.timeout afterwards does NOT change an already-connected socket.
+        # A connection opened by a warmer (short timeout) would otherwise make
+        # a later long request (e.g. a 60 s remote transcription) time out
+        # early. Reopen when the caller needs more headroom than we have.
+        opened = getattr(conn, "_pool_timeout", None)
+        if opened is not None and timeout > opened:
+            drop_connection(key)
+            conn = None
     if conn is None:
         if parts.scheme == "https":
             conn = http.client.HTTPSConnection(host, port, timeout=timeout)
         else:
             conn = http.client.HTTPConnection(host, port, timeout=timeout)
+        conn._pool_timeout = timeout
         _connections[key] = conn
         return key, conn, False
-    conn.timeout = timeout
     return key, conn, True
 
 
