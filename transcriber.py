@@ -100,6 +100,8 @@ def _patch_vocabulary(snapshot_dir: Path) -> None:
          proper fix (writes a clean ct2 model next to the HF cache).
     """
     import json
+    import os
+    import shutil
     vocab_path = snapshot_dir / "vocabulary.json"
     marker = snapshot_dir / ".freewispr-patched"
     if not vocab_path.exists():
@@ -117,12 +119,18 @@ def _patch_vocabulary(snapshot_dir: Path) -> None:
                 len(vocab),
             )
             backup = snapshot_dir / "vocabulary.json.orig"
-            if not backup.exists():
-                vocab_path.replace(backup)
-                # vocab_path no longer exists; recreate it below.
+            # Write the trimmed file to a temp path and swap it in atomically.
+            # Never move the original away before the replacement exists — a
+            # failed json.dump (full disk / permissions) would otherwise leave
+            # the snapshot with only vocabulary.json.orig and no
+            # vocabulary.json, making the model unloadable.
             vocab = vocab[:51865]
-            with open(vocab_path, "w", encoding="utf-8") as f:
+            tmp_path = snapshot_dir / "vocabulary.json.tmp"
+            with open(tmp_path, "w", encoding="utf-8") as f:
                 json.dump(vocab, f, ensure_ascii=False)
+            if not backup.exists():
+                shutil.copy2(vocab_path, backup)
+            os.replace(tmp_path, vocab_path)
             marker.write_text("trimmed to 51865 tokens by freewispr-swedish\n",
                               encoding="utf-8")
     except Exception as e:

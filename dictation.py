@@ -174,6 +174,27 @@ class _ContextHolder:
         self.ctx = None
 
 
+class _PressState:
+    """Per-press context + live-transcribe state, bound to a single job.
+
+    Holding these here (rather than in shared DictationMode attributes) keeps
+    a fast second key-press from overwriting the first job's context / live
+    partials while that job is still queued in the worker (_QUEUE_MAX=2). The
+    object travels through the job queue so the worker reads exactly the state
+    that belongs to the audio it's processing.
+    """
+
+    __slots__ = ("ctx_holder", "live_active", "live_thread",
+                 "live_parts", "live_consumed")
+
+    def __init__(self) -> None:
+        self.ctx_holder = None
+        self.live_active = False
+        self.live_thread = None
+        self.live_parts: list = []
+        self.live_consumed = 0
+
+
 def _friendly_mic_error(exc: Exception) -> str:
     """Convert raw exception to a user-friendly Swedish message."""
     msg = str(exc).lower()
@@ -316,6 +337,7 @@ class DictationMode:
         self._live_parts: list = []
         self._live_consumed = 0
         self._live_thread: threading.Thread | None = None
+        self._press_state: _PressState | None = None
         self._paused = False
         self._active = False
         self._recording = False
@@ -650,9 +672,12 @@ class DictationMode:
         except Exception as e:
             log.error("polish_async (rå→ersätt) kraschade: %s", e, exc_info=True)
 
-    def _live_loop(self) -> None:
+    def _live_loop(self, ps: "_PressState") -> None:
         """L5.7: while recording, transcribe completed (silence-delimited)
-        chunks ahead of release so only the tail remains afterwards."""
+        chunks ahead of release so only the tail remains afterwards.
+
+        Results are written into *ps* (this press's state) so they can't be
+        overwritten by a subsequent press's live loop."""
         from flow import split_on_silence
         consumed = 0
         parts: list[str] = []
@@ -675,18 +700,29 @@ class DictationMode:
                     consumed = len(chunks) - 1
         except Exception as e:
             log.debug("Live-transkribering fel: %s", e)
-        self._live_parts = parts
-        self._live_consumed = consumed
+        ps.live_parts = parts
+        ps.live_consumed = consumed
 
-    def _combine_live(self, audio: np.ndarray) -> str:
+    def _combine_live(self, audio: np.ndarray, press_state=None) -> str:
         """L5.7: join live partials with the post-release tail. Degrades to a
-        normal full-batch transcribe for short utterances (one chunk)."""
+        normal full-batch transcribe for short utterances (one chunk).
+
+        Reads the live partials from *press_state* when given (the per-job
+        binding), falling back to the legacy instance attributes for callers
+        that don't pass one (tests)."""
         from flow import split_on_silence
-        t = getattr(self, "_live_thread", None)
-        if t is not None and t.is_alive():
-            t.join(timeout=5.0)
-        parts = list(getattr(self, "_live_parts", []))
-        consumed = getattr(self, "_live_consumed", 0)
+        if press_state is not None:
+            t = press_state.live_thread
+            if t is not None and t.is_alive():
+                t.join(timeout=5.0)
+            parts = list(press_state.live_parts)
+            consumed = press_state.live_consumed
+        else:
+            t = getattr(self, "_live_thread", None)
+            if t is not None and t.is_alive():
+                t.join(timeout=5.0)
+            parts = list(getattr(self, "_live_parts", []))
+            consumed = getattr(self, "_live_consumed", 0)
         chunks = split_on_silence(audio, 16000, self.min_rms) or [audio]
         for c in chunks[consumed:]:
             txt = self.transcriber.transcribe(c)
@@ -747,9 +783,14 @@ class DictationMode:
         finally:
             holder.event.set()
 
-    def _await_context(self):
-        """Return ``(ctx, hotpath_ms)`` from the press-time resolution (L1)."""
-        holder = getattr(self, "_ctx_result", None)
+    def _await_context(self, press_state=None):
+        """Return ``(ctx, hotpath_ms)`` from the press-time resolution (L1).
+
+        Prefers the holder bound to *press_state* (the per-job binding); falls
+        back to the legacy instance slot for callers that don't pass one."""
+        holder = press_state.ctx_holder if press_state is not None else None
+        if holder is None:
+            holder = getattr(self, "_ctx_result", None)
         if holder is None:
             return None, 0.0
         t0 = time.monotonic()
@@ -890,7 +931,8 @@ class DictationMode:
         # Tagged job: the 6th element marks this as a voice-edit instruction so
         # the worker transcribes it and routes to run_voice_edit().
         try:
-            self._jobs.put_nowait((audio, channels, rate, rms, record_ms, "voice_edit"))
+            self._jobs.put_nowait((audio, channels, rate, rms, record_ms,
+                                   "voice_edit", None))
         except queue.Full:
             log.warning("Kö full — hoppar över röstediteringen")
             self._voice_editing = False
@@ -926,6 +968,10 @@ class DictationMode:
             try:
                 self._recording = True
                 self._t_press = time.monotonic()
+                # Per-press state, bound to this recording's eventual job so a
+                # quick next press can't clobber it (see _PressState).
+                ps = _PressState()
+                self._press_state = ps
                 # L1: resolve active-app context + focused-field snapshot on a
                 # daemon thread *now*, overlapping the whole recording, so the
                 # UIA cost is off the critical path after key-up.
@@ -933,6 +979,7 @@ class DictationMode:
                 if getattr(self, "context_awareness", False):
                     holder = _ContextHolder()
                     self._ctx_result = holder
+                    ps.ctx_holder = holder
                     threading.Thread(
                         target=self._resolve_context_async,
                         args=(holder, self._last_pasted),
@@ -952,10 +999,13 @@ class DictationMode:
                         and getattr(self.transcriber, "transcription_provider",
                                     "local") == "local"):
                     self._live_active = True
+                    ps.live_active = True
                     self._live_parts = []
                     self._live_consumed = 0
-                    self._live_thread = threading.Thread(
-                        target=self._live_loop, name="live-tx", daemon=True)
+                    ps.live_thread = threading.Thread(
+                        target=self._live_loop, args=(ps,),
+                        name="live-tx", daemon=True)
+                    self._live_thread = ps.live_thread
                     self._live_thread.start()
                 sounds.play_start()
                 self.on_status("Lyssnar…")
@@ -1004,7 +1054,8 @@ class DictationMode:
         # Enqueue for the worker. Bounded queue: if full (previous job(s)
         # still being transcribed/polished), drop and tell the user.
         try:
-            self._jobs.put_nowait((audio, channels, rate, rms, record_ms))
+            self._jobs.put_nowait((audio, channels, rate, rms, record_ms,
+                                   "dictation", self._press_state))
         except queue.Full:
             log.warning("Transkriberingskö full — hoppar över denna")
             self.on_status("Upptagen — vänta…")
@@ -1033,7 +1084,7 @@ class DictationMode:
 
     def _process_job(self, audio_raw: np.ndarray, channels: int,
                      rate: int, rms: float, record_ms: float = 0.0,
-                     kind: str = "dictation"):
+                     kind: str = "dictation", press_state=None):
         n_raw = audio_raw.shape[0] if audio_raw.ndim >= 1 else 0
         log.info("Audio: %d raw samples, RMS=%.5f", n_raw, rms)
 
@@ -1068,7 +1119,7 @@ class DictationMode:
 
         # L1: collect the press-time context snapshot once (bounded wait) and
         # reuse it for both the learning loop and transcription/polish.
-        ctx, context_hotpath_ms = self._await_context()
+        ctx, context_hotpath_ms = self._await_context(press_state)
 
         # AP2: learn from any manual edits the user made to the last paste
         # before starting this new dictation (best-effort, never blocks).
@@ -1102,10 +1153,12 @@ class DictationMode:
                 audio = trimmed
 
         self._transcribe(audio, record_ms, ctx=ctx,
-                         context_hotpath_ms=context_hotpath_ms)
+                         context_hotpath_ms=context_hotpath_ms,
+                         press_state=press_state)
 
     def _transcribe(self, audio: np.ndarray, record_ms: float = 0.0,
-                    ctx=_NO_CTX, context_hotpath_ms: float = 0.0):
+                    ctx=_NO_CTX, context_hotpath_ms: float = 0.0,
+                    press_state=None):
         try:
             if self._worker_stop.is_set() or not self._active:
                 log.info("Hoppar över stale transkribering efter stopp")
@@ -1166,11 +1219,13 @@ class DictationMode:
                     log.debug("Skärmnamn skickas ej till remote-STT "
                               "(medgivande saknas)")
                 stt_hotwords = ""
-            if getattr(self, "_live_active", False):
+            live_active = (press_state.live_active if press_state is not None
+                           else getattr(self, "_live_active", False))
+            if live_active:
                 # L5.7: most of the audio was already decoded during recording;
                 # only the tail remains. Live mode is local-only, so the remote
                 # privacy gate above is a no-op there (stt_hotwords == names).
-                text = self._combine_live(audio)
+                text = self._combine_live(audio, press_state)
             else:
                 text = self.transcriber.transcribe(
                     audio, capitalize=capitalize, extra_hotwords=stt_hotwords)

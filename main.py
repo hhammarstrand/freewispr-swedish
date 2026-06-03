@@ -466,7 +466,13 @@ def _apply_settings_locked(new_cfg: dict):
             return False
 
     def _rollback():
-        _config.clear()
+        # Restore old_config WITHOUT an empty intermediate state: _config is
+        # read unlocked from other threads (_build_menu, _set_tray_status,
+        # _make_*), and a clear()+update() would briefly expose an empty dict
+        # → silent default fallbacks. Drop only the keys new_cfg added that
+        # weren't present before, then restore the old values.
+        for key in [k for k in _config if k not in old_config]:
+            del _config[key]
         _config.update(old_config)
 
     new_model = _config.get("model_size", "small")
