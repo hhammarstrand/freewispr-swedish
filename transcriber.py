@@ -145,15 +145,16 @@ KBLAB_MODELS = {
     "large": "KBLab/kb-whisper-large",
 }
 
-# Pin specific HuggingFace revisions for reproducible downloads.
-# Set to a commit SHA from the model's HF page to lock to that version.
-# None = use latest (current behavior).
+# Pin specific HuggingFace revisions for reproducible downloads. Kept in sync
+# with convert_model.KBLAB_REVISIONS — both must point at the same commit SHA
+# so a model loaded here matches the one convert_model.py downloaded.
+# Last verified: 2026-05-28 against https://huggingface.co/KBLab/kb-whisper-*
 KBLAB_REVISIONS: dict[str, str | None] = {
-    "tiny": None,
-    "base": None,
-    "small": None,
-    "medium": None,
-    "large": None,
+    "tiny":   "76d796af43a50fa34321efa562c9b9887a187463",
+    "base":   "1499d2d2f0c7ed545bd6f2eec85287cf8d8c8b38",
+    "small":  "3564d61a42fc210ceaa55a22a96dd64478959c78",
+    "medium": "0abe10b9d7f75d0902656e5c06c5c4d549604dc5",
+    "large":  "d5d5984b4d8f7c4847a8ea203f1976285fb28300",
 }
 
 # Whisper noise/placeholder tokens to strip (always, regardless of settings).

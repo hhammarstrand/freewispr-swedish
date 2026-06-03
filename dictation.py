@@ -236,7 +236,7 @@ def _friendly_transcribe_error(exc: Exception) -> str:
         or raw.startswith("Nätverksfel")
     ):
         return raw
-    if "out of memory" in msg or "cuda" in msg and "memory" in msg:
+    if "out of memory" in msg or ("cuda" in msg and "memory" in msg):
         return "GPU-minne slut — byt till en mindre modell i Inställningar"
     if "no module named" in msg:
         return "Modul saknas — kör 'pip install -r requirements.txt'"

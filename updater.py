@@ -191,7 +191,9 @@ def check_for_update(current_version: str,
 
     # Uppdatera cache oavsett om det är nyare eller ej, så ETag funkar
     # nästa gång.
-    version_clean = tag.lstrip("v")
+    # Strip only a leading "v" prefix, not every leading "v" character —
+    # lstrip("v") would also mangle a hypothetical tag like "vvv1.0".
+    version_clean = tag[1:] if tag.startswith("v") else tag
     new_cache = {
         "etag": new_etag or "",
         "last_known_version": version_clean,
