@@ -666,6 +666,8 @@ class SettingsWindow:
         self._llm_consent_hint = self._hint(
             parent,
             "Krävs när LLM-granskning är aktiv mot en extern leverantör. "
+            "Gäller även röstredigering, som skickar den text du markerat "
+            "(kan innehålla känslig information) till leverantören. "
             "Lokala körningar via Custom + http://localhost (Ollama, "
             "LM Studio) lämnar inte datorn och kräver inget samtycke.",
         )
@@ -1317,7 +1319,9 @@ class SettingsWindow:
             ok = messagebox.askokcancel(
                 "Aktivera LLM-granskning?",
                 "LLM-granskning skickar din transkriberade text till vald "
-                "leverantör för korrigering.\n\nAktivera bara detta om du "
+                "leverantör för korrigering. Röstredigering skickar dessutom "
+                "den text du markerat — som kan innehålla känslig information "
+                "— till samma leverantör.\n\nAktivera bara detta om du "
                 "accepterar att texten lämnar datorn. Du kan också bocka i "
                 "samtyckesrutan på fliken LLM-granskning för att slippa "
                 "denna fråga.",
@@ -1380,7 +1384,15 @@ class SettingsWindow:
         # Persist consent independently of llm_enabled — otherwise users
         # who toggle LLM off later have to re-accept the consent dialog
         # next time they enable it, which is annoying and erodes trust.
-        new_cfg["llm_privacy_accepted"] = bool(llm_local or llm_consent)
+        #
+        # Store ONLY genuine remote consent here — never fold in the loopback
+        # exception (llm_local). Otherwise a user who configured a local
+        # http://localhost endpoint would have llm_privacy_accepted=True
+        # persisted, and later switching to a remote provider (GitHub/OpenAI/
+        # Staik/Berget) would silently inherit that "consent" and send text
+        # over the network without a fresh explicit yes. The loopback skip is
+        # re-evaluated at runtime instead (see main._active_llm_settings).
+        new_cfg["llm_privacy_accepted"] = bool(llm_consent)
 
         # Transcription
         new_cfg["transcription_provider"] = tr_pid
@@ -1388,9 +1400,13 @@ class SettingsWindow:
             new_cfg[f"transcription_model_{tr_pid}"] = self._tr_model_var.get().strip()
             new_cfg[f"transcription_api_key_{tr_pid}"] = self._tr_key_var.get().strip()
             new_cfg["transcription_custom_base_url"] = self._tr_base_url_var.get().strip()
-        new_cfg["transcription_privacy_accepted"] = bool(
-            tr_pid != "local" and self._tr_consent_var.get()
-        )
+        # Persist transcription consent independently of the active provider
+        # (invariant 3). Storing False just because the user temporarily
+        # switched to local Whisper would silently revoke a prior remote-STT
+        # acceptance; only an explicit untick of the consent switch should do
+        # that. The runtime gate (main._active_transcription_settings) still
+        # ignores this flag while the provider is "local".
+        new_cfg["transcription_privacy_accepted"] = bool(self._tr_consent_var.get())
 
         # Smart features (AP1/AP2/AP3/AP5/AP6 + L3 + AP7)
         new_cfg["llm_raw_mode"] = self._raw_mode_var.get()

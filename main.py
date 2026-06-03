@@ -124,13 +124,25 @@ def _active_llm_settings() -> tuple[bool, str, str, str, str]:
     exakt samma vy av configgen.
     """
     provider = _config.get("llm_provider", "github")
+    base_url = _config.get("llm_custom_base_url", "") if provider == "custom" else ""
+    # A custom loopback endpoint (http://localhost/...) never leaves the
+    # machine, so it doesn't require remote-privacy consent. This exception is
+    # evaluated here at runtime — it is deliberately NOT persisted into
+    # llm_privacy_accepted, so switching to a remote provider always requires a
+    # fresh explicit consent.
+    llm_local = False
+    if provider == "custom" and base_url:
+        try:
+            from url_security import is_plaintext_loopback
+            llm_local = is_plaintext_loopback(base_url)
+        except Exception:
+            llm_local = False
     enabled = bool(
         _config.get("llm_enabled", False)
-        and _config.get("llm_privacy_accepted", False)
+        and (llm_local or _config.get("llm_privacy_accepted", False))
     )
     api_key = _config.get(f"llm_api_key_{provider}", "")
     model = _config.get(f"llm_model_{provider}", "")
-    base_url = _config.get("llm_custom_base_url", "") if provider == "custom" else ""
     return enabled, api_key, model, provider, base_url
 
 

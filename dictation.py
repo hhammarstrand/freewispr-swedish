@@ -565,6 +565,30 @@ class DictationMode:
         log.info("Kommandoläge utförde '%s'", cmd.phrase)
         return True
 
+    def _names_for_llm(self, onscreen_names: str) -> str:
+        """Gate on-screen names before they reach the LLM polisher.
+
+        Same data category and consent as the remote-STT gate: names scraped
+        from the focused window/UI may only be sent to a *remote* LLM provider
+        when the user has explicitly consented. A local loopback LLM
+        (http://localhost/...) never leaves the machine, so it's exempt.
+        """
+        if not onscreen_names:
+            return ""
+        provider = getattr(self.transcriber, "llm_provider", "")
+        base_url = getattr(self.transcriber, "llm_base_url", "")
+        is_local = False
+        if provider == "custom" and base_url:
+            try:
+                from url_security import is_plaintext_loopback
+                is_local = is_plaintext_loopback(base_url)
+            except Exception:
+                is_local = False
+        if is_local or getattr(self, "context_to_remote_accepted", False):
+            return onscreen_names
+        log.debug("Skärmnamn skickas ej till remote-LLM (medgivande saknas)")
+        return ""
+
     def _dictate_replace_mode(self, text: str, record_ms: float,
                               transcribe_ms: float, context_hotpath_ms: float,
                               uia_ms: float, profile_desc: str,
@@ -621,7 +645,8 @@ class DictationMode:
         try:
             self.transcriber.polish_async(
                 raw_text, _on_replace, on_stage=None,
-                app_profile=profile_desc, onscreen_names=onscreen_names)
+                app_profile=profile_desc,
+                onscreen_names=self._names_for_llm(onscreen_names))
         except Exception as e:
             log.error("polish_async (rå→ersätt) kraschade: %s", e, exc_info=True)
 
@@ -1294,7 +1319,7 @@ class DictationMode:
                         self.transcriber.polish_async(
                             text, _on_polish_done, on_stage=None,
                             app_profile=profile_desc,
-                            onscreen_names=onscreen_names)
+                            onscreen_names=self._names_for_llm(onscreen_names))
                     except Exception as e:
                         log.error("polish_async kraschade synkront: %s",
                                   e, exc_info=True)
