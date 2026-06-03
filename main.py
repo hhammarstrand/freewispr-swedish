@@ -4,6 +4,7 @@ Entry point: system tray icon + dictation mode.
 """
 from __future__ import annotations
 
+import gc
 import sys
 import logging
 from pathlib import Path
@@ -496,6 +497,12 @@ def _apply_settings_locked(new_cfg: dict):
         (_transcriber.transcription_provider, _transcriber.transcription_api_key,
          _transcriber.transcription_model, _transcriber.transcription_base_url) = new_tr
         log.info("LLM/transkriberings-inställningar uppdaterade i befintlig transcriber")
+        # Restart the connection warmers so they stop pinging the old endpoint
+        # and pick up an immutable snapshot of the new credentials.
+        try:
+            _transcriber.restart_warmers()
+        except Exception as e:
+            log.debug("Kunde inte starta om warmers: %s", e)
         # Hotkey/mic may still have changed; rebuild dictation cheaply.
         _restart_dictation()
         if not _persist():
@@ -506,6 +513,10 @@ def _apply_settings_locked(new_cfg: dict):
              _transcriber.transcription_provider, _transcriber.transcription_api_key,
              _transcriber.transcription_model,
              _transcriber.transcription_base_url) = old_transcriber_state
+            try:
+                _transcriber.restart_warmers()
+            except Exception as e:
+                log.debug("Kunde inte starta om warmers vid rollback: %s", e)
             _restart_dictation()
             return False
         _set_tray_status(
@@ -562,20 +573,24 @@ def _apply_settings_locked(new_cfg: dict):
                         old_dictation.stop(wait=False)
                     except Exception as e:
                         log.debug("Kunde inte stoppa gammal dictation rent: %s", e)
+                # Release the old WhisperModel BEFORE the new one goes live so
+                # two models don't stay pinned in VRAM (small CUDA GPUs OOM).
+                # We're already on the background reload thread, so blocking
+                # here on close() — which waits for any in-flight transcription
+                # to finish on the model lock — doesn't freeze the UI. The new
+                # model is already allocated above; closing first would forfeit
+                # the rollback path if _make_transcriber had failed.
+                if old_transcriber is not None:
+                    try:
+                        old_transcriber.close()
+                    except Exception as e:
+                        log.debug("Kunde inte stänga gammal transcriber: %s", e)
+                    finally:
+                        old_transcriber = None
+                        gc.collect()
                 _transcriber = new_transcriber
                 _dictation = _make_dictation(_transcriber)
                 _dictation.start()
-                # Cleanup old model off the reload path. close() may wait for
-                # an in-flight transcription; don't block settings/UI or keep
-                # _reload_lock held for that duration.
-                def _cleanup_old():
-                    if old_transcriber is not None:
-                        try:
-                            old_transcriber.close()
-                        except Exception as e:
-                            log.debug("Kunde inte stänga gammal transcriber: %s", e)
-
-                threading.Thread(target=_cleanup_old, daemon=True).start()
                 log.info("Modell '%s' laddad!", new_model)
                 # Model loaded OK — now it's safe to persist the new config.
                 if not _persist():
@@ -834,28 +849,77 @@ def _manual_update_check(_=None):
 
 
 def _quit(_=None):
-    try:
-        import single_instance
-        single_instance.release()
-    except Exception:
-        pass
+    """Tray-menyns 'Avsluta'. Körs på pystray-daemontråden.
+
+    Tk-teardown (quit/destroy) måste ske på tråden som äger mainloop:en, så
+    den faktiska nedstängningen marshallas dit. Att anropa quit()/destroy()
+    cross-thread kan hänga eller kasta Tcl-fel, och sys.exit() i en daemon-
+    tråd avslutar inte processen. Single-instance-låset släpps allra sist
+    (i _final_cleanup efter mainloop) så att en omstart inte kan krocka med
+    den döende processen medan den fortfarande äger hooks/VRAM.
+    """
+    root = _tk_root
+    if root is not None and threading.current_thread() is not threading.main_thread():
+        try:
+            root.after(0, _shutdown)
+            return
+        except Exception:
+            pass
+    _shutdown()
+
+
+def _shutdown():
+    # Tear down everything that owns OS resources — keyboard hooks, audio
+    # streams, VRAM, tray — before stopping the event loop.
     if _flow:
-        _flow.stop(wait=False)
+        try:
+            _flow.stop(wait=False)
+        except Exception:
+            pass
     if _dictation:
-        _dictation.stop()
+        try:
+            _dictation.stop()
+        except Exception:
+            pass
     if _indicator:
         try:
             _indicator.close()
         except Exception:
             log.debug("Kunde inte stänga indikatorn rent", exc_info=True)
     if _transcriber:
-        _transcriber.close()
+        try:
+            _transcriber.close()
+        except Exception:
+            pass
     if _tray_icon:
-        _tray_icon.stop()
-    if _tk_root:
-        _tk_root.quit()
-        _tk_root.destroy()
-    sys.exit(0)
+        try:
+            _tray_icon.stop()
+        except Exception:
+            pass
+    # End the mainloop; final teardown (destroy + lock release) runs in main()
+    # once mainloop() returns. If no loop is running, finish up inline.
+    if _tk_root is not None:
+        try:
+            _tk_root.quit()
+            return
+        except Exception:
+            pass
+    _final_cleanup()
+
+
+def _final_cleanup():
+    """Last teardown step — runs on the main thread after mainloop() exits."""
+    if _tk_root is not None:
+        try:
+            _tk_root.destroy()
+        except Exception:
+            pass
+    # Release the single-instance lock LAST, after hooks/VRAM/tray are gone.
+    try:
+        import single_instance
+        single_instance.release()
+    except Exception:
+        pass
 
 
 # --------------------------------------------------------------------------- #
@@ -934,6 +998,10 @@ def main():
 
     # tkinter main loop (needed for Toplevel windows + FloatingIndicator)
     _tk_root.mainloop()
+    # mainloop() returns when _shutdown() calls _tk_root.quit(); finish the
+    # teardown (window destroy + release the single-instance lock last) here
+    # on the main thread. All other threads are daemons and die with us.
+    _final_cleanup()
 
 
 if __name__ == "__main__":

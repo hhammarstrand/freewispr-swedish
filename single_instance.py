@@ -37,7 +37,11 @@ def release() -> None:
     try:
         if sys.platform.startswith("win"):
             import ctypes
-            ctypes.windll.kernel32.CloseHandle(h)
+            from ctypes import wintypes
+            close_handle = ctypes.windll.kernel32.CloseHandle
+            close_handle.restype = wintypes.BOOL
+            close_handle.argtypes = (wintypes.HANDLE,)
+            close_handle(h)
         else:
             h.close()
     except Exception:
@@ -48,9 +52,24 @@ def _acquire_windows(name: str) -> bool:
     global _handle
     try:
         import ctypes
-        kernel32 = ctypes.windll.kernel32
+        from ctypes import wintypes
+        # use_last_error=True so GetLastError() is captured into ctypes' own
+        # per-call slot and read via ctypes.get_last_error(); calling
+        # kernel32.GetLastError() separately is unreliable because the ctypes
+        # machinery can clobber the thread error code between the two calls.
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        # Without explicit restype/argtypes ctypes assumes c_int and would
+        # truncate the 64-bit HANDLE to 32 bits on Win64, corrupting the
+        # handle we later pass to CloseHandle().
+        kernel32.CreateMutexW.restype = wintypes.HANDLE
+        kernel32.CreateMutexW.argtypes = (
+            wintypes.LPCVOID, wintypes.BOOL, wintypes.LPCWSTR,
+        )
+        kernel32.CloseHandle.restype = wintypes.BOOL
+        kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+
         handle = kernel32.CreateMutexW(None, False, name)
-        if kernel32.GetLastError() == _ERROR_ALREADY_EXISTS:
+        if ctypes.get_last_error() == _ERROR_ALREADY_EXISTS:
             # Another instance owns the mutex. Close our duplicate handle.
             try:
                 kernel32.CloseHandle(handle)

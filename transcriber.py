@@ -407,6 +407,7 @@ class Transcriber:
         # TLS handshake / provider cold-start. Only runs when LLM is enabled —
         # offline base mode (LLM off) issues no network traffic.
         self._llm_warm_stop = threading.Event()
+        self._tr_warm_stop = threading.Event()
         if llm_enabled:
             self._start_llm_warmer()
         # L5.3: warm the remote transcription connection too (only when remote).
@@ -500,26 +501,59 @@ class Transcriber:
                          daemon=True).start()
 
     def _start_llm_warmer(self) -> None:
-        """Warm the LLM connection now + periodically (L3)."""
+        """Warm the LLM connection now + periodically (L3).
+
+        The thread captures an immutable snapshot of the credentials at start.
+        If the user later changes provider/key/base_url, reading ``self.*``
+        live in the loop would make the warmer ping a new endpoint with a
+        stale key (or an old endpoint with a new key). restart_warmers() stops
+        this thread and spawns a fresh one with the new snapshot instead.
+        """
+        stop = self._llm_warm_stop
+        key = self.llm_api_key
+        kw = dict(model=self.llm_model, provider=self.llm_provider,
+                  base_url_override=self.llm_base_url)
+
         def _loop():
             from llm_polish import warm
-            kw = dict(model=self.llm_model, provider=self.llm_provider,
-                      base_url_override=self.llm_base_url)
-            warm(self.llm_api_key, **kw)
-            while not self._llm_warm_stop.wait(_LLM_WARM_INTERVAL):
-                warm(self.llm_api_key, **kw)
+            warm(key, **kw)
+            while not stop.wait(_LLM_WARM_INTERVAL):
+                warm(key, **kw)
         threading.Thread(target=_loop, name="llm-warm", daemon=True).start()
 
     def _start_transcribe_warmer(self) -> None:
-        """Warm the remote transcription connection now + periodically (L5.3)."""
+        """Warm the remote transcription connection now + periodically (L5.3).
+
+        Uses an immutable credential snapshot for the same reason as the LLM
+        warmer above; restart_warmers() handles provider/key/base_url changes.
+        """
+        stop = self._tr_warm_stop
+        provider = self.transcription_provider
+        kw = dict(api_key=self.transcription_api_key,
+                  base_url_override=self.transcription_base_url)
+
         def _loop():
             import remote_transcribe as rt
-            kw = dict(api_key=self.transcription_api_key,
-                      base_url_override=self.transcription_base_url)
-            rt.warm(self.transcription_provider, **kw)
-            while not self._llm_warm_stop.wait(_LLM_WARM_INTERVAL):
-                rt.warm(self.transcription_provider, **kw)
+            rt.warm(provider, **kw)
+            while not stop.wait(_LLM_WARM_INTERVAL):
+                rt.warm(provider, **kw)
         threading.Thread(target=_loop, name="tr-warm", daemon=True).start()
+
+    def restart_warmers(self) -> None:
+        """Stop the running L3/L5.3 connection warmers and start fresh ones.
+
+        Call after a credential/provider/base_url/model change (e.g. the
+        Settings fast path) so background threads stop pinging the previous
+        endpoint and pick up an immutable snapshot of the new settings.
+        """
+        self._llm_warm_stop.set()
+        self._tr_warm_stop.set()
+        self._llm_warm_stop = threading.Event()
+        self._tr_warm_stop = threading.Event()
+        if self.llm_enabled:
+            self._start_llm_warmer()
+        if self.transcription_provider != "local":
+            self._start_transcribe_warmer()
 
     def _warmup(self) -> None:
         """Run a single silent inference to pre-allocate inference state."""
@@ -558,9 +592,10 @@ class Transcriber:
         can pin 2-3 GB of VRAM and OOM smaller CUDA devices.
         """
         import gc
-        warm_stop = getattr(self, "_llm_warm_stop", None)
-        if warm_stop is not None:
-            warm_stop.set()
+        for attr in ("_llm_warm_stop", "_tr_warm_stop"):
+            warm_stop = getattr(self, attr, None)
+            if warm_stop is not None:
+                warm_stop.set()
         try:
             with self._model_lock:
                 model = getattr(self, "model", None)
