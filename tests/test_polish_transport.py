@@ -8,6 +8,17 @@ from types import SimpleNamespace
 import pytest
 
 
+def test_http_pool_locks_are_per_origin():
+    """Different origins get distinct locks (so a slow request to one provider
+    can't block another); the same origin reuses one lock."""
+    hp = importlib.reload(importlib.import_module("http_pool"))
+    a1 = hp._origin_lock(hp._origin_key("https://api.staik.se/v1/x"))
+    a2 = hp._origin_lock(hp._origin_key("https://api.staik.se/v1/y"))
+    b = hp._origin_lock(hp._origin_key("https://models.github.ai/v1/z"))
+    assert a1 is a2          # same scheme+host+port → same lock
+    assert a1 is not b       # different origin → different lock
+
+
 class _FakeResp:
     def __init__(self, status=200, body=b"", lines=None, reason="OK"):
         self.status = status
