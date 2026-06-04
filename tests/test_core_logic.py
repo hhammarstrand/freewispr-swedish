@@ -131,12 +131,31 @@ def test_llm_polish_resolves_github_token_from_gh_cli(monkeypatch):
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)
 
+    # gh is resolved to an absolute path via shutil.which before being run.
+    monkeypatch.setattr(llm_polish.shutil, "which",
+                        lambda name: "/usr/bin/gh" if name == "gh" else None)
+
     def fake_run(*args, **kwargs):
-        assert args[0] == ["gh", "auth", "token"]
+        assert args[0] == ["/usr/bin/gh", "auth", "token"]
         return SimpleNamespace(returncode=0, stdout="gh-token\n")
 
     monkeypatch.setattr(llm_polish.subprocess, "run", fake_run)
     assert llm_polish.resolve_api_key("") == "gh-token"
+
+
+def test_llm_polish_skips_gh_cli_when_not_on_path(monkeypatch):
+    # When gh isn't installed (shutil.which → None) we must not invoke any
+    # subprocess (no bare-"gh"/CWD execution).
+    llm_polish = importlib.import_module("llm_polish")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.setattr(llm_polish.shutil, "which", lambda name: None)
+
+    def boom(*args, **kwargs):
+        raise AssertionError("subprocess.run must not be called without gh on PATH")
+
+    monkeypatch.setattr(llm_polish.subprocess, "run", boom)
+    assert llm_polish.resolve_api_key("") == ""
 
 
 # --------------------------------------------------------------------------- #
