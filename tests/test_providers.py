@@ -335,6 +335,9 @@ def test_transcriber_remote_reraises_server_error(monkeypatch):
         transcription_base_url="",
         language="sv",
         on_stage=None,
+        # _transcribe_remote snapshots credentials via this helper.
+        _transcription_credentials=lambda: (
+            "staik", "tok", "kb-whisper-large", ""),
     )
 
     audio = np.ones(8000, dtype=np.float32) * 0.2
