@@ -241,6 +241,45 @@ def test_remote_transcribe_posts_multipart_and_parses_text(monkeypatch):
     assert b"kb-whisper-large" in captured["body_prefix"]
 
 
+def test_remote_transcribe_empty_json_text_is_silence(monkeypatch):
+    # A valid {"text": ""} is legitimate silence — must NOT raise.
+    rt = importlib.reload(importlib.import_module("remote_transcribe"))
+    monkeypatch.setattr(rt.http_pool, "request",
+                        lambda *a, **k: json.dumps({"text": ""}).encode("utf-8"))
+    audio = np.ones(8000, dtype=np.float32) * 0.2
+    assert rt.transcribe(audio, 16000, provider="staik", api_key="k") == ""
+
+
+def test_remote_transcribe_json_without_text_raises(monkeypatch):
+    # 200 OK with an error object (no "text") must raise, not be masked as "".
+    rt = importlib.reload(importlib.import_module("remote_transcribe"))
+    monkeypatch.setattr(
+        rt.http_pool, "request",
+        lambda *a, **k: json.dumps({"error": "quota exceeded"}).encode("utf-8"))
+    audio = np.ones(8000, dtype=np.float32) * 0.2
+    with pytest.raises(rt.RemoteTranscribeError):
+        rt.transcribe(audio, 16000, provider="staik", api_key="k")
+
+
+def test_remote_transcribe_html_200_raises(monkeypatch):
+    rt = importlib.reload(importlib.import_module("remote_transcribe"))
+    monkeypatch.setattr(
+        rt.http_pool, "request",
+        lambda *a, **k: b"<!DOCTYPE html><html><body>Cloudflare</body></html>")
+    audio = np.ones(8000, dtype=np.float32) * 0.2
+    with pytest.raises(rt.RemoteTranscribeError):
+        rt.transcribe(audio, 16000, provider="staik", api_key="k")
+
+
+def test_to_mono_averages_stereo_not_flatten():
+    rt = importlib.reload(importlib.import_module("remote_transcribe"))
+    # Stereo: left=1.0, right=0.0 → mono mean = 0.5 per sample, length preserved.
+    stereo = np.column_stack([np.ones(4, np.float32), np.zeros(4, np.float32)])
+    mono = rt._to_mono(stereo)
+    assert mono.shape == (4,)
+    assert np.allclose(mono, 0.5)
+
+
 def test_remote_transcribe_raises_friendly_message_on_http_error(monkeypatch):
     rt = importlib.reload(importlib.import_module("remote_transcribe"))
     audio = np.ones(1000, dtype=np.float32) * 0.1

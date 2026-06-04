@@ -267,16 +267,23 @@ class FirstRunDialog:
         self._status_var.set(text)
         try:
             self._status_label.configure(text=text)
+            if not self._status_label.winfo_ismapped():
+                self._status_label.pack(anchor="w", pady=(12, 0),
+                                        before=self._btn_row)
         except Exception:
+            # Window may have been destroyed between schedule and callback.
             pass
-        if not self._status_label.winfo_ismapped():
-            self._status_label.pack(anchor="w", pady=(12, 0), before=self._btn_row)
 
     def _show_progress(self) -> None:
-        if not self._progress.winfo_ismapped():
-            self._progress.pack(fill="x", pady=(12, 0),
-                                before=self._status_label if self._status_label.winfo_ismapped()
-                                else self._btn_row)
+        try:
+            if not self._progress.winfo_ismapped():
+                self._progress.pack(
+                    fill="x", pady=(12, 0),
+                    before=self._status_label if self._status_label.winfo_ismapped()
+                    else self._btn_row,
+                )
+        except Exception:
+            return
         try:
             if _CTK_AVAILABLE:
                 self._progress.configure(mode="indeterminate")
@@ -320,6 +327,11 @@ class FirstRunDialog:
                 err_msg = str(err) or err.__class__.__name__
                 self._schedule(lambda msg=err_msg: self._on_failure(msg))
                 return
+            # Record the result here, not only in the UI callback: the model
+            # is downloaded and valid, so a completed conversion must not be
+            # discarded just because the dialog closed (or the user cancelled)
+            # before the marshalled _on_success() callback could run.
+            self.result = size
             self._schedule(lambda: self._on_success(size))
 
         self._worker = threading.Thread(

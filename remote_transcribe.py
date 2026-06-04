@@ -23,7 +23,6 @@ import os
 import secrets
 import time
 import urllib.error
-import urllib.request
 import wave
 from typing import NamedTuple
 
@@ -126,15 +125,25 @@ def _resolve_api_key(api_key: str, provider: str) -> str:
 #  WAV-encoding och multipart-builder
 # --------------------------------------------------------------------------- #
 
+def _to_mono(audio: np.ndarray) -> np.ndarray:
+    """Downmix any audio to 1-D float32 mono.
+
+    Stereo/interleaved input is averaged across channels — never flattened
+    with reshape(-1), which would interleave the channels along the time axis
+    and corrupt the signal. Shared by the WAV and FLAC/Opus encoders so they
+    can't drift apart.
+    """
+    a = audio.astype(np.float32, copy=False)
+    if a.ndim == 1:
+        return a
+    if a.ndim == 2 and a.shape[1] > 1:
+        return a.mean(axis=1).astype(np.float32)
+    return a.reshape(-1)
+
+
 def _float_to_wav_bytes(audio: np.ndarray, sample_rate: int) -> bytes:
     """Konvertera float32 mono [-1, 1] till 16-bit PCM WAV-bytes."""
-    if audio.dtype != np.float32:
-        audio = audio.astype(np.float32, copy=False)
-    if audio.ndim != 1:
-        if audio.shape[1] > 1:
-            audio = audio.mean(axis=1).astype(np.float32)
-        else:
-            audio = audio.reshape(-1)
+    audio = _to_mono(audio)
     # Klampa och konvertera till int16 utan att introducera DC.
     clipped = np.clip(audio, -1.0, 1.0)
     pcm = (clipped * 32767.0).astype(np.int16)
@@ -160,9 +169,7 @@ def _encode_audio(audio: np.ndarray, sample_rate: int,
     if fmt in ("flac", "opus"):
         try:
             import soundfile as sf
-            a = audio.astype(np.float32, copy=False)
-            if a.ndim != 1:
-                a = a.reshape(-1)
+            a = _to_mono(audio)
             buf = io.BytesIO()
             if fmt == "flac":
                 sf.write(buf, a, int(sample_rate), format="FLAC")
@@ -340,22 +347,39 @@ def transcribe(
 
     raw = _request_with_retry(url, headers, body, provider, timeout_sec)
 
+    from text_sanitize import sanitize_output
+
     # Body kan vara JSON ({"text": "..."}) eller ren text beroende på server.
+    # A 200 OK that does NOT carry a usable transcription (HTML error page,
+    # malformed JSON, or a JSON object with no "text" field — e.g. an
+    # {"error": ...} body) must be raised as an error, not returned as "" —
+    # otherwise a provider/proxy failure is silently masked as "Inget hördes".
     try:
         data = json.loads(raw.decode("utf-8"))
-        text = (data.get("text") if isinstance(data, dict) else "") or ""
     except Exception:
-        text = raw.decode("utf-8", errors="replace")
+        data = None
 
-    # Sanity check: servern kan returnera HTML trots HTTP 200.
-    if '<html' in text.lower() or '<!' in text[:20]:
-        log.warning("Remote transcribe returnerade HTML istället för text")
-        return ""
+    if isinstance(data, dict):
+        if "text" in data:
+            # A legitimate (possibly empty, i.e. silence) transcription.
+            text = data.get("text") or ""
+        else:
+            snippet = sanitize_output(raw.decode("utf-8", errors="replace"))[:200]
+            raise RemoteTranscribeError(
+                f"Leverantören svarade 200 utan transkription: {snippet}".rstrip(": ")
+            )
+    else:
+        # Non-JSON body: some servers return text/plain transcriptions.
+        text = raw.decode("utf-8", errors="replace")
+        if '<html' in text.lower() or '<!' in text[:20]:
+            raise RemoteTranscribeError(
+                "Leverantören returnerade HTML i stället för transkription "
+                "(kontrollera URL och eventuell proxy)"
+            )
 
     # Sanitise control bytes before logging length / returning to the
     # dictation pipeline. A hostile provider could embed ANSI escapes
     # that would otherwise land on the user's clipboard verbatim.
-    from text_sanitize import sanitize_output
     text = sanitize_output(text.strip())
     log.info("Remote transcribe ok (%s, %d chars)", provider, len(text))
     return text
@@ -423,11 +447,13 @@ def test_connection(
         headers["Authorization"] = f"Bearer {resolved_key}"
 
     url = f"{base}/models"
-    req = urllib.request.Request(url, headers=headers, method="GET")
 
     try:
-        with urllib.request.urlopen(req, timeout=timeout_sec) as resp:
-            resp.read(1024)  # förbruka lite av kroppen för att stänga TLS rent
+        # Route via the pool (raw http.client) instead of urlopen: urlopen
+        # follows redirects and would resend the Authorization: Bearer header
+        # to the redirect target. http.client does not auto-follow 3xx.
+        http_pool.request(url, headers, method="GET",
+                          timeout=timeout_sec, parse="raw")
     except urllib.error.HTTPError as e:
         body_snippet = ""
         try:
@@ -460,5 +486,8 @@ def _http_message(code: int, body: str) -> str:
         if code in _RETRYABLE_HTTP_CODES:
             return f"Servern tillfälligt otillgänglig (HTTP {code}) — försök igen"
         return f"Serverfel (HTTP {code})"
-    snippet = body[:120] if body else ""
+    # Invariant 2: provider-controlled body must pass through sanitize_output()
+    # before it reaches the indicator / Settings UI.
+    from text_sanitize import sanitize_output
+    snippet = sanitize_output(body)[:120] if body else ""
     return f"HTTP {code}: {snippet}".rstrip(": ")

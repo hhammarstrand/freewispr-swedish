@@ -26,6 +26,11 @@ _lock = threading.Lock()
 _connections: dict[tuple[str, str, int], http.client.HTTPConnection] = {}
 _local = threading.local()
 
+# Cap response bodies so a hostile or buggy provider can't stream an
+# arbitrarily large body and exhaust memory on the hot path. Transcription
+# and chat-completion responses are kilobytes; 32 MB is a very generous ceiling.
+_MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+
 
 def _set_stats(conn_ms: float, conn_reused: bool, first_token_ms: float = 0.0) -> None:
     _local.stats = {
@@ -48,14 +53,24 @@ def connection_for(url: str, timeout: float
     port = parts.port or (443 if parts.scheme == "https" else 80)
     key = (parts.scheme, host, port)
     conn = _connections.get(key)
+    if conn is not None:
+        # http.client locks the socket timeout at connect() time; reassigning
+        # conn.timeout afterwards does NOT change an already-connected socket.
+        # A connection opened by a warmer (short timeout) would otherwise make
+        # a later long request (e.g. a 60 s remote transcription) time out
+        # early. Reopen when the caller needs more headroom than we have.
+        opened = getattr(conn, "_pool_timeout", None)
+        if opened is not None and timeout > opened:
+            drop_connection(key)
+            conn = None
     if conn is None:
         if parts.scheme == "https":
             conn = http.client.HTTPSConnection(host, port, timeout=timeout)
         else:
             conn = http.client.HTTPConnection(host, port, timeout=timeout)
+        conn._pool_timeout = timeout
         _connections[key] = conn
         return key, conn, False
-    conn.timeout = timeout
     return key, conn, True
 
 
@@ -84,7 +99,11 @@ def read_sse(resp: http.client.HTTPResponse, t_send: float = 0.0) -> dict:
     content_parts: list[str] = []
     model = ""
     first_token_ms = 0.0
+    total_bytes = 0
     for raw_line in resp:
+        total_bytes += len(raw_line)
+        if total_bytes > _MAX_RESPONSE_BYTES:
+            raise urllib.error.URLError("SSE response exceeded size limit")
         line = raw_line.decode("utf-8", errors="replace").strip()
         if not line or not line.startswith("data:"):
             continue
@@ -142,7 +161,7 @@ def request(url: str, headers: dict[str, str], payload: bytes | None = None,
                 conn.request(method, path, body=payload, headers=headers)
                 resp = conn.getresponse()
                 if resp.status >= 400:
-                    err_body = resp.read()
+                    err_body = resp.read(_MAX_RESPONSE_BYTES + 1)[:_MAX_RESPONSE_BYTES]
                     drop_connection(key)
                     _set_stats(conn_ms, reused)
                     raise urllib.error.HTTPError(
@@ -152,7 +171,10 @@ def request(url: str, headers: dict[str, str], payload: bytes | None = None,
                 _set_stats(conn_ms, reused)
                 if stream:
                     return read_sse(resp, t_send)
-                raw = resp.read()
+                raw = resp.read(_MAX_RESPONSE_BYTES + 1)
+                if len(raw) > _MAX_RESPONSE_BYTES:
+                    drop_connection(key)
+                    raise urllib.error.URLError("Response exceeded size limit")
                 if parse == "raw":
                     return raw
                 return json.loads(raw.decode("utf-8"))

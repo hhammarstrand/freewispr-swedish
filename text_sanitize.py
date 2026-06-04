@@ -32,9 +32,12 @@ In particular this removes:
 * ``\x80``-``\x9f`` (C1 controls — used by some 8-bit terminals)
 
 Whisper occasionally emits ``\u200b`` zero-width space inside Swedish
-compounds; we leave Unicode alone and only strip ASCII/Latin-1 control
-bytes. That's enough to neutralise the terminal-escape attack without
-mangling legitimate text.
+compounds; we leave that alone. Beyond the ASCII/Latin-1 control bytes we
+also strip the "Trojan Source" (CVE-2021-42574) bidi-override and isolate
+characters (U+202A-U+202E, U+2066-U+2069) plus the line/paragraph
+separators U+2028/U+2029. A compromised provider could otherwise visually
+reorder pasted text — especially source code — without changing its
+logical content, or smuggle a line break past a single-line consumer.
 """
 
 from __future__ import annotations
@@ -43,17 +46,30 @@ from __future__ import annotations
 # We *keep* \t (0x09) and \n (0x0a); everything else in [0x00, 0x1f] goes,
 # plus 0x7f (DEL) and [0x80, 0x9f] (C1).
 _KEEP = {0x09, 0x0a}
+# Trojan-Source / line-injection Unicode formatting chars (CVE-2021-42574):
+# bidi embeddings/overrides, bidi isolates, and line/paragraph separators.
+_BIDI_AND_SEPARATORS = (
+    list(range(0x202a, 0x202f))  # LRE, RLE, PDF, LRO, RLO
+    + list(range(0x2066, 0x206a))  # LRI, RLI, FSI, PDI
+    + [0x2028, 0x2029]  # line / paragraph separator
+)
 _STRIP_TABLE = {
     cp: None
-    for cp in list(range(0x00, 0x20)) + [0x7f] + list(range(0x80, 0xa0))
+    for cp in (
+        list(range(0x00, 0x20))
+        + [0x7f]
+        + list(range(0x80, 0xa0))
+        + _BIDI_AND_SEPARATORS
+    )
     if cp not in _KEEP
 }
 
 
 def sanitize_output(text: str) -> str:
     """
-    Strip ASCII/Latin-1 control bytes from ``text``, preserving ``\\t`` and
-    ``\\n``. Idempotent. Returns ``""`` for None.
+    Strip control bytes and dangerous Unicode formatting characters from
+    ``text``, preserving ``\\t`` and ``\\n``. Idempotent. Returns ``""`` for
+    None.
     """
     if not text:
         return ""

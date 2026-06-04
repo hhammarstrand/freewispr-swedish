@@ -15,8 +15,12 @@ class _FakeResp:
         self._body = body
         self._lines = lines or []
 
-    def read(self):
-        return self._body
+    def read(self, amt=None):
+        # Mirror http.client.HTTPResponse.read(amt): http_pool caps reads with
+        # an explicit byte count, so the fake must accept (and honour) it.
+        if amt is None:
+            return self._body
+        return self._body[:amt]
 
     def getheaders(self):
         return []

@@ -19,9 +19,11 @@ antal inlärda par.
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from difflib import SequenceMatcher
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 from json_store import JsonCache, save_json_atomic
 
@@ -117,32 +119,60 @@ def load_corrections() -> dict[str, str]:
 
 
 def add_hotwords(words: list[str]) -> None:
-    """Append unique, word-like terms to hotwords.txt (deduplicated)."""
+    """Append unique, word-like terms to hotwords.txt (deduplicated).
+
+    The whole read-modify-write runs under ``_lock`` and the file is replaced
+    atomically (temp + os.replace), so two concurrent observations can't drop
+    each other's hotwords and a crash mid-write can't corrupt the file.
+    """
     new = [w.strip() for w in words if _is_wordlike(w.strip())]
     if not new:
         return
-    existing: set[str] = set()
-    lines: list[str] = []
-    if HOTWORDS_PATH.exists():
-        try:
-            for line in HOTWORDS_PATH.read_text(encoding="utf-8").splitlines():
-                lines.append(line)
-                stripped = line.strip()
-                if stripped and not stripped.startswith("#"):
-                    existing.add(stripped)
-        except Exception as e:
-            log.warning("Kunde inte läsa hotwords.txt: %s", e)
+    with _lock:
+        existing: set[str] = set()
+        lines: list[str] = []
+        if HOTWORDS_PATH.exists():
+            try:
+                for line in HOTWORDS_PATH.read_text(encoding="utf-8").splitlines():
+                    lines.append(line)
+                    stripped = line.strip()
+                    if stripped and not stripped.startswith("#"):
+                        existing.add(stripped)
+            except Exception as e:
+                log.warning("Kunde inte läsa hotwords.txt: %s", e)
+                return
+        added = [w for w in new if w not in existing]
+        if not added:
             return
-    added = [w for w in new if w not in existing]
-    if not added:
-        return
-    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-    out = lines + added
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        out = lines + added
+        try:
+            _atomic_write_text(HOTWORDS_PATH, "\n".join(out) + "\n")
+            log.info("Lade till %d nya hotwords", len(added))
+        except Exception as e:
+            log.warning("Kunde inte skriva hotwords.txt: %s", e)
+
+
+def _atomic_write_text(path: Path, text: str) -> None:
+    """Write *text* to *path* via a temp file + os.replace (crash-safe)."""
+    tmp_name = None
     try:
-        HOTWORDS_PATH.write_text("\n".join(out) + "\n", encoding="utf-8")
-        log.info("Lade till %d nya hotwords", len(added))
-    except Exception as e:
-        log.warning("Kunde inte skriva hotwords.txt: %s", e)
+        with NamedTemporaryFile(
+            "w", encoding="utf-8", dir=path.parent,
+            prefix=f".{path.name}.", suffix=".tmp", delete=False,
+        ) as f:
+            tmp_name = f.name
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_name, path)
+    except Exception:
+        if tmp_name:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+        raise
 
 
 def record_corrections(pairs: list[tuple[str, str]]) -> None:
@@ -152,8 +182,12 @@ def record_corrections(pairs: list[tuple[str, str]]) -> None:
     with _lock:
         data = dict(_store.load())
         for wrong, right in pairs:
+            # Re-insert at the end so a freshly (re-)corrected term is treated
+            # as most-recently-used; plain assignment keeps the original
+            # position and would let eviction drop a still-active old entry.
+            data.pop(wrong, None)
             data[wrong] = right
-        # Bound the dictionary: drop oldest insertion-order entries.
+        # Bound the dictionary: drop the least-recently-used entries (front).
         if len(data) > MAX_CORRECTIONS:
             for key in list(data)[: len(data) - MAX_CORRECTIONS]:
                 del data[key]

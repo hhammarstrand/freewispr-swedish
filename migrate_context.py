@@ -43,7 +43,8 @@ def _load_pairs(path: Path) -> dict[str, str]:
     if not isinstance(data, dict):
         return {}
     # Filter out non-string entries defensively — the old files were free-form.
-    return {str(k): str(v) for k, v in data.items() if isinstance(v, str) and k}
+    return {str(k): str(v) for k, v in data.items()
+            if isinstance(v, str) and str(k).strip()}
 
 
 def _load_learned() -> dict[str, dict]:

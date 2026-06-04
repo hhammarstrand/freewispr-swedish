@@ -68,7 +68,12 @@ def convert(size: str) -> None:
         return
 
     output_dir = MODEL_DIR / f"kb-whisper-{size}-ct2"
-    if output_dir.exists() and (output_dir / "model.bin").exists():
+    # Only skip when *every* required file is present. Checking model.bin
+    # alone would skip re-downloading a snapshot where model.bin landed but a
+    # later file (tokenizer/vocabulary/…) failed, leaving a "done but broken"
+    # model that faster-whisper can't load.
+    if output_dir.exists() and all(
+            (output_dir / f).exists() for f in _REQUIRED_FILES):
         log.info("Redan nedladdad: %s", output_dir)
         return
 

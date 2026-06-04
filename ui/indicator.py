@@ -4,6 +4,7 @@ FloatingIndicator — small always-on-top pill (recording / transcribing state).
 import tkinter as tk
 import math
 import random
+import threading
 import time as time_module
 import ctypes
 
@@ -85,6 +86,10 @@ class FloatingIndicator:
         self._pending_push: bool = False
         self._last_push_ms: float = 0.0
         self._PUSH_MIN_INTERVAL_MS = 33.0  # ~30 Hz max redraw
+        # push_level() runs on the audio callback thread while _consume_push()
+        # runs on the Tk main thread; this guards the shared throttle state so
+        # the two can't lose a pending-push flag against each other.
+        self._push_lock = threading.Lock()
 
     @property
     def _canvas_w(self) -> int:
@@ -125,23 +130,23 @@ class FloatingIndicator:
         """
         if self._state != "listen" or self._win is None:
             return
-        self._pushed_level = float(level)
-        if self._pending_push:
-            return
-        now_ms = time_module.monotonic() * 1000.0
-        wait = self._PUSH_MIN_INTERVAL_MS - (now_ms - self._last_push_ms)
-        self._pending_push = True
-        if wait <= 0:
-            self._root.after(0, self._consume_push)
-        else:
-            self._root.after(int(wait), self._consume_push)
+        with self._push_lock:
+            self._pushed_level = float(level)
+            if self._pending_push:
+                return
+            now_ms = time_module.monotonic() * 1000.0
+            wait = self._PUSH_MIN_INTERVAL_MS - (now_ms - self._last_push_ms)
+            self._pending_push = True
+        self._root.after(0 if wait <= 0 else int(wait), self._consume_push)
 
     def _consume_push(self):
-        self._pending_push = False
-        self._last_push_ms = time_module.monotonic() * 1000.0
+        with self._push_lock:
+            self._pending_push = False
+            self._last_push_ms = time_module.monotonic() * 1000.0
+            level = self._pushed_level
         if self._state != "listen" or self._canvas is None:
             return
-        self._animate_level(self._pushed_level)
+        self._animate_level(level)
 
     def hide(self, delay_ms: int = 800):
         if self._hide_job:

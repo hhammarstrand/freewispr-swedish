@@ -19,12 +19,15 @@ inte behöver ändras alls.
 """
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from json_store import JsonCache
 
 _PATH = Path.home() / ".freewispr-swedish" / "modes.json"
 _store = JsonCache(_PATH, default={})
+# Serialise add()/remove() read-modify-write against concurrent edits.
+_lock = threading.Lock()
 
 
 def _coerce(raw: dict) -> dict | None:
@@ -72,21 +75,23 @@ def save(modes: dict[str, dict]) -> None:
 
 def add(name: str, description: str, polish: bool = True,
         capitalize: bool = True) -> None:
-    data = dict(load())
-    key = (name or "").strip()
-    if key:
-        data[key] = {
-            "description": (description or "").strip(),
-            "polish": bool(polish),
-            "capitalize": bool(capitalize),
-        }
-        save(data)
+    with _lock:
+        data = dict(load())
+        key = (name or "").strip()
+        if key:
+            data[key] = {
+                "description": (description or "").strip(),
+                "polish": bool(polish),
+                "capitalize": bool(capitalize),
+            }
+            save(data)
 
 
 def remove(name: str) -> None:
-    data = dict(load())
-    if data.pop(name, None) is not None or data.pop((name or "").strip(), None) is not None:
-        save(data)
+    with _lock:
+        data = dict(load())
+        if data.pop(name, None) is not None or data.pop((name or "").strip(), None) is not None:
+            save(data)
 
 
 def all_mode_keys(user_modes: dict[str, dict] | None = None) -> list[str]:

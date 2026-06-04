@@ -14,6 +14,16 @@ log = logging.getLogger("freewispr")
 
 _PASTE_LOCK = threading.Lock()
 
+# AP7.4 clipboard restore: a generation counter + the user's pre-burst
+# clipboard. Each paste bumps the generation; only the newest paste's restore
+# runs, and we never capture our own freshly-pasted text as the "previous"
+# clipboard. Without this, two rapid pastes could restore an out-of-order or
+# already-dictated clipboard.
+_clip_gen = 0
+_clip_gen_lock = threading.Lock()
+_saved_clip: str | None = None
+_last_dictated: str | None = None
+
 # AP7.4: when enabled, the user's previous clipboard is restored shortly after
 # the synthetic paste lands, instead of leaving the dictated text behind.
 # Opt-in (off keeps the CLI "paste manually from clipboard" fallback).
@@ -79,15 +89,28 @@ def _paste_and_keep_clipboard(text: str, replace_len: int = 0):
     delete the previously pasted block before pasting the replacement.
     """
 
-    prev_clip = None
-    if _restore_clipboard:
-        # Snapshot the user's clipboard so we can put it back afterwards.
-        # pyperclip is text-only: an empty result means "no text" (e.g. an
-        # image) — skip restoration in that case rather than wiping it.
-        try:
-            prev_clip = pyperclip.paste()
-        except Exception:
-            prev_clip = None
+    global _clip_gen, _saved_clip, _last_dictated
+    dictated = text + " "
+
+    saved_clip = None
+    with _clip_gen_lock:
+        _clip_gen += 1
+        gen = _clip_gen
+        if _restore_clipboard:
+            # Snapshot the user's clipboard so we can put it back afterwards.
+            # pyperclip is text-only: an empty result means "no text" (e.g. an
+            # image) — skip restoration in that case rather than wiping it.
+            # On a rapid burst the current clipboard may already hold our own
+            # previously-pasted text; don't capture that as the "previous"
+            # clipboard, keep the original from earlier in the burst.
+            try:
+                cur = pyperclip.paste()
+            except Exception:
+                cur = None
+            if cur is not None and cur != _last_dictated:
+                _saved_clip = cur
+            _last_dictated = dictated
+            saved_clip = _saved_clip
 
     with _PASTE_LOCK:
         try:
@@ -97,24 +120,29 @@ def _paste_and_keep_clipboard(text: str, replace_len: int = 0):
                 for _ in range(replace_len):
                     keyboard.send("backspace")
             # Copy dictated text (trailing space for natural continuation)
-            pyperclip.copy(text + " ")
+            pyperclip.copy(dictated)
             # keyboard.send has no built-in PAUSE (saves ~200 ms vs pyautogui)
             keyboard.send(_paste_shortcut())
         except Exception as e:
             log.warning("Kunde inte skicka Ctrl+V: %s", e)
             return
 
-    if _restore_clipboard and prev_clip:
+    if _restore_clipboard and saved_clip:
         # Restore after a short delay so the synthetic paste consumes the
         # dictated text first. Best-effort, never blocks the paste worker.
-        def _restore(saved: str) -> None:
+        # Only the newest paste's restore runs, so two quick pastes can't
+        # restore each other's clipboard out of order.
+        def _restore(saved: str, my_gen: int) -> None:
             time.sleep(_RESTORE_DELAY_S)
+            with _clip_gen_lock:
+                if my_gen != _clip_gen:
+                    return
             with _PASTE_LOCK:
                 try:
                     pyperclip.copy(saved)
                 except Exception:
                     pass
-        threading.Thread(target=_restore, args=(prev_clip,),
+        threading.Thread(target=_restore, args=(saved_clip, gen),
                          name="clip-restore", daemon=True).start()
 
 

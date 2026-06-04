@@ -66,6 +66,11 @@ class FloatingIndicator:
         self._last_level_sent = 0.0
         self._closed = False
         self._style = "modern"
+        # Guards process spawn + stdin writes. show()/hide() run on worker
+        # threads while push_level() runs on the audio callback thread; without
+        # this two threads could both pass the `self._process is None` check and
+        # spawn two child processes, or interleave bytes on the child's stdin.
+        self._lock = threading.RLock()
 
         if autostart:
             self._ensure_started()
@@ -149,43 +154,45 @@ class FloatingIndicator:
             log.debug("Qt-indikatorn kunde inte stängas rent", exc_info=True)
 
     def _ensure_started(self) -> bool:
-        if self._closed:
-            return False
-        if self._style == "classic":
-            self._start_fallback()
-            return False
-        if self._fallback is not None:
-            return False
-        if not self._qt_available():
-            log.info("PySide6 saknas; använder Tk-indikator")
-            self._start_fallback()
-            return False
-        if self._process is not None:
-            if self._process.poll() is None:
-                return True
-            self._start_fallback()
-            return False
-        try:
-            self._process = self._process_factory(self._follow_mouse)
-            opacity = 0.0 if self._style == "transparent" else 0.65
-            self._send({"type": "opacity", "opacity": opacity})
-        except Exception:
-            log.warning("Kunde inte starta Qt-indikatorn; använder Tk-fallback", exc_info=True)
-            self._start_fallback()
-            return False
-        return True
+        with self._lock:
+            if self._closed:
+                return False
+            if self._style == "classic":
+                self._start_fallback()
+                return False
+            if self._fallback is not None:
+                return False
+            if not self._qt_available():
+                log.info("PySide6 saknas; använder Tk-indikator")
+                self._start_fallback()
+                return False
+            if self._process is not None:
+                if self._process.poll() is None:
+                    return True
+                self._start_fallback()
+                return False
+            try:
+                self._process = self._process_factory(self._follow_mouse)
+                opacity = 0.0 if self._style == "transparent" else 0.65
+                self._send({"type": "opacity", "opacity": opacity})
+            except Exception:
+                log.warning("Kunde inte starta Qt-indikatorn; använder Tk-fallback", exc_info=True)
+                self._start_fallback()
+                return False
+            return True
 
     def _send(self, command: dict[str, Any]) -> None:
-        process = self._process
-        stdin = getattr(process, "stdin", None) if process is not None else None
-        if stdin is None:
-            return
-        try:
-            stdin.write(json.dumps(command, separators=(",", ":")) + "\n")
-            stdin.flush()
-        except Exception:
-            log.debug("Kunde inte skicka kommando till Qt-indikator", exc_info=True)
-            self._start_fallback()
+        with self._lock:
+            process = self._process
+            stdin = getattr(process, "stdin", None) if process is not None else None
+            if stdin is None:
+                return
+            try:
+                stdin.write(json.dumps(command, separators=(",", ":")) + "\n")
+                stdin.flush()
+            except Exception:
+                log.debug("Kunde inte skicka kommando till Qt-indikator", exc_info=True)
+                self._start_fallback()
 
     def _start_fallback(self) -> None:
         if self._fallback is not None:
@@ -467,8 +474,6 @@ class _QtIndicatorWidget:
             self._draw_siri_waveform(painter, rect)
         elif self._state == "transcribe":
             self._draw_transcribe_helix(painter, rect)
-        elif self._state == "review":
-            self._draw_review_ribbon(painter, rect)
 
         painter.restore()
 
@@ -572,70 +577,6 @@ class _QtIndicatorWidget:
             painter.drawEllipse(QtCore.QPointF(x, y2), 1.8, 1.8)
             painter.setPen(rung_pen)
 
-    def _draw_review_ribbon(self, painter, rect) -> None:
-        QtCore = self._QtCore
-        QtGui = self._QtGui
-        cy = rect.center().y()
-        w = rect.width()
-        h = rect.height()
-
-        steps = 60
-        freq = 0.02
-        amp = h * 0.18
-
-        painter.setBrush(QtCore.Qt.BrushStyle.NoBrush)
-
-        path1 = QtGui.QPainterPath()
-        path1.moveTo(rect.left(), cy)
-        path2 = QtGui.QPainterPath()
-        path2.moveTo(rect.left(), cy)
-
-        for i in range(steps + 1):
-            x = rect.left() + (w * i / steps)
-            envelope = math.sin(math.pi * i / steps)
-
-            angle1 = (i * freq * 10.0) - (self._phase * 0.6)
-            y1 = cy + math.sin(angle1) * amp * envelope
-            path1.lineTo(x, y1)
-
-            angle2 = (i * freq * 8.5) - (self._phase * 0.5) + 1.8
-            y2 = cy + math.sin(angle2) * (amp * 0.8) * envelope
-            path2.lineTo(x, y2)
-
-        grad1 = QtGui.QLinearGradient(rect.left(), cy, rect.right(), cy)
-        if self._theme == "dark":
-            grad1.setColorAt(0.0, QtGui.QColor(0, 200, 150, 0))
-            grad1.setColorAt(0.5, QtGui.QColor(0, 180, 160, 130))
-            grad1.setColorAt(1.0, QtGui.QColor(0, 200, 150, 0))
-        else:
-            grad1.setColorAt(0.0, QtGui.QColor(0, 150, 130, 0))
-            grad1.setColorAt(0.5, QtGui.QColor(0, 150, 120, 150))
-            grad1.setColorAt(1.0, QtGui.QColor(0, 150, 130, 0))
-
-        painter.setPen(QtGui.QPen(grad1, 2.5))
-        painter.drawPath(path1)
-
-        grad2 = QtGui.QLinearGradient(rect.left(), cy, rect.right(), cy)
-        if self._theme == "dark":
-            grad2.setColorAt(0.0, QtGui.QColor(0, 130, 220, 0))
-            grad2.setColorAt(0.5, QtGui.QColor(0, 150, 220, 110))
-            grad2.setColorAt(1.0, QtGui.QColor(0, 130, 220, 0))
-        else:
-            grad2.setColorAt(0.0, QtGui.QColor(0, 100, 180, 0))
-            grad2.setColorAt(0.5, QtGui.QColor(0, 120, 200, 130))
-            grad2.setColorAt(1.0, QtGui.QColor(0, 100, 180, 0))
-
-        painter.setPen(QtGui.QPen(grad2, 1.8))
-        painter.drawPath(path2)
-
-        for i in range(2):
-            p_phase = self._phase * 0.4 + i * math.pi
-            px = rect.left() + (rect.width() * 0.25) + ((math.sin(p_phase) + 1.0) / 2.0) * (rect.width() * 0.5)
-            py = cy + math.cos(p_phase * 1.8) * 4.0
-            painter.setBrush(QtGui.QColor(255, 255, 255, 120) if self._theme == "dark" else QtGui.QColor(0, 150, 130, 140))
-            painter.setPen(QtCore.Qt.PenStyle.NoPen)
-            painter.drawEllipse(QtCore.QPointF(px, py), 1.5, 1.5)
-
     def _draw_shimmering_text(self, painter, rect) -> None:
         QtCore = self._QtCore
         QtGui = self._QtGui
@@ -667,7 +608,7 @@ class _QtIndicatorWidget:
             text_base_color = QtGui.QColor(17, 24, 39)
             shimmer_highlight = QtGui.QColor(0, 106, 167)
 
-        if self._state in ("done", "error", "listen", "transcribe", "review"):
+        if self._state in ("done", "error", "listen", "transcribe"):
             gradient.setColorAt(0.0, text_base_color)
             gradient.setColorAt(0.3, text_base_color)
             gradient.setColorAt(0.5, shimmer_highlight)

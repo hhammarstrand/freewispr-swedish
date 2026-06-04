@@ -15,6 +15,19 @@ from ui.hotkey_capture import _HotkeyCapture
 log = logging.getLogger("freewispr")
 
 
+def _widget_alive(widget) -> bool:
+    """True iff *widget* still exists in the Tk tree.
+
+    Async worker threads marshal UI updates back via ``root.after(0, ...)``;
+    by the time the callback runs the Settings window may already be closed,
+    so guard configure() calls with this to avoid TclError.
+    """
+    try:
+        return bool(widget is not None and widget.winfo_exists())
+    except Exception:
+        return False
+
+
 # -- lazy import helpers ---------------------------------------------------- #
 
 def _llm_providers():
@@ -653,6 +666,8 @@ class SettingsWindow:
         self._llm_consent_hint = self._hint(
             parent,
             "Krävs när LLM-granskning är aktiv mot en extern leverantör. "
+            "Gäller även röstredigering, som skickar den text du markerat "
+            "(kan innehålla känslig information) till leverantören. "
             "Lokala körningar via Custom + http://localhost (Ollama, "
             "LM Studio) lämnar inte datorn och kräver inget samtycke.",
         )
@@ -693,9 +708,14 @@ class SettingsWindow:
             self._llm_base_hint.pack(anchor="w", padx=6, pady=(0, 8))
 
         # Async fetch updated models from the server. Best-effort.
+        # Tag each fetch with a generation so a slow result from a previously
+        # selected provider can't overwrite the dropdown after the user has
+        # already switched to another provider.
+        self._llm_fetch_gen = getattr(self, "_llm_fetch_gen", 0) + 1
         threading.Thread(
             target=self._fetch_llm_models_async,
-            args=(pid, self._llm_key_var.get(), self._llm_base_url_var.get()),
+            args=(pid, self._llm_key_var.get(), self._llm_base_url_var.get(),
+                  self._llm_fetch_gen),
             daemon=True,
         ).start()
 
@@ -716,7 +736,8 @@ class SettingsWindow:
         if cur not in values:
             self._llm_model_var.set(values[0])
 
-    def _fetch_llm_models_async(self, pid: str, key: str, base_url: str):
+    def _fetch_llm_models_async(self, pid: str, key: str, base_url: str,
+                                gen: int = 0):
         try:
             llm = _llm_providers()
             models = llm["fetch_models"](key, pid, base_url)
@@ -725,14 +746,24 @@ class SettingsWindow:
         if not models:
             return
         names = list(models.keys())
-        try:
-            self.root.after(0, lambda: self._set_llm_model_choices(names))
-            self.root.after(
-                0,
-                lambda: self._llm_models_status.configure(
+
+        def _apply():
+            # Drop stale results from a superseded provider selection, and
+            # bail out if the Settings window has since been closed.
+            if gen != getattr(self, "_llm_fetch_gen", gen):
+                return
+            if not _widget_alive(self._llm_models_status):
+                return
+            self._set_llm_model_choices(names)
+            try:
+                self._llm_models_status.configure(
                     text=f"{len(names)} modeller hittade hos leverantören."
-                ),
-            )
+                )
+            except Exception:
+                pass
+
+        try:
+            self.root.after(0, _apply)
         except Exception:
             return
 
@@ -1099,6 +1130,10 @@ class SettingsWindow:
         verbatim copies so a future tweak (e.g. fading the colour, swapping
         symbols) only lives in one place.
         """
+        # The network test runs on a worker thread; the window may have been
+        # closed before this result is marshalled back. Skip cleanly.
+        if not _widget_alive(label):
+            return
         try:
             button.configure(state="normal", text="Testa anslutning")
         except Exception:
@@ -1113,7 +1148,10 @@ class SettingsWindow:
                     text=prefix + msg, fg="#27ae60" if ok else "#c0392b"
                 )
         except Exception:
-            label.configure(text=prefix + msg)
+            try:
+                label.configure(text=prefix + msg)
+            except Exception:
+                pass
 
     # -- save ---------------------------------------------------------------- #
 
@@ -1281,7 +1319,9 @@ class SettingsWindow:
             ok = messagebox.askokcancel(
                 "Aktivera LLM-granskning?",
                 "LLM-granskning skickar din transkriberade text till vald "
-                "leverantör för korrigering.\n\nAktivera bara detta om du "
+                "leverantör för korrigering. Röstredigering skickar dessutom "
+                "den text du markerat — som kan innehålla känslig information "
+                "— till samma leverantör.\n\nAktivera bara detta om du "
                 "accepterar att texten lämnar datorn. Du kan också bocka i "
                 "samtyckesrutan på fliken LLM-granskning för att slippa "
                 "denna fråga.",
@@ -1344,7 +1384,15 @@ class SettingsWindow:
         # Persist consent independently of llm_enabled — otherwise users
         # who toggle LLM off later have to re-accept the consent dialog
         # next time they enable it, which is annoying and erodes trust.
-        new_cfg["llm_privacy_accepted"] = bool(llm_local or llm_consent)
+        #
+        # Store ONLY genuine remote consent here — never fold in the loopback
+        # exception (llm_local). Otherwise a user who configured a local
+        # http://localhost endpoint would have llm_privacy_accepted=True
+        # persisted, and later switching to a remote provider (GitHub/OpenAI/
+        # Staik/Berget) would silently inherit that "consent" and send text
+        # over the network without a fresh explicit yes. The loopback skip is
+        # re-evaluated at runtime instead (see main._active_llm_settings).
+        new_cfg["llm_privacy_accepted"] = bool(llm_consent)
 
         # Transcription
         new_cfg["transcription_provider"] = tr_pid
@@ -1352,9 +1400,13 @@ class SettingsWindow:
             new_cfg[f"transcription_model_{tr_pid}"] = self._tr_model_var.get().strip()
             new_cfg[f"transcription_api_key_{tr_pid}"] = self._tr_key_var.get().strip()
             new_cfg["transcription_custom_base_url"] = self._tr_base_url_var.get().strip()
-        new_cfg["transcription_privacy_accepted"] = bool(
-            tr_pid != "local" and self._tr_consent_var.get()
-        )
+        # Persist transcription consent independently of the active provider
+        # (invariant 3). Storing False just because the user temporarily
+        # switched to local Whisper would silently revoke a prior remote-STT
+        # acceptance; only an explicit untick of the consent switch should do
+        # that. The runtime gate (main._active_transcription_settings) still
+        # ignores this flag while the provider is "local".
+        new_cfg["transcription_privacy_accepted"] = bool(self._tr_consent_var.get())
 
         # Smart features (AP1/AP2/AP3/AP5/AP6 + L3 + AP7)
         new_cfg["llm_raw_mode"] = self._raw_mode_var.get()
@@ -1362,6 +1414,24 @@ class SettingsWindow:
         new_cfg["restore_clipboard"] = self._restore_clip_var.get()
         new_cfg["expect_english_terms"] = self._expect_english_var.get()
         new_cfg["snippets_enabled"] = self._snippets_var.get()
+
+        new_cfg["learning_enabled"] = self._learning_var.get()
+        new_cfg["context_awareness_enabled"] = self._context_var.get()
+        new_cfg["command_mode_enabled"] = self._command_var.get()
+        new_cfg["flow_mode_enabled"] = self._flow_var.get()
+
+        # Strip removed legacy keys.
+        for k in ("filter_fillers", "auto_punctuate", "language",
+                  "llm_api_key", "llm_model"):
+            new_cfg.pop(k, None)
+
+        # Validate + persist the main config FIRST. The side files (snippets,
+        # corrections, personal context) are written only after on_save
+        # succeeds — otherwise a rejected model reload / config save would
+        # leave the side files overwritten while the main config rolled back.
+        if self.on_save:
+            if self.on_save(new_cfg) is False:
+                return
 
         # AP7.6/7.7: persist the snippet + corrections editors (own files).
         try:
@@ -1376,15 +1446,6 @@ class SettingsWindow:
                 set_corrections(self._parse_pairs(self._corr_textbox.get("1.0", "end-1c")))
         except Exception as e:
             log.warning("Kunde inte spara rättelser: %s", e)
-        new_cfg["learning_enabled"] = self._learning_var.get()
-        new_cfg["context_awareness_enabled"] = self._context_var.get()
-        new_cfg["command_mode_enabled"] = self._command_var.get()
-        new_cfg["flow_mode_enabled"] = self._flow_var.get()
-
-        # Strip removed legacy keys.
-        for k in ("filter_fillers", "auto_punctuate", "language",
-                  "llm_api_key", "llm_model"):
-            new_cfg.pop(k, None)
 
         # Personal context — save to its own JSON file, not to config.
         # The textbox holds the placeholder text when the user never
@@ -1412,8 +1473,7 @@ class SettingsWindow:
             return
 
         # Starta med Windows — sync HKCU\...\Run with the switch state.
-        # Done after context save so an exception here doesn't block the
-        # rest of the save flow. Failure is logged but non-fatal.
+        # Failure is logged but non-fatal.
         try:
             from main import _is_startup_enabled, _toggle_startup
             want = bool(self._startup_var.get())
@@ -1426,7 +1486,4 @@ class SettingsWindow:
                 f"{su_err}",
             )
 
-        if self.on_save:
-            if self.on_save(new_cfg) is False:
-                return
         self.root.destroy()

@@ -1,4 +1,5 @@
 """App configuration with keyring-backed secrets and migration."""
+import copy
 import logging
 from pathlib import Path
 from threading import Lock
@@ -201,6 +202,7 @@ def _secret_field_map() -> dict[str, str]:
 
 
 _providers_validated = False
+_validate_lock = Lock()
 
 
 def _validate_providers() -> None:
@@ -211,9 +213,10 @@ def _validate_providers() -> None:
     remote_transcribe.py but forgets to update the tuples here.
     """
     global _providers_validated
-    if _providers_validated:
-        return
-    _providers_validated = True
+    with _validate_lock:
+        if _providers_validated:
+            return
+        _providers_validated = True
     try:
         from llm_polish import PROVIDERS as llm_providers
         actual_llm = tuple(llm_providers.keys())
@@ -285,6 +288,11 @@ def _migrate_legacy_field_names(cfg: dict, data: dict) -> bool:
     legacy_model = data.pop("llm_model", None)
     if legacy_model and "llm_model_github" not in data:
         cfg["llm_model_github"] = legacy_model
+        # Persist into `data` too — otherwise the migrated value only lives in
+        # the runtime cfg and the on-disk file (written from `data` below) is
+        # missing the new key, so the migration silently re-runs/loses the
+        # user's old model choice on the next launch.
+        data["llm_model_github"] = legacy_model
         changed = True
 
     return changed
@@ -295,10 +303,14 @@ def load():
     CONFIG_DIR.mkdir(exist_ok=True)
     if CONFIG_FILE.exists():
         data = load_json(CONFIG_FILE, {})
-        cfg = {**DEFAULTS, **data}
+        # Deep-copy DEFAULTS: a shallow {**DEFAULTS, **data} shares nested
+        # containers (e.g. app_profiles) by reference with the module-level
+        # DEFAULTS, so a caller mutating cfg["app_profiles"] would corrupt
+        # DEFAULTS for the whole process.
+        cfg = {**copy.deepcopy(DEFAULTS), **data}
     else:
         data = {}
-        cfg = DEFAULTS.copy()
+        cfg = copy.deepcopy(DEFAULTS)
 
     # Strip hemligheter ur runtime-cfg så att vi inte råkar skriva dem.
     for field in _ALL_STRIPPED_FIELDS:
@@ -321,7 +333,10 @@ def load():
         cfg[field] = _get_secret(user)
 
     if migrated:
-        save_json_atomic(CONFIG_FILE, data)
+        # Take the same lock as save(): a concurrent Settings flush and this
+        # migrating write must not interleave (lost update / divergent file).
+        with _save_lock:
+            save_json_atomic(CONFIG_FILE, data)
 
     return cfg
 

@@ -178,8 +178,10 @@ class FlowMode:
             return
         for chunk in split_on_silence(final, 16000, self.min_rms) or [final]:
             if not self._active:
-                # still flush the in-flight chunk on stop
-                pass
+                # Flow was stopped mid-processing — stop here instead of
+                # transcribing and pasting more chunks, otherwise text lands
+                # in the user's document after they turned Flow off.
+                return
             text = self.transcriber.transcribe(chunk)
             if text and text.strip():
                 paste_text(text)
