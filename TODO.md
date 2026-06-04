@@ -4,30 +4,41 @@ Aktiv, öppen förbättringslista. Avklarade poster från tidigare granskningar
 (2026-05-20, 2026-05-27) har flyttats till [`TODO-archive.md`](TODO-archive.md)
 för att hålla den här listan kort.
 
-Den här filen innehåller djupgranskningen 2026-06-02. Merparten av posterna är
-nu åtgärdade (`[x]`); de återstående (`[ ]`) är medvetet uppskjutna och
-motiverade nedan.
+Den här filen innehåller djupgranskningen 2026-06-02 (nu helt åtgärdad) plus
+löpande uppföljningsarbete.
 
-## Återstår (medvetet uppskjutet)
+## Att göra
 
-Dessa fem är kvar — var och en är antingen riskabel att ändra blint eller
-kräver en miljö/refaktor som inte ryms i den här rundan:
+- [ ] **Uppdatera `README.md`** så den matchar beteendet efter djupgranskningen
+  2026-06-02. Bland annat: consent-modellen (LLM- och remote-STT-samtycke
+  persistas oberoende av om funktionen är på; loopback kräver inget samtycke),
+  röstredigerings-disclosure (markerad text skickas till leverantören),
+  att remote-fel nu visas i stället för att maskeras som "Inget hördes", samt
+  att skärmnamn bara delas med remote-tjänster med uttryckligt medgivande.
+  Se även `docs/index.html` för motsvarande webbtext. `[DOCS]`
 
-- **`dictation.py` live-transkriberings-drift** `[MEDIUM]` — ändrar
-  tystnadssegmenteringen i en subtil ljudalgoritm på en opt-in-funktion
-  (`live_transcribe_enabled`); kräver egen verifiering med riktigt ljud.
-- **`main.py:493-497` fast-path-credentials utan lås** `[MEDIUM]` — korrekt fix
-  kräver att credentials byts som ett immutabelt objekt (refaktor av läsvägarna
-  i `polish`/`_transcribe_remote`). Warmer-omstarten (åtgärdad) tar bort den
-  värsta risken (stale endpoint).
-- **`http_pool.py:130-158` globalt lås över I/O** `[LOW/MED]` — per-origin-lås
-  är en riskabel ändring av connection-poolen; nuvarande beteende är korrekt,
-  bara mindre parallellt.
-- **`llm_polish.py:190-218` `gh auth token` från PATH** `[LOW/SECURITY]` — en
-  riktig fix kräver UI-opt-in/absolut sökväg; lämnas tills UI-ytan finns.
-- **`requirements.txt` hash-låsning (`--require-hashes`)** `[LOW/MED]` — kräver
-  ett komplett transitivt hash-manifest genererat och verifierat mot Windows-
-  bygget; fel manifest bryter release-pipelinen.
+- [ ] **`requirements.txt` hash-låsning (`--require-hashes`)** `[LOW/MED]` —
+  måste genereras i **Windows**-bygget, inte här. Beroendeupplösningen är
+  plattformsberoende (t.ex. drar `keyring` in `pywin32-ctypes` på Windows men
+  `SecretStorage`/`jeepney` på Linux), så ett manifest genererat på Linux
+  saknar de Windows-specifika paketen och skulle få `--require-hashes` att
+  faila i releasebygget. Kör `pip-compile --generate-hashes` på en
+  Windows-runner (cp311) och verifiera mot `build-windows` innan CI byter
+  till hashat installat. `[GPT]`
+
+## Åtgärdat i uppföljningen (efter PR #30)
+
+De fyra övriga uppskjutna posterna är nu klara (separata commits):
+
+- [x] `dictation.py`/`flow.py` live-transkriberings-drift — spårar nu
+  sample-offset i stället för chunk-antal via `flow.silence_segments()`.
+- [x] `main.py`/`transcriber.py` fast-path-credentials — byts atomiskt under
+  `_cred_lock` (`update_credentials()`), och `polish`/`_transcribe_remote`
+  läser en konsekvent snapshot.
+- [x] `http_pool.py` globalt lås — ersatt med per-origin-lås så en långsam
+  fjärrtranskribering inte blockerar polish/warmers mot annan origin.
+- [x] `llm_polish.py` `gh auth token` — resolvas nu via `shutil.which`
+  (absolut PATH-sökväg, ingen CWD-injektion) och loggas transparent.
 
 ## Djupgranskning 2026-06-02 (hela repot) — konsoliderad
 
@@ -104,9 +115,9 @@ tillkommit efter förra rundan: `flow.py`, `learning.py`, `snippets.py`, `modes.
   `_PressState` genom kön; ett snabbt nästa knapptryck kan inte längre skriva
   över ett köat jobbs kontext/live-partials. **[MEDIUM]** `[OC]`
 
-- [ ] `dictation.py` live-transkribering — tystnadssegmenteringen glider mellan
-  `_live_loop` (växande snapshots) och `_combine_live` (re-split av hela
-  inspelningen). **[MEDIUM]** `[OC]` *Uppskjutet — se "Återstår" ovan.*
+- [x] `dictation.py` live-transkribering — spårar nu sample-offset
+  (`flow.silence_segments()`) i stället för chunk-antal; `_combine_live`
+  transkriberar exakt `audio[offset:]` som svans. **[MEDIUM]** `[OC]`
 
 - [x] `config.py` — `copy.deepcopy(DEFAULTS)` så nästlade containrar (app_profiles)
   inte delas per referens med modulens DEFAULTS. **[MEDIUM]** `[OC]`
@@ -124,8 +135,9 @@ tillkommit efter förra rundan: `flow.py`, `learning.py`, `snippets.py`, `modes.
   olåsta läsare aldrig ser en tom config. **[MEDIUM]** `[OC]` *Not: `.update()`
   är additivt → läsare ser alltid en giltig config.*
 
-- [ ] `main.py:493-497` — fast-path skriver `_transcriber.*`-credentials utan
-  `_model_lock`. **[MEDIUM]** `[OC]` *Uppskjutet — se "Återstår" ovan.*
+- [x] `main.py`/`transcriber.py` — fast-path byter alla 9 credential-fält
+  atomiskt under `_cred_lock` (`update_credentials()`); `polish`/
+  `_transcribe_remote` läser en konsekvent snapshot. **[MEDIUM]** `[OC]`
 
 - [x] `ui/qt_indicator.py` — `_ensure_started()` (spawn) och `_send()` (stdin)
   skyddas nu av en RLock så två trådar inte startar två barnprocesser eller
@@ -176,8 +188,9 @@ tillkommit efter förra rundan: `flow.py`, `learning.py`, `snippets.py`, `modes.
 - [x] `remote_transcribe.py:test_connection` — använder nu no-redirect-poolen
   (urlopen följde redirects och kunde läcka `Authorization: Bearer`). **[LOW]** `[OC]`
 
-- [ ] `http_pool.py:130-158` — globalt lås hålls över hela nätverks-round-tripen.
-  **[LOW/MEDIUM]** `[OC]` *Uppskjutet — se "Återstår" ovan.*
+- [x] `http_pool.py` — per-origin-lås i stället för ett globalt lås över hela
+  round-tripen, så en långsam fjärrtranskribering inte blockerar polish/warmers
+  mot annan origin. **[LOW/MEDIUM]** `[OC]`
 
 - [x] `http_pool.py` — `resp.read()`/SSE-loopen har nu en storleksgräns (32 MB).
   **[LOW/MEDIUM]** `[OC]`
@@ -204,13 +217,15 @@ tillkommit efter förra rundan: `flow.py`, `learning.py`, `snippets.py`, `modes.
 
 - [x] `config.py` — `_providers_validated`-flaggan skyddas av ett lås. **[LOW]** `[OC]`
 
-- [ ] `llm_polish.py:190-218` — GitHub-token-fallback kör `gh auth token` från PATH.
-  **[LOW/SECURITY]** `[GPT]` *Uppskjutet — se "Återstår" ovan.*
+- [x] `llm_polish.py` — GitHub-token-fallback resolvar `gh` via `shutil.which`
+  (absolut PATH-sökväg, ingen CWD-injektion på Windows), kör inget om gh saknas,
+  och loggar transparent när en gh-token används. **[LOW/SECURITY]** `[GPT]`
 
 ### Bygg, release, supply chain & lint
 
 - [ ] `requirements.txt` / `build-windows.yml` — hash-låst requirements med
-  `--require-hashes`. **[LOW/MEDIUM]** `[GPT]` *Uppskjutet — se "Återstår" ovan.*
+  `--require-hashes`. **[LOW/MEDIUM]** `[GPT]` *Kvar — måste genereras i
+  Windows-bygget (plattformsberoende beroenden); se "Att göra" överst.*
 
 - [x] `transcriber.py` `KBLAB_REVISIONS` — synkad med `convert_model.py`:s pinnade
   commit-SHA:er (var `None`). Den effektiva nedladdnings-pinnen finns i
