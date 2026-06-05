@@ -498,22 +498,10 @@ def _apply_settings_locked(new_cfg: dict):
         and _transcriber is not None
     )
     if fast_path:
-        old_transcriber_state = (
-            _transcriber.llm_enabled,
-            _transcriber.llm_api_key,
-            _transcriber.llm_model,
-            _transcriber.llm_provider,
-            _transcriber.llm_base_url,
-            _transcriber.transcription_provider,
-            _transcriber.transcription_api_key,
-            _transcriber.transcription_model,
-            _transcriber.transcription_base_url,
-        )
-        (_transcriber.llm_enabled, _transcriber.llm_api_key,
-         _transcriber.llm_model, _transcriber.llm_provider,
-         _transcriber.llm_base_url) = new_llm
-        (_transcriber.transcription_provider, _transcriber.transcription_api_key,
-         _transcriber.transcription_model, _transcriber.transcription_base_url) = new_tr
+        # Swap all 9 credential fields atomically (under the transcriber's
+        # _cred_lock) so an in-flight polish/remote-transcribe can't read a
+        # half-updated mix. old_llm/old_tr (captured above) drive rollback.
+        _transcriber.update_credentials(new_llm, new_tr)
         log.info("LLM/transkriberings-inställningar uppdaterade i befintlig transcriber")
         # Restart the connection warmers so they stop pinging the old endpoint
         # and pick up an immutable snapshot of the new credentials.
@@ -525,12 +513,7 @@ def _apply_settings_locked(new_cfg: dict):
         _restart_dictation()
         if not _persist():
             _rollback()
-            (_transcriber.llm_enabled, _transcriber.llm_api_key,
-             _transcriber.llm_model, _transcriber.llm_provider,
-             _transcriber.llm_base_url,
-             _transcriber.transcription_provider, _transcriber.transcription_api_key,
-             _transcriber.transcription_model,
-             _transcriber.transcription_base_url) = old_transcriber_state
+            _transcriber.update_credentials(old_llm, old_tr)
             try:
                 _transcriber.restart_warmers()
             except Exception as e:

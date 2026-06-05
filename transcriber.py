@@ -389,6 +389,12 @@ class Transcriber:
                  whisper_batched: bool = False):
         MODEL_DIR.mkdir(parents=True, exist_ok=True)
         self.language = language
+        # Credentials are read from background threads (polish, remote
+        # transcribe, warmers) while the Settings fast path may rewrite them.
+        # Guard the group with a short-held lock so a reader always sees a
+        # consistent snapshot (right provider with its own key/url) instead of
+        # a torn mix mid-update. The lock is never held across network I/O.
+        self._cred_lock = threading.Lock()
         self.llm_enabled = llm_enabled
         self.llm_api_key = llm_api_key
         self.llm_model = llm_model
@@ -547,6 +553,40 @@ class Transcriber:
             while not stop.wait(_LLM_WARM_INTERVAL):
                 rt.warm(provider, **kw)
         threading.Thread(target=_loop, name="tr-warm", daemon=True).start()
+
+    def update_credentials(self, llm: tuple, tr: tuple) -> None:
+        """Atomically replace the LLM + remote-transcription credentials.
+
+        *llm* is ``(enabled, api_key, model, provider, base_url)`` and *tr* is
+        ``(provider, api_key, model, base_url)``. Held under ``_cred_lock`` so a
+        concurrent ``polish``/``_transcribe_remote`` snapshot can't observe a
+        half-updated mix (e.g. a new provider with the old key).
+        """
+        with self._cred_lock:
+            (self.llm_enabled, self.llm_api_key, self.llm_model,
+             self.llm_provider, self.llm_base_url) = llm
+            (self.transcription_provider, self.transcription_api_key,
+             self.transcription_model, self.transcription_base_url) = tr
+
+    def _llm_credentials(self) -> tuple:
+        """Consistent snapshot of ``(api_key, model, provider, base_url)``."""
+        lock = getattr(self, "_cred_lock", None)
+        if lock is None:  # instance built without __init__ (e.g. a test)
+            return (self.llm_api_key, self.llm_model,
+                    self.llm_provider, self.llm_base_url)
+        with lock:
+            return (self.llm_api_key, self.llm_model,
+                    self.llm_provider, self.llm_base_url)
+
+    def _transcription_credentials(self) -> tuple:
+        """Consistent snapshot of ``(provider, api_key, model, base_url)``."""
+        lock = getattr(self, "_cred_lock", None)
+        if lock is None:  # instance built without __init__ (e.g. a test)
+            return (self.transcription_provider, self.transcription_api_key,
+                    self.transcription_model, self.transcription_base_url)
+        with lock:
+            return (self.transcription_provider, self.transcription_api_key,
+                    self.transcription_model, self.transcription_base_url)
 
     def restart_warmers(self) -> None:
         """Stop the running L3/L5.3 connection warmers and start fresh ones.
@@ -724,12 +764,17 @@ class Transcriber:
                         log.debug("Kunde inte ladda rättelser: %s", corr_err)
                         corrections = {}
 
+                    # Consistent credential snapshot (provider + its own key/
+                    # url/model) in case the Settings fast path swaps them
+                    # mid-flight.
+                    llm_key, llm_model, llm_provider, llm_base = \
+                        self._llm_credentials()
                     result = polish(
                         text,
-                        self.llm_api_key,
-                        model=self.llm_model,
-                        provider=self.llm_provider,
-                        base_url_override=self.llm_base_url,
+                        llm_key,
+                        model=llm_model,
+                        provider=llm_provider,
+                        base_url_override=llm_base,
                         context_text=ctx,
                         corrections=corrections,
                         app_profile=app_profile,
@@ -953,15 +998,18 @@ class Transcriber:
         prompt = " ".join(p for p in bias_parts if p).strip()
         temperature = getattr(self, "transcription_temperature", 0.0)
 
+        # Consistent credential snapshot in case the Settings fast path swaps
+        # provider/key/url mid-flight.
+        tr_provider, tr_key, tr_model, tr_base = self._transcription_credentials()
         try:
             raw = rt.transcribe(
                 audio,
                 sample_rate=16000,
-                provider=self.transcription_provider,
-                api_key=self.transcription_api_key,
-                model=self.transcription_model,
+                provider=tr_provider,
+                api_key=tr_key,
+                model=tr_model,
                 language=self.language,
-                base_url_override=self.transcription_base_url,
+                base_url_override=tr_base,
                 prompt=prompt,
                 temperature=temperature,
                 audio_format=getattr(self, "remote_audio_format", "wav"),

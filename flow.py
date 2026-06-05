@@ -27,15 +27,16 @@ log = logging.getLogger("freewispr")
 _WIN_S = 0.05  # 50 ms analysis window for silence detection
 
 
-def split_on_silence(audio: np.ndarray, rate: int,
+def silence_segments(audio: np.ndarray, rate: int,
                      min_rms: float = 0.003,
                      min_silence_s: float = 0.6,
-                     min_chunk_s: float = 0.3) -> list[np.ndarray]:
-    """Split a finalized mono float32 array into utterance chunks on silence.
+                     min_chunk_s: float = 0.3) -> list[tuple[int, int]]:
+    """Return ``(start_sample, end_sample)`` bounds of each voiced chunk.
 
-    Pure function. Returns a list of audio slices, each a voiced utterance with
-    short internal pauses kept but separated where silence exceeds
-    ``min_silence_s``. Chunks shorter than ``min_chunk_s`` are dropped.
+    Pure function. The sample bounds (rather than copied slices) let the live
+    transcriber track *how far into the recording* it has already decoded, so
+    combining live partials with the post-release tail can't drift the way a
+    chunk-*count* would when a later re-split shifts boundaries.
     """
     if audio is None or audio.size == 0:
         return []
@@ -67,14 +68,26 @@ def split_on_silence(audio: np.ndarray, rate: int,
         segs.append((cur_start, len(voiced)))
 
     min_win = max(1, int(min_chunk_s / _WIN_S))
-    out: list[np.ndarray] = []
+    bounds: list[tuple[int, int]] = []
     for s, e in segs:
         if e - s < min_win:
             continue
-        a = audio[s * win:min(e * win, n)]
-        if a.size:
-            out.append(a)
-    return out
+        a0, a1 = s * win, min(e * win, n)
+        if a1 > a0:
+            bounds.append((a0, a1))
+    return bounds
+
+
+def split_on_silence(audio: np.ndarray, rate: int,
+                     min_rms: float = 0.003,
+                     min_silence_s: float = 0.6,
+                     min_chunk_s: float = 0.3) -> list[np.ndarray]:
+    """Split a finalized mono float32 array into utterance chunks on silence.
+
+    Thin slicing wrapper over :func:`silence_segments` — behaviour unchanged.
+    """
+    return [audio[a0:a1] for a0, a1 in
+            silence_segments(audio, rate, min_rms, min_silence_s, min_chunk_s)]
 
 
 class FlowMode:

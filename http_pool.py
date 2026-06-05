@@ -22,9 +22,31 @@ import time
 import urllib.error
 from urllib.parse import urlsplit
 
-_lock = threading.Lock()
+# Per-origin locks instead of one global lock: a single keep-alive connection
+# can't be used concurrently, so requests to the *same* origin must serialise —
+# but a slow 60 s transcription to one provider should not block a polish call
+# or warmer to a *different* origin. _pool_guard only protects the small dict
+# bookkeeping (never held across network I/O).
+_pool_guard = threading.Lock()
+_origin_locks: dict[tuple[str, str, int], threading.Lock] = {}
 _connections: dict[tuple[str, str, int], http.client.HTTPConnection] = {}
 _local = threading.local()
+
+
+def _origin_key(url: str) -> tuple[str, str, int]:
+    parts = urlsplit(url)
+    host = parts.hostname or ""
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    return (parts.scheme, host, port)
+
+
+def _origin_lock(key: tuple[str, str, int]) -> threading.Lock:
+    with _pool_guard:
+        lock = _origin_locks.get(key)
+        if lock is None:
+            lock = threading.Lock()
+            _origin_locks[key] = lock
+        return lock
 
 # Cap response bodies so a hostile or buggy provider can't stream an
 # arbitrarily large body and exhaust memory on the hot path. Transcription
@@ -85,7 +107,7 @@ def drop_connection(key: tuple[str, str, int]) -> None:
 
 def reset() -> None:
     """Close all pooled connections (call after settings/provider changes)."""
-    with _lock:
+    with _pool_guard:
         for key in list(_connections):
             drop_connection(key)
 
@@ -146,7 +168,8 @@ def request(url: str, headers: dict[str, str], payload: bytes | None = None,
     path = parts.path or "/"
     if parts.query:
         path = f"{path}?{parts.query}"
-    with _lock:
+    # Serialise only against other requests to the same origin.
+    with _origin_lock(_origin_key(url)):
         key, conn, reused = connection_for(url, timeout)
         attempts = 0
         while True:

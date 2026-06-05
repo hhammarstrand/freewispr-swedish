@@ -131,12 +131,31 @@ def test_llm_polish_resolves_github_token_from_gh_cli(monkeypatch):
     monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     monkeypatch.delenv("GH_TOKEN", raising=False)
 
+    # gh is resolved to an absolute path via shutil.which before being run.
+    monkeypatch.setattr(llm_polish.shutil, "which",
+                        lambda name: "/usr/bin/gh" if name == "gh" else None)
+
     def fake_run(*args, **kwargs):
-        assert args[0] == ["gh", "auth", "token"]
+        assert args[0] == ["/usr/bin/gh", "auth", "token"]
         return SimpleNamespace(returncode=0, stdout="gh-token\n")
 
     monkeypatch.setattr(llm_polish.subprocess, "run", fake_run)
     assert llm_polish.resolve_api_key("") == "gh-token"
+
+
+def test_llm_polish_skips_gh_cli_when_not_on_path(monkeypatch):
+    # When gh isn't installed (shutil.which → None) we must not invoke any
+    # subprocess (no bare-"gh"/CWD execution).
+    llm_polish = importlib.import_module("llm_polish")
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.setattr(llm_polish.shutil, "which", lambda name: None)
+
+    def boom(*args, **kwargs):
+        raise AssertionError("subprocess.run must not be called without gh on PATH")
+
+    monkeypatch.setattr(llm_polish.subprocess, "run", boom)
+    assert llm_polish.resolve_api_key("") == ""
 
 
 # --------------------------------------------------------------------------- #
@@ -466,7 +485,7 @@ def test_llm_only_save_failure_restores_transcriber_state(monkeypatch):
         "transcription_provider": "local",
     }
     main._config = old_state.copy()
-    main._transcriber = SimpleNamespace(
+    tr = SimpleNamespace(
         llm_enabled=False,
         llm_provider="github",
         llm_api_key="old-key",
@@ -477,6 +496,16 @@ def test_llm_only_save_failure_restores_transcriber_state(monkeypatch):
         transcription_model="",
         transcription_base_url="",
     )
+
+    def _update_credentials(llm, tr_creds, _t=tr):
+        (_t.llm_enabled, _t.llm_api_key, _t.llm_model,
+         _t.llm_provider, _t.llm_base_url) = llm
+        (_t.transcription_provider, _t.transcription_api_key,
+         _t.transcription_model, _t.transcription_base_url) = tr_creds
+
+    tr.update_credentials = _update_credentials
+    tr.restart_warmers = lambda: None
+    main._transcriber = tr
     restarted = []
     monkeypatch.setattr(main, "_restart_dictation", lambda: restarted.append(True))
     monkeypatch.setattr(main.cfg_module, "save",

@@ -676,10 +676,15 @@ class DictationMode:
         """L5.7: while recording, transcribe completed (silence-delimited)
         chunks ahead of release so only the tail remains afterwards.
 
-        Results are written into *ps* (this press's state) so they can't be
-        overwritten by a subsequent press's live loop."""
-        from flow import split_on_silence
-        consumed = 0
+        Tracks progress as a *sample offset* into the (16 kHz finalized)
+        recording, not a chunk count. Because a completed chunk is one followed
+        by detected silence, its end offset is stable as the recording grows —
+        so the post-release tail in ``_combine_live`` is exactly the audio after
+        the last decoded chunk, with no boundary drift / dropped or duplicated
+        words. Results are written into *ps* so a later press can't clobber them.
+        """
+        from flow import silence_segments
+        consumed_samples = 0  # end of last decoded chunk (16 kHz samples)
         parts: list[str] = []
         try:
             while self._recording and self._active:
@@ -688,20 +693,22 @@ class DictationMode:
                 if audio_raw.size == 0:
                     continue
                 final = finalize_audio(audio_raw, ch, rate)
-                chunks = split_on_silence(final, 16000, self.min_rms)
-                # Decode every completed chunk except the last (still growing).
-                if len(chunks) > consumed + 1:
-                    for c in chunks[consumed:len(chunks) - 1]:
-                        if not (self._recording and self._active):
-                            break
-                        txt = self.transcriber.transcribe(c)
-                        if txt.strip():
-                            parts.append(txt.strip())
-                    consumed = len(chunks) - 1
+                bounds = silence_segments(final, 16000, self.min_rms)
+                # Decode every *completed* chunk (all but the last, which is
+                # still growing) that we haven't already consumed.
+                for a0, a1 in bounds[:-1]:
+                    if a0 < consumed_samples:
+                        continue  # already decoded in an earlier pass
+                    if not (self._recording and self._active):
+                        break
+                    txt = self.transcriber.transcribe(final[a0:a1])
+                    if txt.strip():
+                        parts.append(txt.strip())
+                    consumed_samples = a1
         except Exception as e:
             log.debug("Live-transkribering fel: %s", e)
         ps.live_parts = parts
-        ps.live_consumed = consumed
+        ps.live_consumed = consumed_samples
 
     def _combine_live(self, audio: np.ndarray, press_state=None) -> str:
         """L5.7: join live partials with the post-release tail. Degrades to a
@@ -716,15 +723,22 @@ class DictationMode:
             if t is not None and t.is_alive():
                 t.join(timeout=5.0)
             parts = list(press_state.live_parts)
-            consumed = press_state.live_consumed
+            consumed_samples = press_state.live_consumed
         else:
             t = getattr(self, "_live_thread", None)
             if t is not None and t.is_alive():
                 t.join(timeout=5.0)
             parts = list(getattr(self, "_live_parts", []))
-            consumed = getattr(self, "_live_consumed", 0)
-        chunks = split_on_silence(audio, 16000, self.min_rms) or [audio]
-        for c in chunks[consumed:]:
+            consumed_samples = getattr(self, "_live_consumed", 0)
+        # The tail is exactly the audio after the last live-decoded chunk
+        # (consumed_samples is a sample offset, not a chunk count). Re-split
+        # only the tail so a long trailing segment with internal pauses still
+        # chunks well, without ever re-touching already-decoded audio.
+        tail = audio[consumed_samples:] if consumed_samples < audio.size else audio[:0]
+        tail_chunks = split_on_silence(tail, 16000, self.min_rms)
+        if not tail_chunks and tail.size:
+            tail_chunks = [tail]
+        for c in tail_chunks:
             txt = self.transcriber.transcribe(c)
             if txt.strip():
                 parts.append(txt.strip())

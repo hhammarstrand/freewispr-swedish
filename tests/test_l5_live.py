@@ -32,26 +32,33 @@ def _reload_dictation(monkeypatch):
 
 def test_combine_live_joins_partials_with_tail(monkeypatch):
     d = _reload_dictation(monkeypatch)
-    # 3 chunks; 2 already consumed live, last decoded as the tail.
-    monkeypatch.setattr("flow.split_on_silence",
-                        lambda audio, rate, min_rms=0.003: ["c0", "c1", "c2"])
+    # 32000 samples already decoded live; only the tail (audio[32000:]) is
+    # re-split + decoded after release.
+    tail_seen = {}
+
+    def fake_split(audio, rate, min_rms=0.003):
+        tail_seen["len"] = audio.size
+        return ["tail"]
+
+    monkeypatch.setattr("flow.split_on_silence", fake_split)
     decoded = []
     mode = object.__new__(d.DictationMode)
     mode.min_rms = 0.003
     mode._live_thread = None
     mode._live_parts = ["Hej", "på"]
-    mode._live_consumed = 2
+    mode._live_consumed = 32000  # sample offset, not a chunk count
     mode.transcriber = SimpleNamespace(
         transcribe=lambda c, **kw: (decoded.append(c) or "dig"))
     out = mode._combine_live(np.ones(48000, dtype=np.float32))
     assert out == "Hej på dig"
-    # Only the unconsumed tail chunk was decoded after release.
-    assert decoded == ["c2"]
+    assert decoded == ["tail"]
+    # The tail handed to the splitter was audio[32000:] = 16000 samples.
+    assert tail_seen["len"] == 16000
 
 
 def test_combine_live_short_utterance_falls_back_to_batch(monkeypatch):
     d = _reload_dictation(monkeypatch)
-    # One chunk, nothing consumed live → behaves like a normal batch transcribe.
+    # Nothing consumed live (offset 0) → the whole clip is the tail.
     monkeypatch.setattr("flow.split_on_silence",
                         lambda audio, rate, min_rms=0.003: ["only"])
     decoded = []
@@ -65,3 +72,22 @@ def test_combine_live_short_utterance_falls_back_to_batch(monkeypatch):
     out = mode._combine_live(np.ones(16000, dtype=np.float32))
     assert out == "Hela meningen"
     assert decoded == ["only"]
+
+
+def test_combine_live_all_consumed_no_tail(monkeypatch):
+    d = _reload_dictation(monkeypatch)
+    # Everything was decoded live (offset == len) → no tail transcription.
+    calls = []
+    monkeypatch.setattr("flow.split_on_silence",
+                        lambda audio, rate, min_rms=0.003: calls.append(audio.size) or [])
+    mode = object.__new__(d.DictationMode)
+    mode.min_rms = 0.003
+    mode._live_thread = None
+    mode._live_parts = ["Allt", "redan", "klart"]
+    mode._live_consumed = 16000
+    mode.transcriber = SimpleNamespace(
+        transcribe=lambda c, **kw: (_ for _ in ()).throw(
+            AssertionError("tail must not be transcribed")))
+    out = mode._combine_live(np.ones(16000, dtype=np.float32))
+    assert out == "Allt redan klart"
+    assert calls == [0]  # split called on an empty tail

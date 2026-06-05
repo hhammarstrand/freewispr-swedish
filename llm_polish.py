@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import shutil
 import subprocess
 import urllib.error
 from typing import NamedTuple
@@ -203,19 +204,28 @@ def resolve_api_key(api_key: str = "", provider: str = DEFAULT_PROVIDER) -> str:
         if token:
             return token
     if p.use_gh_cli:
-        try:
-            result = subprocess.run(
-                ["gh", "auth", "token"],
-                capture_output=True,
-                text=True,
-                timeout=3.0,
-                check=False,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-            )
-            if result.returncode == 0:
-                return result.stdout.strip()
-        except Exception:
-            pass
+        # Resolve `gh` to an absolute path via PATH lookup instead of invoking
+        # the bare name. On Windows a bare "gh" lets CreateProcess run a gh.exe
+        # from the *current directory* first — a working-directory injection
+        # vector. shutil.which() returns a fully-qualified PATH entry (or None
+        # when gh isn't installed, in which case we don't run anything).
+        gh = shutil.which("gh")
+        if gh:
+            try:
+                result = subprocess.run(
+                    [gh, "auth", "token"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3.0,
+                    check=False,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    log.info("LLM: använder GitHub-token från 'gh auth token' "
+                             "(%s) — ingen explicit nyckel angiven", gh)
+                    return result.stdout.strip()
+            except Exception:
+                pass
     return ""
 
 
