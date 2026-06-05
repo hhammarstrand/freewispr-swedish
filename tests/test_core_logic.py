@@ -485,7 +485,7 @@ def test_llm_only_save_failure_restores_transcriber_state(monkeypatch):
         "transcription_provider": "local",
     }
     main._config = old_state.copy()
-    main._transcriber = SimpleNamespace(
+    tr = SimpleNamespace(
         llm_enabled=False,
         llm_provider="github",
         llm_api_key="old-key",
@@ -496,6 +496,16 @@ def test_llm_only_save_failure_restores_transcriber_state(monkeypatch):
         transcription_model="",
         transcription_base_url="",
     )
+
+    def _update_credentials(llm, tr_creds, _t=tr):
+        (_t.llm_enabled, _t.llm_api_key, _t.llm_model,
+         _t.llm_provider, _t.llm_base_url) = llm
+        (_t.transcription_provider, _t.transcription_api_key,
+         _t.transcription_model, _t.transcription_base_url) = tr_creds
+
+    tr.update_credentials = _update_credentials
+    tr.restart_warmers = lambda: None
+    main._transcriber = tr
     restarted = []
     monkeypatch.setattr(main, "_restart_dictation", lambda: restarted.append(True))
     monkeypatch.setattr(main.cfg_module, "save",
