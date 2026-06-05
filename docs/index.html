@@ -893,8 +893,12 @@ footer a:hover {
           <p class="section-copy">Kör transkriberingen lokalt med KBLab-modellerna. Eller välj en provider om du inte vill bry dig om modeller och GPU — till exempel <a class="text-link" href="https://staik.se/" target="_blank" rel="noopener noreferrer">staik.se</a>, <a class="text-link" href="https://berget.ai/" target="_blank" rel="noopener noreferrer">Berget AI</a> eller en egen OpenAI-kompatibel endpoint.</p>
         </div>
         <div class="privacy-panel">
-          <div class="panel"><h3>Lokalt eller via provider</h3><p>Lokalt: ljudet spelas in, resamplas och transkriberas på din Windows-dator med en nedladdad modell. Slår du på remote-transkribering går ljudet till vald provider. LLM-granskning skickar bara texten.</p></div>
+          <div class="panel"><h3>Lokalt eller via provider</h3><p>Lokalt: ljudet spelas in, resamplas och transkriberas på din Windows-dator med en nedladdad modell. Slår du på remote-transkribering går ljudet till vald provider. LLM-granskning skickar bara texten — röstredigering skickar dessutom den text du markerat.</p></div>
           <div class="panel log"><span class="ok">status: Transkriberar (lokalt eller remote)</span><span class="warn">status: LLM-granskar (om aktiverat)</span><span class="ok">resultat: Klistrad (rå / LLM-granskad / LLM-polerad)</span></div>
+        </div>
+        <div class="privacy-panel">
+          <div class="panel"><h3>Du måste säga ja</h3><p>Att skicka text eller ljud över nätet kräver ett uttryckligt samtycke som sparas separat. Byter du från en lokal <code>localhost</code>-uppsättning till en riktig molnleverantör krävs ett nytt ja — lokalt godkännande ärvs aldrig. Lokal LLM via <code>http://localhost</code> lämnar aldrig datorn och kräver inget samtycke.</p></div>
+          <div class="panel"><h3>Skärmtext stannar lokalt</h3><p>Kontextmedvetenhet läser aktiv app och text nära markören lokalt för att stava egennamn rätt. Namnen delas bara med en molntjänst om du uttryckligen godkänt det. API-nycklar ligger i Windows Credential Manager, aldrig i config-filen, och loggas aldrig.</p></div>
         </div>
       </section>
 
