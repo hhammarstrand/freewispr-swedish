@@ -63,19 +63,32 @@ Normal diktering är lokal när en modell finns nedladdad och LLM/remote är avs
 - Inställningar kan försöka hämta modellistan från vald LLM-leverantör om en API-nyckel finns sparad eller tillgänglig via miljövariabel/`gh auth token`.
 - Om du slår på **LLM-granskning** skickas den transkriberade texten – inte ljudet – till vald leverantör. Leverantörer: GitHub Models, staik.se, Berget AI, OpenAI eller valfri OpenAI-kompatibel server.
 - Om du slår på **remote-transkribering** skickas ljudet – inte bara text – till vald leverantör (staik.se, Berget AI eller custom). Det är valfritt; lokala KBLab-modeller fungerar utan provider.
+- **Röstredigering** (egen hotkey, av som standard) läser den text du markerat via urklipp och skickar markeringen tillsammans med din röstinstruktion till vald LLM-leverantör. Markeringen kan innehålla känslig information och omfattas av samma LLM-samtycke.
 
-API-nycklar för LLM och remote-transkribering lagras i Windows Credential Manager via `keyring`, aldrig i config-filen. Token loggas aldrig.
+### Samtycke
 
-Den dikterade texten kopieras till urklipp och klistras in via syntetisk Ctrl+V (eller Shift+Insert i konsolterminaler). Texten stannar kvar i urklipp efteråt som fallback — gammalt urklippsinnehåll återställs inte.
+- Att slå på LLM-granskning eller remote-transkribering kräver ett uttryckligt samtycke (en synlig samtyckesruta på respektive flik, annars en bekräftelsedialog när du sparar). Samtycket sparas **oberoende** av om funktionen är på, så du behöver inte godkänna igen om du tillfälligt stänger av den.
+- Byter du från en lokal `http://localhost`-uppsättning till en riktig remote-leverantör krävs ett **nytt** uttryckligt ja — ett lokalt (loopback) godkännande ärvs aldrig som remote-samtycke.
+- Lokal LLM via **Custom + `http://localhost`** (Ollama, LM Studio, llama.cpp) lämnar aldrig datorn och kräver därför inget samtycke.
+- **Kontextmedvetenhet** läser aktiv app och text nära markören **lokalt** för att stava egennamn rätt och anpassa ton/format. Egennamn från skärmen delas bara med en remote-tjänst (STT eller LLM) om du uttryckligen godkänt det; annars stannar de på datorn.
+
+Om remote-transkribering misslyckas (t.ex. serverfel) visas felet i indikatorn — det maskeras inte längre som "Inget hördes", så du ser skillnad på tystnad och ett faktiskt fel.
+
+API-nycklar för LLM och remote-transkribering lagras i Windows Credential Manager via `keyring`, aldrig i config-filen. Token loggas aldrig, och loggen innehåller aldrig full transkriptionstext — bara metadata (längd, latens, modell).
+
+Den dikterade texten kopieras till urklipp och klistras in via syntetisk Ctrl+V (eller Shift+Insert i konsolterminaler). Texten stannar kvar i urklipp efteråt som fallback — ditt tidigare urklippsinnehåll återställs som standard inte (kan slås på via **Återställ urklipp efter diktering** i inställningarna).
 
 ## Funktioner
 
-- Push-to-talk, standard `Ctrl+Space`.
+- Push-to-talk, standard `Ctrl+Space`. `Esc` avbryter en pågående inspelning.
 - Systemfacksapp med inställningar för mikrofon, modell, CUDA och autostart.
 - WASAPI/DirectSound/MME med automatisk prioritering.
 - Flerkanalig inspelning och resampling till 16 kHz.
 - Tystnadsdetektion som kastar för tysta inspelningar.
 - Personlig kontext (fritext) som skickas till LLM-granskaren för bättre resultat med namn och fackord.
+- Kontextmedvetenhet: anpassar ton/format per app och stavar egennamn nära markören rätt. All skärmtext används lokalt om du inte uttryckligen delar den med en remote-tjänst.
+- Röstredigering av markerad text (KP3, egen hotkey): markera text, håll röstredigerings-tangenten och säg en instruktion ("gör formellt", "översätt till engelska") — LLM:en redigerar markeringen.
+- Kommandoläge: rösta för att redigera det senast inklistrade blocket i stället för att diktera nytt.
 - Hotwords från `~/.freewispr-swedish/hotwords.txt` för lokala Whisper-modeller.
 - Valfri remote-transkribering via staik.se, Berget AI eller egen OpenAI-kompatibel endpoint, som alternativ till lokal modell.
 - Vänta-läge för LLM: indikator visar "LLM-granskar…" och granskad/polerad text klistras i ett enda steg när LLM-svaret hinner klart.
@@ -115,9 +128,12 @@ Högerklicka på systemfacksikonen och välj **Inställningar**.
 | Modell | `tiny`, `base`, `small`, `medium` eller `large` |
 | GPU/CUDA | Använd NVIDIA-GPU när tillgänglig |
 | Lyssnarindikator | Följ muspekaren eller ligg still på huvudskärmen |
-| LLM-granskning | Valfri eftergranskning av transkriberad text |
-| Remote-transkribering | Lokal Whisper eller remote-provider (`staik`, `berget`, `custom`) |
+| LLM-granskning | Valfri eftergranskning av transkriberad text (kräver samtycke för remote-leverantör) |
+| Remote-transkribering | Lokal Whisper eller remote-provider (`staik`, `berget`, `custom`); remote kräver samtycke |
 | Personlig kontext | Fritext som används som referens vid LLM-granskning |
+| Kontextmedvetenhet | Anpassa ton/format per app och stava egennamn nära markören rätt (lokalt) |
+| Röstredigering | Egen hotkey för att redigera markerad text med en röstinstruktion |
+| Återställ urklipp | Lägg tillbaka ditt tidigare urklipp efter dikteringen |
 | Autostart | Starta appen automatiskt med Windows |
 
 Konfiguration sparas i `~/.freewispr-swedish/config.json`. API-nycklar lagras i Windows Credential Manager via `keyring`, inte i config-filen.
