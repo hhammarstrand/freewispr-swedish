@@ -115,6 +115,13 @@ DEFAULTS = {
     # CPU-trådar för CTranslate2-inferens. 0 = auto (≈ fysiska kärnor, minst 4
     # = CT2:s egen default så auto aldrig blir långsammare än tidigare).
     "whisper_cpu_threads": 0,
+    # EXPERIMENTELLT: Whisper-enkoderns fönsterlängd i sekunder. 0 = modellens
+    # default (30 s). Whisper paddar alltid ljudet till fönsterlängden, så en
+    # 4 s-diktering betalar nästan full enkoderkostnad — ett lägre värde
+    # (t.ex. 15) kapar den kostnaden för korta yttranden. Modellen är dock
+    # tränad på 30 s-fönster: verifiera WER på egen diktering innan du ändrar.
+    # Påverkar endast lokal transkribering.
+    "whisper_chunk_length": 0,
     "kblab_revision": "default",       # default | strict | subtitle (CT2-fallback)
     # Remote OpenAI-kompatibel path: temperatur (prompt byggs automatiskt).
     "transcription_temperature": 0.0,
@@ -173,8 +180,11 @@ DEFAULTS = {
     "polish_skip_trivial": True,
     "polish_skip_max_words": 6,
     # L5.7: transkribera färdiga chunkar redan under inspelning (endast lokal).
-    # Av som default; experimentellt.
-    "live_transcribe_enabled": False,
+    # På som default — vid key-up återstår bara svansen att avkoda, vilket är
+    # samma streaming-knep som de kommersiella apparna använder för "instant"
+    # paste på längre dikteringar. Inkrementell resampling via soxr (O(n) i
+    # stället för O(n²)); avkodade partials matas som kontext till nästa chunk.
+    "live_transcribe_enabled": True,
     # L5.8: BatchedInferencePipeline för längre klipp (faster-whisper). Av som
     # default — mät innan du slår på. Faller tillbaka om klassen saknas.
     "whisper_batched": False,
