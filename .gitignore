@@ -29,3 +29,10 @@ coverage.xml
 Thumbs.db
 nul
 
+# Local runtime data — normally lives in ~/.freewispr-swedish/, but guard
+# against a stray copy in the repo (user config can hold endpoints/consent
+# flags; logs can hold transcription metadata).
+config.json
+*.log
+*.corrupt-*
+

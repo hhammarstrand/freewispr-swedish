@@ -135,12 +135,22 @@ Högerklicka på systemfacksikonen och välj **Inställningar**.
 | Personlig kontext | Fritext som används som referens vid LLM-granskning |
 | Kontextmedvetenhet | Anpassa ton/format per app och stava egennamn nära markören rätt (lokalt) |
 | Röstredigering | Egen hotkey för att redigera markerad text med en röstinstruktion |
+| Live-transkribering | Avkoda färdiga fraser under inspelning (på som standard, endast lokal modell) |
+| Rå direkt / Rå → ersätt | Klistra rå text direkt, eller klistra rått och byt mot polerat när det landar |
+| Lär av mina rättelser | Lär `fel → rätt`-par när du rättar inklistrad text |
+| Kommandoläge | Rösta för att redigera det senast inklistrade blocket |
+| Snippets | Textexpansion: en ledande trigger-fras expanderas till längre text |
+| Flow-läge | Kontinuerlig diktering över pauser (experimentellt, endast lokal) |
+| Förvänta engelska facktermer | Bättre igenkänning av engelska facktermer i svensk diktering |
+| Indikatorstil | Klassisk (Tk), modern (Qt-pill) eller transparent |
 | Återställ urklipp | Lägg tillbaka ditt tidigare urklipp efter dikteringen |
 | Autostart | Starta appen automatiskt med Windows |
 
+`Esc` avbryter en pågående inspelning (byt via `cancel_hotkey` i config.json).
+
 Konfiguration sparas i `~/.freewispr-swedish/config.json`. API-nycklar lagras i Windows Credential Manager via `keyring`, inte i config-filen.
 
-Exempel:
+Minimalt exempel — du behöver inte ange alla fält. Allt som saknas fylls i med sina standardvärden (de smarta funktionerna som live-transkribering, inlärning och kontextmedvetenhet är på som standard), så en delvis config slår aldrig av något:
 
 ```json
 {

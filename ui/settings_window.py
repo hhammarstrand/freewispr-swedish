@@ -114,6 +114,9 @@ class SettingsWindow:
     def _init_vars(self):
         c = self.cfg
         self._hotkey_var = tk.StringVar(value=c.get("hotkey", "ctrl+space"))
+        self._voice_edit_hotkey_var = tk.StringVar(
+            value=c.get("voice_edit_hotkey", "")
+        )
         self._indicator_follow_var = tk.BooleanVar(
             value=c.get("indicator_follow_mouse", True)
         )
@@ -392,6 +395,23 @@ class SettingsWindow:
             anchor="w", padx=6, pady=(4, 8)
         )
 
+        # KP3: optional separate hotkey for voice-editing the current
+        # selection. Empty = feature off, so we pair the capture with a clear
+        # button (the capture widget itself can only set, never unset).
+        self._label(parent, "Röstredigering (valfri tangent)",
+                    font=ctk.CTkFont(weight="bold") if _CTK_AVAILABLE else None
+                    ).pack(anchor="w", **pad)
+        ve = _HotkeyCapture(parent, self._voice_edit_hotkey_var)
+        ve.pack(fill="x", padx=6, pady=(4, 0))
+        self._button(parent, "Rensa",
+                     lambda: self._voice_edit_hotkey_var.set("")).pack(
+            anchor="w", padx=6, pady=(4, 0))
+        self._hint(parent, "Markera text, håll den här tangenten och säg en "
+                   "instruktion (t.ex. \"gör formellt\") — LLM:en redigerar "
+                   "markeringen. Lämna tom för att stänga av.").pack(
+            anchor="w", padx=6, pady=(4, 8)
+        )
+
         # Lyssnarindikator
         self._label(parent, "Lyssnarindikator",
                     font=ctk.CTkFont(weight="bold") if _CTK_AVAILABLE else None
@@ -509,10 +529,10 @@ class SettingsWindow:
         import threading
 
         try:
-            self._update_button.configure(state="disabled", text="Söker...")
+            self._update_button.configure(state="disabled", text="Söker…")
         except Exception:
             pass
-        self._update_status_label.configure(text="Kontrollerar GitHub...")
+        self._update_status_label.configure(text="Kontrollerar GitHub…")
 
         def _worker():
             info = None
@@ -786,10 +806,10 @@ class SettingsWindow:
         base_url = self._llm_base_url_var.get().strip()
 
         try:
-            self._llm_test_btn.configure(state="disabled", text="Testar...")
+            self._llm_test_btn.configure(state="disabled", text="Testar…")
         except Exception:
             pass
-        self._llm_test_result.configure(text="Ansluter...")
+        self._llm_test_result.configure(text="Ansluter…")
 
         def _run():
             try:
@@ -1101,10 +1121,10 @@ class SettingsWindow:
         base_url = self._tr_base_url_var.get().strip()
 
         try:
-            self._tr_test_btn.configure(state="disabled", text="Testar...")
+            self._tr_test_btn.configure(state="disabled", text="Testar…")
         except Exception:
             pass
-        self._tr_test_result.configure(text="Ansluter...")
+        self._tr_test_result.configure(text="Ansluter…")
 
         def _run():
             try:
@@ -1353,6 +1373,7 @@ class SettingsWindow:
         # ---- Build new_cfg ----
         new_cfg = self.cfg.copy()
         new_cfg["hotkey"] = self._hotkey_var.get().strip()
+        new_cfg["voice_edit_hotkey"] = self._voice_edit_hotkey_var.get().strip()
         new_cfg["model_size"] = self._model_var.get()
         new_cfg["use_cuda"] = self._cuda_var.get()
         new_cfg["indicator_follow_mouse"] = self._indicator_follow_var.get()

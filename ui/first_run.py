@@ -331,7 +331,7 @@ class FirstRunDialog:
         self._set_buttons_enabled(False)
         self._show_progress()
         self._show_status(
-            "Laddar ned och konverterar modellen — det här kan ta några minuter..."
+            "Laddar ned och konverterar modellen — det här kan ta några minuter…"
         )
 
         def _run():
