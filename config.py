@@ -177,6 +177,9 @@ DEFAULTS = {
     "whisper_batched": False,
 
     "indicator_follow_mouse": True,
+    # classic (Tkinter-staplar) | modern (Qt-pill) | transparent (endast våg).
+    # Läses av main.py vid start och settings-apply; sparas av Settings.
+    "indicator_style": "modern",
     # Lägsta RMS-nivå (0.0-1.0) som räknas som tal. Se DEFAULT_MIN_RMS i dictation.py.
     "min_rms": 0.003,
 }

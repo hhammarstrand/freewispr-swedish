@@ -1148,23 +1148,35 @@ class DictationMode:
                 self.indicator.hide(delay_ms=1500)
             return
 
-        audio = finalize_audio(audio_raw, channels, rate)
-        n = len(audio)
+        # Audio prep (downmix/resample/trim) gets its own handler: a failure
+        # here would otherwise bubble to _worker_loop's catch-all, which only
+        # logs — leaving the indicator stuck on "Transkriberar…" with no user-
+        # visible error. _transcribe() below has its own equivalent tail.
+        try:
+            audio = finalize_audio(audio_raw, channels, rate)
+            n = len(audio)
 
-        if n < MIN_AUDIO_SAMPLES:
-            log.info("Inspelning för kort (%d samples), ignorerar", n)
-            self.on_status(f"Klar — håll {self.hotkey.upper()}")
+            if n < MIN_AUDIO_SAMPLES:
+                log.info("Inspelning för kort (%d samples), ignorerar", n)
+                self.on_status(f"Klar — håll {self.hotkey.upper()}")
+                if self.indicator:
+                    self.indicator.hide(delay_ms=0)
+                return
+
+            # L5.5: trim edge silence (cheaper than VAD) so fewer samples reach
+            # Whisper. Keeps a pad so word edges aren't clipped.
+            if getattr(self, "silence_trim_enabled", True):
+                trimmed = _trim_silence(audio, 16000, self.min_rms)
+                if trimmed.size >= MIN_AUDIO_SAMPLES and trimmed.size < n:
+                    log.info("RMS-trim: %d -> %d samples", n, trimmed.size)
+                    audio = trimmed
+        except Exception as e:
+            log.error("Ljudberedning misslyckades: %s", e, exc_info=True)
+            self.on_status(f"Fel — håll {self.hotkey.upper()}")
             if self.indicator:
-                self.indicator.hide(delay_ms=0)
+                self.indicator.show("Kunde inte bearbeta ljudet", state="error")
+                self.indicator.hide(delay_ms=4000)
             return
-
-        # L5.5: trim edge silence (cheaper than VAD) so fewer samples reach
-        # Whisper. Keeps a pad so word edges aren't clipped.
-        if getattr(self, "silence_trim_enabled", True):
-            trimmed = _trim_silence(audio, 16000, self.min_rms)
-            if trimmed.size >= MIN_AUDIO_SAMPLES and trimmed.size < n:
-                log.info("RMS-trim: %d -> %d samples", n, trimmed.size)
-                audio = trimmed
 
         self._transcribe(audio, record_ms, ctx=ctx,
                          context_hotpath_ms=context_hotpath_ms,

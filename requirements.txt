@@ -8,6 +8,7 @@ scipy>=1.10,<2.0
 keyboard>=0.13.5,<0.14
 pyperclip>=1.8.2,<2.0
 pystray>=0.19.5,<0.20
+# Tray-ikonen (pystray-krav) + ikon-/OG-bildsgenerering i make_icon.py.
 Pillow>=12.2.0,<13.0
 keyring>=25.0.0,<26.0
 # Used directly for first-run model downloads (also transitive from faster-whisper).
