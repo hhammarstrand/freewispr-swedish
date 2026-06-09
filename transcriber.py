@@ -399,6 +399,7 @@ class Transcriber:
                  no_speech_threshold: float = 0.6,
                  compute_type: str = "",
                  cpu_threads: int = 0,
+                 chunk_length: int = 0,
                  kblab_revision: str = "default",
                  transcription_temperature: float = 0.0,
                  expect_english_terms: bool = False,
@@ -428,6 +429,7 @@ class Transcriber:
         self.no_speech_threshold = no_speech_threshold
         self.compute_type_override = compute_type
         self.cpu_threads = int(cpu_threads or 0)
+        self.chunk_length = int(chunk_length or 0)
         self.kblab_revision = kblab_revision or "default"
         self.transcription_temperature = transcription_temperature
         self.expect_english_terms = expect_english_terms
@@ -686,7 +688,7 @@ class Transcriber:
             log.debug("Kunde inte frigöra modell rent: %s", e)
 
     def transcribe(self, audio: np.ndarray, capitalize: bool = True,
-                   extra_hotwords: str = "") -> str:
+                   extra_hotwords: str = "", preceding_text: str = "") -> str:
         """Transcribe audio to text (local or remote) with postprocessing.
 
         Does NOT run LLM polish — use :meth:`polish_async` for that.
@@ -695,6 +697,13 @@ class Transcriber:
         ``capitalize`` / ``extra_hotwords`` come from AP3 context awareness:
         the active app profile may disable leading-capitalisation, and on-screen
         proper nouns are added to the local decoder's hotwords.
+
+        ``preceding_text`` is the tail of the text that already precedes the
+        caret (or, in live mode, the already-decoded partials). It is fed to
+        Whisper as ``initial_prompt`` — the model treats it as the preceding
+        transcript, which improves mid-sentence continuation: consistent
+        casing, terminology and punctuation style. The caller is responsible
+        for privacy-gating it for remote providers (dictation._context_tail_for_stt).
         """
         self.last_polish_state = "local"
         log.info("Transkriberar: %d samples, peak=%.4f, modell=%s, lang=%s, provider=%s",
@@ -703,10 +712,12 @@ class Transcriber:
 
         if self.transcription_provider != "local":
             text = self._transcribe_remote(audio, capitalize=capitalize,
-                                           extra_prompt=extra_hotwords)
+                                           extra_prompt=extra_hotwords,
+                                           preceding_text=preceding_text)
         else:
             text = self._transcribe_local(audio, capitalize=capitalize,
-                                          extra_hotwords=extra_hotwords)
+                                          extra_hotwords=extra_hotwords,
+                                          preceding_text=preceding_text)
 
         return text
 
@@ -846,8 +857,15 @@ class Transcriber:
         threading.Thread(target=_run, name="llm-polish", daemon=True).start()
 
     def _transcribe_local(self, audio: np.ndarray, capitalize: bool = True,
-                          extra_hotwords: str = "") -> str:
+                          extra_hotwords: str = "",
+                          preceding_text: str = "") -> str:
         prompt = _INITIAL_PROMPTS.get(self.language, "")
+        # Preceding text goes LAST in initial_prompt (closest to the audio) —
+        # Whisper reads initial_prompt as "the transcript so far", so the
+        # decoder continues mid-sentence with consistent casing/terminology.
+        # Hard cap as defence in depth; the caller already trims to a tail.
+        if preceding_text:
+            prompt = f"{prompt} {preceding_text[-200:]}".strip()
         hotwords = _get_hotwords_cached()
         # Merge AP3 on-screen proper nouns into the decoder hotwords.
         if extra_hotwords:
@@ -927,6 +945,12 @@ class Transcriber:
                         no_repeat_ngram_size=3,
                         # Bias toward user's vocabulary (names, terms)
                         hotwords=hotwords,
+                        # EXPERIMENTAL (whisper_chunk_length): shrink the
+                        # encoder window below the model's 30 s default. The
+                        # encoder always pads to the window, so short
+                        # dictation pays nearly full cost at 30 s. None keeps
+                        # the library default.
+                        chunk_length=(getattr(self, "chunk_length", 0) or None),
                     )
                     raw = " ".join(s.text.strip() for s in segments)
                 # L4/L5.1: log the effective decode knobs so the VAD on/off
@@ -991,7 +1015,8 @@ class Transcriber:
         return text
 
     def _transcribe_remote(self, audio: np.ndarray, capitalize: bool = True,
-                           extra_prompt: str = "") -> str:
+                           extra_prompt: str = "",
+                           preceding_text: str = "") -> str:
         """Skicka ljud till remote-leverantör.
 
         Inget fallback till lokal modell — vid fel höjs felet vidare så att
@@ -1012,11 +1037,15 @@ class Transcriber:
         # AP4: bias the remote OpenAI-compatible decoder with a prompt built
         # from the language anchor + hotwords + on-screen names. Providers that
         # ignore `prompt` simply no-op on it.
+        # preceding_text last (closest to the audio) — same continuation
+        # semantics as the local initial_prompt. Privacy: the caller only
+        # passes it for remote with explicit context_to_remote consent.
         bias_parts = [
             _INITIAL_PROMPTS.get(self.language, ""),
             _get_hotwords_cached() or "",
             extra_prompt or "",
             _ENGLISH_TERMS if getattr(self, "expect_english_terms", False) else "",
+            (preceding_text or "")[-200:],
         ]
         prompt = " ".join(p for p in bias_parts if p).strip()
         temperature = getattr(self, "transcription_temperature", 0.0)
