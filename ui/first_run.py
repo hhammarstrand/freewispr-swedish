@@ -23,12 +23,14 @@ log = logging.getLogger("freewispr")
 
 # Model-size catalogue shown in the picker. Keys mirror convert_model.KBLAB_MODELS.
 # The label/desc pair drives both the radio button text and the description hint.
+# The "(rekommenderad)" suffix is added at runtime to whichever size suits the
+# detected hardware (hardware.recommend_model), not hardcoded here.
 _MODEL_CHOICES: list[tuple[str, str, str]] = [
-    ("tiny",   "tiny",                   "Snabbast, ~40 MB, lägre precision"),
-    ("base",   "base",                   "Liten och snabb, ~150 MB"),
-    ("small",  "small (rekommenderad)",  "~500 MB, bra balans"),
-    ("medium", "medium",                 "~1.5 GB, hög precision"),
-    ("large",  "large",                  "~3 GB, bäst kvalitet"),
+    ("tiny",   "tiny",   "Snabbast, ~40 MB, lägre precision"),
+    ("base",   "base",   "Liten och snabb, ~150 MB"),
+    ("small",  "small",  "~500 MB, bra balans"),
+    ("medium", "medium", "~1.5 GB, hög precision"),
+    ("large",  "large",  "~3 GB, bäst kvalitet"),
 ]
 
 
@@ -67,8 +69,16 @@ class FirstRunDialog:
             self.root.configure(bg=BG)
             _style(self.root)
 
-        # Selected model size — defaults to "small".
-        self._size_var = tk.StringVar(value="small")
+        # Recommend the best model the detected hardware can comfortably run
+        # (large on a capable NVIDIA GPU, small on CPU). Best-effort + safe
+        # fallback to "small"; never blocks the dialog.
+        try:
+            from hardware import recommend_model
+            self._recommended = recommend_model()
+        except Exception:
+            self._recommended = "small"
+        # Selected model size — pre-selects the hardware recommendation.
+        self._size_var = tk.StringVar(value=self._recommended)
         # Status text shown next to (or above) the progress bar.
         self._status_var = tk.StringVar(value="")
 
@@ -210,19 +220,27 @@ class FirstRunDialog:
                     heading=True).pack(anchor="w", pady=(0, 8))
 
         # Body explanation
-        self._label(
-            outer,
+        body = (
             "För att kunna diktera behöver appen en svensk Whisper-modell "
             "från KBLab. Välj storlek nedan — du kan byta senare i "
-            "inställningarna.",
-            sub=True, wraplength=460,
-        ).pack(anchor="w", pady=(0, 14))
+            "inställningarna."
+        )
+        if self._recommended != "small":
+            # Only added when a GPU lifted the recommendation above the
+            # CPU-friendly default, so the suggestion is self-explanatory.
+            body += (" En NVIDIA-GPU upptäcktes — '%s' rekommenderas för "
+                     "bättre noggrannhet utan märkbar fördröjning."
+                     % self._recommended)
+        self._label(outer, body, sub=True, wraplength=460).pack(
+            anchor="w", pady=(0, 14))
 
         # Radio rows
         self._radio_widgets: list = []
         radios = self._frame(outer)
         radios.pack(fill="x", anchor="w")
         for value, text, desc in _MODEL_CHOICES:
+            if value == self._recommended:
+                text = f"{text} (rekommenderad)"
             self._radio(radios, value, text, desc).pack(
                 anchor="w", fill="x", pady=(2, 6)
             )

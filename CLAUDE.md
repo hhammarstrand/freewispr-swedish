@@ -66,6 +66,7 @@ Lägg inte till nya states — utöka `_COLORS`-mappningen om det absolut krävs
 | `modifiers.py` | Kanoniska modifier-tangentnamn + alias-mapping |
 | `sounds.py` | In-process WAV-syntes för start/stop/error |
 | `convert_model.py` | Lättviktig modellnedladdning via `huggingface_hub` (pinnade revisioner) |
+| `hardware.py` | GPU-VRAM-detektering + modellstorleksrekommendation (first-run) |
 | `make_icon.py` | Genererar tray/window-ikoner |
 | `ui/` | Tkinter/CustomTkinter — `indicator`, `qt_indicator`, `settings_window`, `first_run`, m.fl. |
 
