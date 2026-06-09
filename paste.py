@@ -147,6 +147,8 @@ def _paste_and_keep_clipboard(text: str, replace_len: int = 0):
 
 
 _paste_queue: queue.Queue[tuple[str, int]] = queue.Queue()
+_worker_lock = threading.Lock()
+_worker_started = False
 
 
 def _paste_worker():
@@ -155,13 +157,36 @@ def _paste_worker():
         try:
             _paste_and_keep_clipboard(text, replace_len)
         except Exception:
-            pass
+            # The whole app's contract is "the text lands where the caret is".
+            # If this — the final step — fails, it must never do so silently:
+            # the user would keep typing believing the paste went through.
+            # (The dictated text is still on the clipboard as a manual fallback.)
+            log.warning(
+                "Inklistring misslyckades (%d tecken) — texten finns kvar i "
+                "urklipp", len(text), exc_info=True,
+            )
 
 
-threading.Thread(target=_paste_worker, daemon=True, name="paste-worker").start()
+def _ensure_worker():
+    """Start the paste worker on first use rather than at module import.
+
+    Importing a module must not spawn threads (same rationale as moving the
+    log-dir creation out of import): test harnesses and tools that merely
+    import paste.py shouldn't accumulate daemon threads.
+    """
+    global _worker_started
+    if _worker_started:
+        return
+    with _worker_lock:
+        if _worker_started:
+            return
+        threading.Thread(target=_paste_worker, daemon=True,
+                         name="paste-worker").start()
+        _worker_started = True
 
 
 def _paste_and_keep_clipboard_async(text: str, replace_len: int = 0):
+    _ensure_worker()
     _paste_queue.put((text, replace_len))
 
 
