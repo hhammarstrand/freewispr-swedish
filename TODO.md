@@ -9,13 +9,26 @@ löpande uppföljningsarbete.
 
 ## Att göra
 
-- [ ] **Uppdatera `README.md`** så den matchar beteendet efter djupgranskningen
-  2026-06-02. Bland annat: consent-modellen (LLM- och remote-STT-samtycke
-  persistas oberoende av om funktionen är på; loopback kräver inget samtycke),
-  röstredigerings-disclosure (markerad text skickas till leverantören),
-  att remote-fel nu visas i stället för att maskeras som "Inget hördes", samt
-  att skärmnamn bara delas med remote-tjänster med uttryckligt medgivande.
-  Se även `docs/index.html` för motsvarande webbtext. `[DOCS]`
+- [ ] **Vulkan-/whisper.cpp-backend för AMD/Intel-GPU** `[PERF/STRATEGISK]` —
+  CT2 är CUDA-only, så AMD/Intel-användare kör CPU idag. KBLab publicerar
+  GGML-checkpoints och whisper.cpp har Vulkan-stöd (så gör t.ex. OSTT).
+  Kräver: backend-abstraktion i `transcriber.py` (lokal CT2 | lokal
+  whisper.cpp), GGML-nedladdningsväg i `convert_model.py`, Vulkan-byggda
+  Python-bindningar (pywhispercpp-wheels saknar Vulkan → egen byggpipeline i
+  CI), och WER-/latensvalidering mot CT2 på riktig Windows-hårdvara.
+  **Implementeras inte i blindo** — kräver en maskin med AMD/Intel-GPU att
+  verifiera på. Värdera först hur stor andel av användarna som saknar NVIDIA.
+
+- [ ] **Validera `whisper_chunk_length` på riktig diktering** `[PERF/EXPERIMENT]` —
+  flaggan finns nu (0 = modellens 30 s-default). Whisper paddar alltid till
+  fönsterlängden, så ~15 s kan kapa enkoderkostnaden rejält för korta
+  yttranden — men modellen är tränad på 30 s-fönster, så WER-effekten på
+  svensk diktering måste mätas innan ett lägre värde blir default.
+
+- [x] **Uppdatera `README.md`** efter djupgranskningen 2026-06-02 —
+  consent-modellen, röstredigerings-disclosure, surfade remote-fel,
+  skärmnamns-grindning. Klart i #32; live-transkribering och
+  fortsättningskontext dokumenterade i prestandarundan. `[DOCS]`
 
 - [ ] **`requirements.txt` hash-låsning (`--require-hashes`)** `[LOW/MED]` —
   måste genereras i **Windows**-bygget, inte här. Beroendeupplösningen är
