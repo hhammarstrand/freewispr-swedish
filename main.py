@@ -38,7 +38,7 @@ log = logging.getLogger("freewispr")
 # --------------------------------------------------------------------------- #
 #  Version - single source of truth. Bumpa här vid release och tagga git.
 # --------------------------------------------------------------------------- #
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 log.info("=== freewispr-swedish %s startar ===", __version__)
 
@@ -971,7 +971,7 @@ def main():
     from ui.styles import apply_root_icon
     apply_root_icon(_tk_root)
 
-    _status_var = tk.StringVar(value="Startar...")
+    _status_var = tk.StringVar(value="Startar…")
     _indicator = FloatingIndicator(_tk_root, follow_mouse=True)
 
     # Build tray icon
@@ -979,7 +979,7 @@ def main():
     _tray_icon = pystray.Icon(
         "freewispr-swedish",
         _make_icon(),
-        "freewispr-swedish — Startar...",
+        "freewispr-swedish — Startar…",
         menu,
     )
 

@@ -44,7 +44,7 @@ class _HotkeyCapture(tk.Frame):
 
     def _update_display(self):
         val = self._var.get()
-        self._display.configure(text=val if val else "...")
+        self._display.configure(text=val if val else "…")
         if not self._capturing:
             self._hint.configure(text="klicka för att ändra")
 
@@ -52,7 +52,7 @@ class _HotkeyCapture(tk.Frame):
         self._capturing = True
         self._held.clear()
         self.configure(highlightbackground=ACC, highlightcolor=ACC)
-        self._display.configure(text="...", fg=ACC)
+        self._display.configure(text="…", fg=ACC)
         self._hint.configure(text="tryck tangentkombination")
         self.focus_set()
         self.bind("<KeyPress>", self._on_key_press)

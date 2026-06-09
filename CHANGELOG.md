@@ -5,7 +5,10 @@ Alla väsentliga ändringar i `freewispr-swedish` dokumenteras i denna fil.
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och
 projektet använder [semantisk versionshantering](https://semver.org/lang/sv/).
 
-## [Ej släppt]
+## [1.1.0] — 2026-06-09
+
+Säkerhets-, robusthets- och prestandarunda ovanpå 1.0.0. Helt
+bakåtkompatibel — befintlig config fungerar oförändrad.
 
 ### Tillagt
 
@@ -18,6 +21,48 @@ projektet använder [semantisk versionshantering](https://semver.org/lang/sv/).
   "Sök efter uppdateringar" finns också i tray-menyn. Check skippas i
   utvecklarläge (icke-frozen) om inte miljövariabeln
   `FREEWISPR_FORCE_UPDATE_CHECK=1` är satt.
+- **Live-transkribering under inspelning** (på som standard, endast lokal
+  modell): färdiga fraser avkodas medan du fortfarande pratar, så vid
+  släpp återstår bara svansen och texten klistras nästan direkt även efter
+  långa dikteringar. Kan stängas av under Inställningar → Smart.
+- **Fortsättningskontext:** texten som redan står före markören matas till
+  Whisper som kontext, vilket ger konsekvent versalisering och terminologi
+  vid diktering mitt i en mening. Skärmtext delas aldrig med en
+  remote-tjänst utan uttryckligt medgivande.
+- **Auto-rekommenderad modellstorlek vid första körning:** på en NVIDIA-GPU
+  föreslås `large`/`medium` (efter VRAM) i stället för `small`, för bättre
+  noggrannhet utan märkbar fördröjning.
+- Experimentell `whisper_chunk_length` och `whisper_cpu_threads` i config
+  för finjustering av lokal transkribering.
+
+### Ändrat
+
+- **Snabbare ljudberedning:** `soxr` följer nu med i bygget (~35 % snabbare
+  downmix/resampling på den kritiska vägen; faller tillbaka till scipy).
+- **Auto-dimensionerade CPU-trådar** för CTranslate2 (utnyttjar fler
+  kärnor på CPU-maskiner; ingen effekt på CUDA).
+- Live-lägets resampling är nu O(n) i stället för O(n²) via strömmande
+  resampling.
+
+### Säkerhet / integritet
+
+- `sanitize_output()` strippar nu även "Trojan Source"-bidi-tecken;
+  all provider-felrespons (LLM + remote-STT) saneras innan den når UI.
+- Samtycke för LLM-granskning och remote-transkribering sparas oberoende
+  av om funktionen är på; ett lokalt loopback-godkännande ärvs aldrig som
+  remote-samtycke. Skärmnamn skickas till remote-tjänster endast med
+  uttryckligt medgivande. Röstredigering avslöjar att markerad text skickas
+  till leverantören.
+- Custom-bas-URL:er avvisar nu querystring/fragment; `gh auth token`
+  resolveras via absolut sökväg; transkriptionstext loggas aldrig.
+
+### Fixat
+
+- Korrekt nedstängning (ingen cross-thread Tk-teardown; single-instance-
+  låset släpps sist), gammal Whisper-modell frigörs före omladdning (VRAM),
+  atomisk config-/hotwords-skrivning, per-jobb-bunden kontext, remote-fel
+  visas i stället för att maskeras som "Inget hördes", och misslyckad
+  inklistring loggas i stället för att tystas.
 
 ## [1.0.0] — 2026-05-28
 

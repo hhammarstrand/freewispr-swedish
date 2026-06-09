@@ -17,6 +17,7 @@ Runtime dependencies
 * Pillow (PIL)          — MIT-CMU (HPND)
 * keyring               — MIT License
 * customtkinter         — MIT License
+* huggingface-hub       — Apache-2.0
 
 * pystray               — LGPL-3.0-or-later
     pystray is dynamically linked (imported at runtime) by freewispr-swedish.
@@ -24,6 +25,12 @@ Runtime dependencies
     this product with a modified version of your own, and freewispr-swedish
     will continue to function. The pystray source is available at
     https://github.com/moses-palmer/pystray.
+
+* soxr (python-soxr)    — LGPL-2.1-or-later
+    soxr is dynamically linked (imported at runtime) and used only as an
+    optional faster resampler; freewispr-swedish falls back to SciPy when it
+    is absent, so the library can be removed or replaced and the app keeps
+    working. Source: https://github.com/dofuuz/python-soxr
 
 Model
 -----
