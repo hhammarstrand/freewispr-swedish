@@ -38,7 +38,7 @@ log = logging.getLogger("freewispr")
 # --------------------------------------------------------------------------- #
 #  Version - single source of truth. Bumpa här vid release och tagga git.
 # --------------------------------------------------------------------------- #
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 log.info("=== freewispr-swedish %s startar ===", __version__)
 

@@ -163,6 +163,7 @@ class SettingsWindow:
         # Smart features (AP1/AP2/AP3/AP5/AP6)
         self._raw_mode_var = tk.BooleanVar(value=c.get("llm_raw_mode", False))
         self._replace_mode_var = tk.BooleanVar(value=c.get("llm_replace_mode", False))
+        self._live_var = tk.BooleanVar(value=c.get("live_transcribe_enabled", True))
         self._learning_var = tk.BooleanVar(value=c.get("learning_enabled", True))
         self._context_var = tk.BooleanVar(
             value=c.get("context_awareness_enabled", True)
@@ -1161,6 +1162,12 @@ class SettingsWindow:
         pad = {"padx": 6, "pady": (10, 0)}
 
         self._heading(parent, "Snabbare diktering").pack(anchor="w", **pad)
+        self._switch(parent, "Live-transkribering under inspelning",
+                     self._live_var).pack(anchor="w", padx=6, pady=(6, 0))
+        self._hint(parent, "Avkodar färdiga fraser medan du fortfarande "
+                   "pratar, så texten klistras nästan direkt vid släpp. "
+                   "Endast lokal modell. Stäng av om du märker problem.").pack(
+            anchor="w", padx=6, pady=(2, 8))
         self._switch(parent, "Rå direkt (hoppa över LLM-granskning)",
                      self._raw_mode_var).pack(anchor="w", padx=6, pady=(6, 0))
         self._hint(parent, "Klistrar in rå transkribering direkt, även om "
@@ -1411,6 +1418,7 @@ class SettingsWindow:
         # Smart features (AP1/AP2/AP3/AP5/AP6 + L3 + AP7)
         new_cfg["llm_raw_mode"] = self._raw_mode_var.get()
         new_cfg["llm_replace_mode"] = self._replace_mode_var.get()
+        new_cfg["live_transcribe_enabled"] = self._live_var.get()
         new_cfg["restore_clipboard"] = self._restore_clip_var.get()
         new_cfg["expect_english_terms"] = self._expect_english_var.get()
         new_cfg["snippets_enabled"] = self._snippets_var.get()
