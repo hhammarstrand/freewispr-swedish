@@ -90,6 +90,8 @@ Den dikterade texten kopieras till urklipp och klistras in via syntetisk Ctrl+V 
 - Röstredigering av markerad text (KP3, egen hotkey): markera text, håll röstredigerings-tangenten och säg en instruktion ("gör formellt", "översätt till engelska") — LLM:en redigerar markeringen.
 - Kommandoläge: rösta för att redigera det senast inklistrade blocket i stället för att diktera nytt.
 - Hotwords från `~/.freewispr-swedish/hotwords.txt` för lokala Whisper-modeller.
+- Live-transkribering under inspelning (lokal modell): färdiga fraser avkodas medan du fortfarande pratar, så vid släpp återstår bara svansen — texten klistras nästan direkt även efter långa dikteringar.
+- Fortsättningskontext: texten som redan står före markören matas till Whisper som kontext, så fortsatt diktering mitt i en mening får konsekvent versalisering och terminologi. Skärmtext delas aldrig med en remote-tjänst utan uttryckligt medgivande.
 - Valfri remote-transkribering via staik.se, Berget AI eller egen OpenAI-kompatibel endpoint, som alternativ till lokal modell.
 - Vänta-läge för LLM: indikator visar "LLM-granskar…" och granskad/polerad text klistras i ett enda steg när LLM-svaret hinner klart.
 - Statuslägen i indikatorn: rå, LLM-granskad eller LLM-polerad.

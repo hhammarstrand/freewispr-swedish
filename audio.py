@@ -16,6 +16,7 @@ TARGET_RATE = 16000  # Whisper expects 16 kHz
 # design cost (firwin) is paid only once per (up, down) ratio.
 try:
     import soxr as _soxr
+    _HAS_SOXR = True
 
     def _resample(audio: np.ndarray, orig_rate: int) -> np.ndarray:
         """Resample *audio* from *orig_rate* to 16 kHz using libsoxr."""
@@ -25,6 +26,7 @@ try:
 
     log.debug("Using soxr for resampling")
 except ImportError:
+    _HAS_SOXR = False
     # Cache FIR filter coefficients keyed by (up, down) so firwin only runs
     # once per sample-rate ratio.  Dictation always resamples from the same
     # mic rate to 16 kHz, so this cache has a 100 % hit rate after the first
@@ -632,3 +634,63 @@ def finalize_audio(audio: np.ndarray, channels: int, orig_rate: int) -> np.ndarr
              len(mono), len(resampled), orig_rate, TARGET_RATE,
              resample_ms, skipped)
     return resampled
+
+
+class StreamingFinalizer:
+    """Incremental downmix + resample of raw mic audio to 16 kHz mono (L5.7).
+
+    The live-transcribe loop polls a growing recording every ~400 ms. Calling
+    :func:`finalize_audio` on the whole snapshot each poll is O(n²) total work
+    (measured: 2 ms per poll at 2 s grown to 56 ms at 30 s). Instead, feed only
+    the *new* raw samples here; ``soxr.ResampleStream`` keeps filter state
+    across chunks so the concatenated output matches a batch resample without
+    boundary artifacts.
+
+    Requires soxr (a real dependency since the perf round, scipy is only a
+    fallback for source installs) — check :meth:`available` and fall back to
+    whole-snapshot finalize when False. The channel downmix strategy (lone
+    active channel vs averaging, mirroring ``_to_mono``) is decided once on
+    the first chunk with signal and then locked, so it can't flip mid-stream.
+    """
+
+    def __init__(self, channels: int, orig_rate: int) -> None:
+        self._rate = int(orig_rate)
+        self._chan: int | None = None  # >=0 lone channel | -1 mean | None TBD
+        self._stream = (
+            _soxr.ResampleStream(self._rate, TARGET_RATE, 1, dtype="float32")
+            if self._rate != TARGET_RATE else None
+        )
+
+    @staticmethod
+    def available() -> bool:
+        return _HAS_SOXR
+
+    def _downmix(self, raw: np.ndarray) -> np.ndarray:
+        if raw.ndim <= 1 or raw.shape[1] <= 1:
+            return raw.ravel()
+        if self._chan is None:
+            sums = np.einsum("ij,ij->j", raw, raw)
+            loudest = int(np.argmax(sums))
+            if float(sums[loudest]) > 0.0:
+                # Same heuristic as _to_mono: a lone active channel (USB mics)
+                # wins; otherwise average. Lock the decision for the stream.
+                if float(np.min(sums)) <= float(sums[loudest]) * 0.01:
+                    self._chan = loudest
+                else:
+                    self._chan = -1
+            else:
+                # Pure silence so far — don't lock yet; mean == lone here.
+                return raw.mean(axis=1, dtype=np.float32)
+        if self._chan >= 0:
+            return np.ascontiguousarray(raw[:, self._chan])
+        return raw.mean(axis=1, dtype=np.float32)
+
+    def feed(self, raw_new: np.ndarray) -> np.ndarray:
+        """Finalize *raw_new* (the samples added since the previous call)
+        and return the corresponding new 16 kHz mono samples."""
+        if raw_new is None or raw_new.size == 0:
+            return np.empty(0, dtype=np.float32)
+        mono = self._downmix(raw_new).astype(np.float32, copy=False)
+        if self._stream is None:
+            return mono
+        return self._stream.resample_chunk(mono)

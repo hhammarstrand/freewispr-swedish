@@ -155,6 +155,11 @@ _QUEUE_MAX = 2
 # protects against a pathological/hung UIA provider.
 _CTX_JOIN_TIMEOUT = 0.2
 
+# Max tecken av föregående fälttext som skickas som Whisper-initial_prompt.
+# Whisper-prompten budgeterar ~224 tokens och delas med hotwords; ~120 tecken
+# ≈ en mening räcker för stil-/versaliseringskontinuitet.
+_CTX_TAIL_MAX_CHARS = 120
+
 # L5.7: how often the live-transcription loop snapshots the buffer while
 # recording, decoding completed (silence-delimited) chunks ahead of release.
 _LIVE_POLL_S = 0.4
@@ -587,6 +592,36 @@ class DictationMode:
         log.info("Kommandoläge utförde '%s'", cmd.phrase)
         return True
 
+    def _context_tail_for_stt(self, ctx, tr_provider: str) -> str:
+        """Tail of the focused field's text, for Whisper continuation biasing.
+
+        Feeding the last ~sentence of what already precedes the dictation into
+        ``initial_prompt`` makes Whisper continue with consistent casing,
+        terminology and punctuation (the same "context awareness" trick the
+        commercial dictation apps use). Best-effort: the field reader returns
+        the field's text, so when the caret is mid-document the tail may not
+        be the exact caret context — initial_prompt is a soft bias, so a
+        slightly-off tail degrades to a no-op rather than an error.
+
+        Privacy: field text is screen content — the same data category as
+        on-screen names. It biases the *local* decoder freely (never leaves
+        the machine) but goes to a remote STT provider only with the explicit
+        ``context_to_remote_accepted`` consent.
+        """
+        text = getattr(ctx, "focused_text", "") if ctx is not None else ""
+        if not text:
+            return ""
+        if tr_provider != "local" and not getattr(
+                self, "context_to_remote_accepted", False):
+            return ""
+        # Collapse whitespace/newlines (Whisper prompts are single-stream) and
+        # keep a tail short enough to leave prompt budget for hotwords.
+        tail = " ".join(text.split())[-_CTX_TAIL_MAX_CHARS:]
+        # Avoid starting mid-word: drop the first (likely truncated) token.
+        if len(tail) == _CTX_TAIL_MAX_CHARS and " " in tail:
+            tail = tail.split(" ", 1)[1]
+        return tail
+
     def _names_for_llm(self, onscreen_names: str) -> str:
         """Gate on-screen names before they reach the LLM polisher.
 
@@ -682,17 +717,36 @@ class DictationMode:
         so the post-release tail in ``_combine_live`` is exactly the audio after
         the last decoded chunk, with no boundary drift / dropped or duplicated
         words. Results are written into *ps* so a later press can't clobber them.
+
+        Finalization is incremental (audio.StreamingFinalizer): only the raw
+        samples added since the previous poll are downmixed/resampled, instead
+        of re-finalizing the whole growing snapshot every 400 ms (which was
+        O(n²) total work). Falls back to whole-snapshot finalize when soxr is
+        unavailable (scipy can't resample statefully across chunk boundaries).
         """
+        from audio import StreamingFinalizer
         from flow import silence_segments
         consumed_samples = 0  # end of last decoded chunk (16 kHz samples)
         parts: list[str] = []
+        finalizer: StreamingFinalizer | None = None
+        raw_done = 0  # raw samples already fed to the finalizer
+        final = np.empty(0, dtype=np.float32)  # accumulated 16 kHz audio
         try:
             while self._recording and self._active:
                 time.sleep(_LIVE_POLL_S)
                 audio_raw, ch, rate = self.recorder.snapshot()
                 if audio_raw.size == 0:
                     continue
-                final = finalize_audio(audio_raw, ch, rate)
+                if StreamingFinalizer.available():
+                    if finalizer is None:
+                        finalizer = StreamingFinalizer(ch, rate)
+                    new_raw = audio_raw[raw_done:]
+                    raw_done = audio_raw.shape[0]
+                    new16 = finalizer.feed(new_raw)
+                    if new16.size:
+                        final = np.concatenate([final, new16])
+                else:
+                    final = finalize_audio(audio_raw, ch, rate)
                 bounds = silence_segments(final, 16000, self.min_rms)
                 # Decode every *completed* chunk (all but the last, which is
                 # still growing) that we haven't already consumed.
@@ -701,7 +755,12 @@ class DictationMode:
                         continue  # already decoded in an earlier pass
                     if not (self._recording and self._active):
                         break
-                    txt = self.transcriber.transcribe(final[a0:a1])
+                    # Feed the already-decoded partials as continuation
+                    # context so chunk-by-chunk decoding doesn't lose the
+                    # intra-utterance context a whole-clip decode would have.
+                    txt = self.transcriber.transcribe(
+                        final[a0:a1],
+                        preceding_text=" ".join(parts)[-_CTX_TAIL_MAX_CHARS:])
                     if txt.strip():
                         parts.append(txt.strip())
                     consumed_samples = a1
@@ -731,15 +790,22 @@ class DictationMode:
             parts = list(getattr(self, "_live_parts", []))
             consumed_samples = getattr(self, "_live_consumed", 0)
         # The tail is exactly the audio after the last live-decoded chunk
-        # (consumed_samples is a sample offset, not a chunk count). Re-split
-        # only the tail so a long trailing segment with internal pauses still
-        # chunks well, without ever re-touching already-decoded audio.
+        # (consumed_samples is a sample offset, not a chunk count). Clamp it:
+        # the live loop's incremental resampler can land a few samples off the
+        # batch-finalized length, and a chunk always ends in detected silence
+        # so the clamp lands in silence. Re-split only the tail so a long
+        # trailing segment with internal pauses still chunks well, without
+        # ever re-touching already-decoded audio.
+        consumed_samples = min(int(consumed_samples), int(audio.size))
         tail = audio[consumed_samples:] if consumed_samples < audio.size else audio[:0]
         tail_chunks = split_on_silence(tail, 16000, self.min_rms)
         if not tail_chunks and tail.size:
             tail_chunks = [tail]
         for c in tail_chunks:
-            txt = self.transcriber.transcribe(c)
+            # Same continuation context as the live loop: the partials
+            # decoded so far precede this tail.
+            txt = self.transcriber.transcribe(
+                c, preceding_text=" ".join(parts)[-_CTX_TAIL_MAX_CHARS:])
             if txt.strip():
                 parts.append(txt.strip())
         return " ".join(parts).strip()
@@ -1245,6 +1311,9 @@ class DictationMode:
                     log.debug("Skärmnamn skickas ej till remote-STT "
                               "(medgivande saknas)")
                 stt_hotwords = ""
+            # Continuation bias: the tail of what already precedes the caret
+            # goes into Whisper's initial_prompt (same remote gate as names).
+            preceding = self._context_tail_for_stt(ctx, tr_provider)
             live_active = (press_state.live_active if press_state is not None
                            else getattr(self, "_live_active", False))
             if live_active:
@@ -1254,7 +1323,8 @@ class DictationMode:
                 text = self._combine_live(audio, press_state)
             else:
                 text = self.transcriber.transcribe(
-                    audio, capitalize=capitalize, extra_hotwords=stt_hotwords)
+                    audio, capitalize=capitalize, extra_hotwords=stt_hotwords,
+                    preceding_text=preceding)
             transcribe_ms = (time.monotonic() - t_tx0) * 1000
             log.info("Resultat klart (%s)", _text_meta(text))
             if text.strip():
