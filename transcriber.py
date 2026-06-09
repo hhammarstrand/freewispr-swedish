@@ -1,6 +1,7 @@
 """KBLab Whisper transcription with optional LLM polishing."""
 from __future__ import annotations
 
+import os
 import re
 import logging
 import threading
@@ -268,6 +269,21 @@ def _check_cuda() -> bool:
         return False
 
 
+def _resolve_cpu_threads(requested: int) -> int:
+    """CPU thread count for CTranslate2 inference.
+
+    CT2's own default is 4 intra-op threads regardless of core count, which
+    leaves half the machine idle on a typical 8-core desktop — and CPU decode
+    is the dominant hot-path cost for everyone without CUDA. Auto (``0``)
+    targets the physical core count (logical/2 on HT machines), floored at 4
+    so auto can never be slower than the previous behaviour. An explicit
+    positive value (``whisper_cpu_threads`` in config) always wins.
+    """
+    if requested and requested > 0:
+        return int(requested)
+    return max(4, (os.cpu_count() or 8) // 2)
+
+
 def _get_device_and_compute(use_cuda: bool, compute_type_override: str = "") -> tuple:
     """
     Determine device and compute type based on CUDA setting.
@@ -382,6 +398,7 @@ class Transcriber:
                  vad_filter: bool = True,
                  no_speech_threshold: float = 0.6,
                  compute_type: str = "",
+                 cpu_threads: int = 0,
                  kblab_revision: str = "default",
                  transcription_temperature: float = 0.0,
                  expect_english_terms: bool = False,
@@ -410,6 +427,7 @@ class Transcriber:
         self.vad_filter = vad_filter
         self.no_speech_threshold = no_speech_threshold
         self.compute_type_override = compute_type
+        self.cpu_threads = int(cpu_threads or 0)
         self.kblab_revision = kblab_revision or "default"
         self.transcription_temperature = transcription_temperature
         self.expect_english_terms = expect_english_terms
@@ -479,10 +497,15 @@ class Transcriber:
         # (convert_model.py). Here local_files_only=True means we load
         # whatever snapshot is already on disk — no network request is made,
         # so the revision parameter has no effect.
+        cpu_threads = _resolve_cpu_threads(self.cpu_threads)
+        if device == "cpu":
+            log.info("CTranslate2 CPU-trådar: %d", cpu_threads)
+
         self.model = WhisperModel(
             model_path,
             device=device,
             compute_type=compute_type,
+            cpu_threads=cpu_threads,
             download_root=str(MODEL_DIR),
             local_files_only=True,  # belt-and-braces: never hit the network
         )

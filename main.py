@@ -190,6 +190,7 @@ def _make_transcriber(model_size: str, use_cuda: bool):
         vad_filter=bool(_config.get("whisper_vad_filter", True)),
         no_speech_threshold=float(_config.get("whisper_no_speech_threshold", 0.6)),
         compute_type=str(_config.get("whisper_compute_type", "")),
+        cpu_threads=int(_config.get("whisper_cpu_threads", 0)),
         kblab_revision=str(_config.get("kblab_revision", "default")),
         transcription_temperature=float(_config.get("transcription_temperature", 0.0)),
         expect_english_terms=bool(_config.get("expect_english_terms", False)),

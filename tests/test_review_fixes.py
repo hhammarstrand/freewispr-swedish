@@ -161,3 +161,22 @@ def test_process_job_audio_prep_failure_shows_error(monkeypatch):
 
     assert ("show", "Kunde inte bearbeta ljudet", "error") in mode.indicator.calls
     assert any("Fel" in s for s in statuses)
+
+
+# --------------------------------------------------------------------------- #
+#  CT2 CPU-thread auto-resolution (perf)
+# --------------------------------------------------------------------------- #
+
+def test_resolve_cpu_threads_auto_floors_at_ct2_default(monkeypatch):
+    transcriber = importlib.import_module("transcriber")
+    # Small machine (4 logical → 2 physical): never below CT2's default of 4.
+    monkeypatch.setattr(transcriber.os, "cpu_count", lambda: 4)
+    assert transcriber._resolve_cpu_threads(0) == 4
+    # Big machine (16 logical → 8 physical): use the physical cores.
+    monkeypatch.setattr(transcriber.os, "cpu_count", lambda: 16)
+    assert transcriber._resolve_cpu_threads(0) == 8
+    # cpu_count unknown: sane fallback, still >= 4.
+    monkeypatch.setattr(transcriber.os, "cpu_count", lambda: None)
+    assert transcriber._resolve_cpu_threads(0) == 4
+    # Explicit config value always wins.
+    assert transcriber._resolve_cpu_threads(2) == 2
