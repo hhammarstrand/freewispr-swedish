@@ -15,9 +15,10 @@ keyring>=25.0.0,<26.0
 huggingface-hub>=0.20,<1.0
 # Modern Windows-look UI på topp av Tk. ~1 MB. Inga bilder/native deps.
 customtkinter>=5.2.2,<6.0
-
-# Snabbare resampling (valfritt, 3-4x snabbare än scipy):
-# pip install soxr
+# Snabbare resampling på hot path (uppmätt ~35 % snabbare finalize_audio än
+# scipy-fallbacken). Litet C-wheel; audio.py faller tillbaka till scipy om
+# det saknas, så detta är en ren prestandavinst i release-exe:n.
+soxr>=0.5,<1.0
 
 # GPU/CUDA-stod (valfritt, stor nedladdning ~2.5GB):
 # pip install torch --index-url https://download.pytorch.org/whl/cu124

@@ -112,6 +112,9 @@ DEFAULTS = {
     "whisper_vad_filter": True,        # Silero VAD klipper tystnad/hallucination
     "whisper_no_speech_threshold": 0.6,
     "whisper_compute_type": "",        # "" = auto (float16 CUDA / int8 CPU)
+    # CPU-trådar för CTranslate2-inferens. 0 = auto (≈ fysiska kärnor, minst 4
+    # = CT2:s egen default så auto aldrig blir långsammare än tidigare).
+    "whisper_cpu_threads": 0,
     "kblab_revision": "default",       # default | strict | subtitle (CT2-fallback)
     # Remote OpenAI-kompatibel path: temperatur (prompt byggs automatiskt).
     "transcription_temperature": 0.0,
