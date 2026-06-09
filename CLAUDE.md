@@ -48,16 +48,26 @@ Lägg inte till nya states — utöka `_COLORS`-mappningen om det absolut krävs
 | `llm_polish.py` | 5 providers, polish() + test_connection(), läser personal_context |
 | `remote_transcribe.py` | 3 remote-providers (staik/berget/custom) för audio-API |
 | `config.py` | JSON-config + keyring-backed secrets, migration, save_lock |
-| `personal_context.py` | Fritextkontext för LLM (ersatte snippets/corrections/auto_learn) |
+| `personal_context.py` | Fritextkontext för LLM (ersatte gamla auto_learn-arkitekturen) |
 | `migrate_context.py` | One-shot migration vid app-start — idempotent |
-| `text_sanitize.py` | `sanitize_output()` — strippa ANSI/control-bytes från LLM-svar |
+| `context_win.py` | Kontextmedvetenhet (AP3): aktiv app + text nära markören, app-profiler |
+| `learning.py` | Inlärningsloop (AP2): lär `fel → rätt`-par från användarens manuella rättelser |
+| `snippets.py` | Textexpansion (AP7.6): ledande trigger-fras → expansion |
+| `modes.py` | Användardefinierade lägen (KP2): namngivna ton-/formatprofiler |
+| `commands.py` | Kommandoläge (AP5): röststyrd redigering av senaste blocket |
+| `voice_edit.py` | Röstredigering (KP3): LLM-redigera markerad text via egen hotkey |
+| `flow.py` | Flow-läge (AP6, opt-in): kontinuerlig diktering över pauser, endast lokal |
+| `http_pool.py` | Delad keep-alive HTTP-transport (L2), per-origin-lås, storleksgräns |
+| `single_instance.py` | Single-instance-spärr (mutex på Windows, loopback-port annars) |
+| `updater.py` | Notis-only uppdateringskoll mot GitHub Releases (hårdkodad URL) |
+| `text_sanitize.py` | `sanitize_output()` — strippa ANSI/control-bytes + Trojan Source-bidi |
 | `url_security.py` | `is_plaintext_loopback()`, base URL-validering |
 | `json_store.py` | `JsonCache` med mtime-invalidering, atomic save |
 | `modifiers.py` | Kanoniska modifier-tangentnamn + alias-mapping |
 | `sounds.py` | In-process WAV-syntes för start/stop/error |
-| `convert_model.py` | Lättviktig modellnedladdning via `huggingface_hub` |
+| `convert_model.py` | Lättviktig modellnedladdning via `huggingface_hub` (pinnade revisioner) |
 | `make_icon.py` | Genererar tray/window-ikoner |
-| `ui/` | Tkinter/CustomTkinter — `indicator`, `settings_window`, `first_run`, m.fl. |
+| `ui/` | Tkinter/CustomTkinter — `indicator`, `qt_indicator`, `settings_window`, `first_run`, m.fl. |
 
 ## Providers (fullständig enumeration)
 
@@ -84,7 +94,7 @@ ruff check . --select E,F,W --ignore E501
 
 Båda måste vara gröna innan en PR mergas. CI kör samma kommandon plus `pip-audit`.
 
-Native deps (`sounddevice`, `keyboard`, `pyperclip`, `pystray`, `winsound`) stubbas via `tests/conftest.py` så testerna fungerar headless. Detta kräver:
+Native deps (`sounddevice`, `keyboard`, `pyperclip`, `pystray`, `winsound`) stubbas via `tests/conftest.py` så testerna fungerar headless. `faster_whisper` stubbas centralt i conftest **endast när paketet saknas** — i CI/Windows (där det är installerat) används den riktiga importen. Tester som behöver `PIL`/`tkinter` skippas när de saknas lokalt men körs i CI; installera `pillow` + `python3-tk` lokalt för full CI-paritet. Detta kräver:
 
 - **`from __future__ import annotations`** i alla nya moduler som har type hints med stubbade typer (t.ex. `pystray.Icon | None`). Utan det evalueras annotationerna vid import och kraschar mot stubbarna. Befintliga moduler som följer mönstret: `main.py`, `transcriber.py`, `llm_polish.py`, `remote_transcribe.py`, `personal_context.py`, `text_sanitize.py`, `url_security.py`, `migrate_context.py`, `make_icon.py`.
 
@@ -107,7 +117,7 @@ Native deps (`sounddevice`, `keyboard`, `pyperclip`, `pystray`, `winsound`) stub
 
 ## Vad du *inte* bör göra
 
-- **Lägg inte tillbaka snippets/corrections/auto_learn.** Det togs bort i `8ed9942` och ersatt av `personal_context.py` (fritextfält). Återanvändbar tunn UI för listor av nyckel-värde-par finns inte längre.
+- **Återinför inte den gamla auto_learn-arkitekturen** (`auto_learn.py`/`corrections.py`-modulerna som togs bort i `8ed9942`). Observera att snippets och rättelser har *återinförts i ny form* — `snippets.py` (AP7.6, trigger→expansion) och `learning.py` (AP2, diff-baserad inlärning) är aktiva moduler och ska inte "städas bort". Det som inte ska tillbaka är den gamla designen: mtime-cachade modulglobaler, auto-promotion utan diff-tröskel och den tunna key-value-list-UI:n.
 - **Inför ingen lazy-import-cykel** mellan `config.py` och `llm_polish.py`/`remote_transcribe.py`. `config.py` validerar provider-listor lazy via `_validate_providers()` — efterlikna det mönstret.
 - **Bygg ingen ny UI-stack** ovanpå Tkinter/CTk om det inte är absolut nödvändigt. Att byta till Qt/Electron är diskuterat och avvisat — alla UI-bidrag måste fungera inom den befintliga `ui/`-paketstrukturen.
 - **Återinför inte mic prewarm.** Den togs bort i `d238086` efter att den krockade med andra ljudströmmar (t.ex. Spotify körandes parallellt). Ersattes av device-spec cache + low-latency open.
