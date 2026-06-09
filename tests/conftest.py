@@ -1,6 +1,19 @@
 """Shared test fixtures — stubs for native modules unavailable in CI."""
+import importlib.util
 import sys
 from types import SimpleNamespace
+
+# faster_whisper pulls in ctranslate2 (native) and is not installed in every
+# dev environment. Several tests reload transcriber/dictation, which import it
+# at module top — without a central stub those tests pass or fail depending on
+# which test ran first (whoever left a per-test stub in sys.modules). Stub it
+# here ONLY when the real package is missing, so CI/Windows (where it is
+# installed) still exercises the real import path.
+if "faster_whisper" not in sys.modules and importlib.util.find_spec("faster_whisper") is None:
+    sys.modules["faster_whisper"] = SimpleNamespace(
+        WhisperModel=object,
+        BatchedInferencePipeline=object,
+    )
 
 # sounddevice requires PortAudio (C library) which is unavailable on Linux CI.
 # Stub it before any test imports audio.py → sounddevice.
