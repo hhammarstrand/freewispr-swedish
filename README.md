@@ -28,7 +28,7 @@ Senaste lyckade bygge från `master` publiceras automatiskt som pre-release:
 1. Öppna [Releases](https://github.com/hhammarstrand/freewispr-swedish/releases/tag/latest).
 2. Ladda ner `freewispr-swedish-windows.zip`.
 3. Packa upp zippen och kör `freewispr-swedish.exe`.
-4. Första gången: välj Whisper-modell i välkomstdialogen (`small` är ~500 MB och tar några minuter att ladda ned).
+4. Första gången: välj Whisper-modell i välkomstdialogen. Appen känner av din hårdvara och föreslår en lämplig storlek — `large`/`medium` om du har en NVIDIA-GPU, annars `small` (~500 MB). Du kan välja fritt och byta senare.
 5. Håll `Ctrl+Space`, prata, släpp.
 
 > **Windows SmartScreen-varning?** Eftersom appen inte är kodsignerad ($300/år i certifikat) flaggar Windows den som "okänd utgivare". Klicka **Mer information** → **Kör ändå**. All källkod finns på GitHub och bygget sker via GitHub Actions så du kan verifiera vad som finns i exe:n.
@@ -47,7 +47,7 @@ python convert_model.py small
 python main.py
 ```
 
-Om modellen saknas visar appen en välkomstdialog där du kan ladda ned valfri KBLab-modell. Filerna sparas lokalt och behöver ingen extra konvertering.
+Om modellen saknas visar appen en välkomstdialog där du kan ladda ned valfri KBLab-modell — den storlek som passar din hårdvara förvalts (större modell på NVIDIA-GPU, `small` på CPU). Filerna sparas lokalt och behöver ingen extra konvertering.
 
 Om du har en NVIDIA-GPU och vill använda CUDA:
 
@@ -164,6 +164,7 @@ Minimalt exempel — du behöver inte ange alla fält. Allt som saknas fylls i m
   "llm_model_github": "openai/gpt-4.1-nano",
   "llm_privacy_accepted": false,
   "transcription_provider": "local",
+  "live_transcribe_enabled": true,
   "min_rms": 0.003
 }
 ```
