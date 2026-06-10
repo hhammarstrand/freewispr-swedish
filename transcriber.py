@@ -17,10 +17,6 @@ CONFIG_DIR = Path.home() / ".freewispr-swedish"
 MODEL_DIR = CONFIG_DIR / "models"
 HOTWORDS_FILE = CONFIG_DIR / "hotwords.txt"
 
-# How often to ping the LLM endpoint to keep the pooled connection alive (L3).
-# Comfortably under typical keep-alive idle timeouts (~60 s).
-_LLM_WARM_INTERVAL = 25.0
-
 
 def _text_meta(text: str) -> str:
     words = len(text.split())
@@ -541,43 +537,41 @@ class Transcriber:
                          daemon=True).start()
 
     def _start_llm_warmer(self) -> None:
-        """Warm the LLM connection now + periodically (L3).
+        """Warm the LLM connection once (L3).
 
-        The thread captures an immutable snapshot of the credentials at start.
-        If the user later changes provider/key/base_url, reading ``self.*``
-        live in the loop would make the warmer ping a new endpoint with a
-        stale key (or an old endpoint with a new key). restart_warmers() stops
-        this thread and spawns a fresh one with the new snapshot instead.
+        Fires a single throwaway warm at startup (and again whenever
+        ``restart_warmers()`` runs, i.e. on a provider/key/base_url change) so
+        the first real polish doesn't pay the TLS handshake / cold-start. There
+        is deliberately **no** periodic loop — an idle app must not keep sending
+        billable requests to the provider.
+
+        The thread captures an immutable snapshot of the credentials so a later
+        ``self.*`` mutation can't make it ping a new endpoint with a stale key.
         """
-        stop = self._llm_warm_stop
         key = self.llm_api_key
         kw = dict(model=self.llm_model, provider=self.llm_provider,
                   base_url_override=self.llm_base_url)
 
-        def _loop():
+        def _warm_once():
             from llm_polish import warm
             warm(key, **kw)
-            while not stop.wait(_LLM_WARM_INTERVAL):
-                warm(key, **kw)
-        threading.Thread(target=_loop, name="llm-warm", daemon=True).start()
+        threading.Thread(target=_warm_once, name="llm-warm", daemon=True).start()
 
     def _start_transcribe_warmer(self) -> None:
-        """Warm the remote transcription connection now + periodically (L5.3).
+        """Warm the remote transcription connection once (L5.3).
 
-        Uses an immutable credential snapshot for the same reason as the LLM
-        warmer above; restart_warmers() handles provider/key/base_url changes.
+        Single-shot, mirroring :meth:`_start_llm_warmer` — no periodic loop, so
+        an idle app sends no recurring traffic. Uses an immutable credential
+        snapshot; ``restart_warmers()`` re-warms on a provider/key/base_url change.
         """
-        stop = self._tr_warm_stop
         provider = self.transcription_provider
         kw = dict(api_key=self.transcription_api_key,
                   base_url_override=self.transcription_base_url)
 
-        def _loop():
+        def _warm_once():
             import remote_transcribe as rt
             rt.warm(provider, **kw)
-            while not stop.wait(_LLM_WARM_INTERVAL):
-                rt.warm(provider, **kw)
-        threading.Thread(target=_loop, name="tr-warm", daemon=True).start()
+        threading.Thread(target=_warm_once, name="tr-warm", daemon=True).start()
 
     def update_credentials(self, llm: tuple, tr: tuple) -> None:
         """Atomically replace the LLM + remote-transcription credentials.
