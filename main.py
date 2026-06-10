@@ -74,7 +74,7 @@ try:
     # Heavy modules are imported lazily via _make_transcriber/_make_dictation
     # so the tray icon appears in <1 second.
     from ui import SettingsWindow, _style
-    from ui.qt_indicator import FloatingIndicator
+    from ui.indicator import FloatingIndicator
     log.info("Snabb-imports OK")
 except Exception:
     log.critical("Import kraschade", exc_info=True)
@@ -535,7 +535,6 @@ def _apply_settings_locked(new_cfg: dict):
     if model_changed:
         if _indicator:
             _indicator.set_follow_mouse(_config.get("indicator_follow_mouse", True))
-            _indicator.set_style(_config.get("indicator_style", "modern"))
         # Acquire before returning to the event loop so a second Save cannot
         # mutate _config in the gap before the background thread starts.
         if not _reload_lock.acquire(blocking=False):
@@ -616,7 +615,6 @@ def _apply_settings_locked(new_cfg: dict):
     # No model/LLM change — just hotkey/mic. Restart dictation cheaply.
     if _indicator:
         _indicator.set_follow_mouse(_config.get("indicator_follow_mouse", True))
-        _indicator.set_style(_config.get("indicator_style", "modern"))
     _restart_dictation()
     if not _persist():
         _rollback()

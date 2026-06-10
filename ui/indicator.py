@@ -366,3 +366,14 @@ class FloatingIndicator:
             self._label = None
             self._canvas = None
             self._bars = []
+
+    def close(self) -> None:
+        """Tear the indicator down immediately (shutdown). Cancels any pending
+        hide timer and destroys the window now, best-effort."""
+        try:
+            if self._hide_job:
+                self._root.after_cancel(self._hide_job)
+                self._hide_job = None
+            self._hide()
+        except Exception:
+            pass
