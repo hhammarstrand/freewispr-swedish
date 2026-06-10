@@ -78,6 +78,29 @@ def _release_modifiers(active_modifiers: tuple[str, ...] = ()):
             pass
 
 
+def _wait_for_modifiers_released(active_modifiers: tuple[str, ...] = (),
+                                 timeout: float = 1.0) -> None:
+    """Block until the given modifiers are physically up (or *timeout*).
+
+    Voice-edit holds its hotkey *while the user speaks* and over a selection.
+    We must not send the synthetic ``Ctrl+C`` until those keys are released,
+    otherwise the held keys race the copy (e.g. a still-held Ctrl turns the
+    sent ``c`` into a second Ctrl+C, or a held Alt corrupts it). Bounded so a
+    stuck key can never hang the worker — we proceed anyway after *timeout*.
+    """
+    keys = normalize_all(active_modifiers) if active_modifiers else ()
+    if not keys:
+        return
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            if not any(keyboard.is_pressed(k) for k in keys):
+                return
+        except Exception:
+            return
+        time.sleep(0.02)
+
+
 def _paste_and_keep_clipboard(text: str, replace_len: int = 0):
     """Copy dictated text to clipboard and try to paste it.
 
@@ -236,9 +259,11 @@ def read_selection(active_modifiers: tuple[str, ...] = ()) -> str:
     selected (clipboard unchanged) or the copy failed. Synchronous: the caller
     needs the selection before it can transcribe an instruction for it.
     """
-    # The voice-edit hotkey is held while speaking; release its modifiers so the
-    # synthetic Ctrl+C isn't polluted by e.g. a held Alt.
+    # The voice-edit hotkey is held while speaking; release its modifiers AND
+    # wait for them to actually be up so the synthetic Ctrl+C isn't polluted by
+    # e.g. a still-held Ctrl/Alt (which would otherwise race or corrupt it).
     _release_modifiers(active_modifiers)
+    _wait_for_modifiers_released(active_modifiers)
     with _PASTE_LOCK:
         try:
             prev_clip = pyperclip.paste()
