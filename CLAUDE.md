@@ -12,6 +12,16 @@ Instruktioner för Claude (och Claude Code) när du arbetar i det här repot.
 - **Loggar, kommentarer, commit-meddelanden, docstrings** kan vara på engelska — det är internt.
 - **Identifierare i kod** (variabelnamn, funktionsnamn) är engelska.
 
+### Konsol/encoding (undvik falsklarm om mojibake)
+
+- **`å/ä/ö` som visas som `H�g`/`Ã¥` i terminalutdata är ett konsol-avkodningsfel, INTE en filbugg.** Filerna är UTF-8; den här maskinens OEM-kodsida är 850 (IBM850), så konsolen avkodar UTF-8-bytes fel. **Ändra aldrig filinnehållet** (t.ex. byt `ö`→`o`) för att "fixa" sånt här — det förstör korrekt UTF-8. Verifiera alltid mot byte-innehållet (`Read`-verktyget eller `[System.Text.Encoding]::UTF8.GetString(...)`), inte mot rå konsoloutput, innan du tror att tecken är trasiga.
+- **Fixa rätt encoding beroende på kontext:** interaktiva PowerShell-sessioner får UTF-8 via `~/Documents/PowerShell/profile.ps1`. Agent-/verktygsanrop kör `pwsh -NoProfile` och hoppar över profilen — sätt då UTF-8 i kommandot, och som **egen rad före** läsningen (inte med `;` i samma pipeline, då hinner strömmen kodas först):
+
+  ```powershell
+  [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new($false)
+  Select-String -Path TODO.md -Pattern "^## "
+  ```
+
 ## Hot path
 
 Användaren håller en hotkey → spelar in → släpper → text klistras in. Allt mellan key-up och paste är på den kritiska latency-vägen:
@@ -68,7 +78,7 @@ Lägg inte till nya states — utöka `_COLORS`-mappningen om det absolut krävs
 | `convert_model.py` | Lättviktig modellnedladdning via `huggingface_hub` (pinnade revisioner) |
 | `hardware.py` | GPU-VRAM-detektering + modellstorleksrekommendation (first-run) |
 | `make_icon.py` | Genererar tray/window-ikoner |
-| `ui/` | Tkinter/CustomTkinter — `indicator`, `qt_indicator`, `settings_window`, `first_run`, m.fl. |
+| `ui/` | Tkinter/CustomTkinter — `indicator`, `settings_window`, `first_run`, m.fl. |
 
 ## Providers (fullständig enumeration)
 
