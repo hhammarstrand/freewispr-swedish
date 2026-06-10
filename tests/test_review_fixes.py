@@ -34,8 +34,8 @@ def _bare_transcriber(transcriber):
 
 
 def test_llm_warmer_uses_credential_snapshot(monkeypatch):
-    """The warmer thread must keep pinging with the credentials captured at
-    start — mutating self.* afterwards must not leak into the running loop."""
+    """The warmer must warm with the credentials captured at start — mutating
+    self.* afterwards must not leak into the (one-shot) warm call."""
     transcriber = importlib.import_module("transcriber")
     llm_polish = importlib.import_module("llm_polish")
 

@@ -256,16 +256,48 @@ def _friendly_transcribe_error(exc: Exception) -> str:
     return "Transkriberingsfel — se loggen för detaljer"
 
 
+# Right/left-hand modifier variants the capture widget can emit. They map to a
+# canonical modifier for the held-check but keep their sided name for hooking.
+_SIDED_MODIFIERS = {
+    "right ctrl": "ctrl", "right alt": "alt", "right shift": "shift",
+    "left ctrl": "ctrl", "left alt": "alt", "left shift": "shift",
+}
+
+
+def _is_modifier_only_hotkey(hotkey: str) -> bool:
+    """True if *every* part of the hotkey is a modifier key (no character).
+
+    Such a hotkey (e.g. ``ctrl+alt`` or ``right ctrl``) is the only kind safe
+    for voice-edit: it never types a character into the user's selection. The
+    ``keyboard`` library treats ``right ctrl``/``right alt`` as modifier
+    variants too, so we accept those explicitly.
+    """
+    parts = [p.strip().lower() for p in hotkey.split("+") if p.strip()]
+    if not parts:
+        return False
+    return all(is_modifier(p) or p in _SIDED_MODIFIERS for p in parts)
+
+
 def _parse_hotkey(hotkey: str) -> tuple[str, tuple[str, ...]]:
     """Split a hotkey string into (trigger, canonical_modifiers).
 
     Falls back to naive ``+`` splitting. Modifier names are normalised via
     :py:mod:`modifiers` so ``cmd``, ``win``, ``windows`` all map to the
     same canonical ``windows`` token used by the paste layer.
+
+    A *modifier-only* hotkey (every part is a modifier, e.g. ``ctrl+alt`` or
+    ``right ctrl``) returns an **empty trigger** and all parts as modifiers, so
+    the caller can hook the modifier key itself instead of a character key.
     """
     parts = [p.strip().lower() for p in hotkey.split("+") if p.strip()]
     if not parts:
         return hotkey.strip().lower(), ()
+    if _is_modifier_only_hotkey(hotkey):
+        # No character trigger — normalise every part (sided variants collapse
+        # to their canonical modifier) so the held-check works.
+        mods = normalize_all(
+            _SIDED_MODIFIERS.get(p, p) for p in parts)
+        return "", mods
     trigger = parts[-1]
     raw_modifiers = parts[:-1]
     modifiers = normalize_all(raw_modifiers)
@@ -332,6 +364,33 @@ class DictationMode:
         self.voice_edit_hotkey = voice_edit_hotkey
         self._voice_edit_trigger, self._voice_edit_modifiers = (
             _parse_hotkey(voice_edit_hotkey) if voice_edit_hotkey else ("", ()))
+        # A modifier-only voice-edit hotkey (e.g. "ctrl+alt" / "right ctrl")
+        # has no character trigger, so we hook the *last* part as the key and
+        # gate on the rest being held. Such a key never types into — and so
+        # never destroys — the user's selection, and needs no suppression.
+        self._voice_edit_modifier_only = bool(
+            voice_edit_hotkey and _is_modifier_only_hotkey(voice_edit_hotkey))
+        if self._voice_edit_modifier_only:
+            _ve_parts = [p.strip().lower()
+                         for p in voice_edit_hotkey.split("+") if p.strip()]
+            # `keyboard.on_press_key` is unreliable for *modifier* scan codes
+            # (e.g. right ctrl = 57373) — it binds without error but never
+            # fires on a physical press. So a modifier-only hotkey is driven by
+            # a single global hook that edge-detects "all required modifiers
+            # held" instead. Keep the raw sided names ("right ctrl") for the
+            # is_pressed() held-check.
+            self._voice_edit_required_keys = tuple(_ve_parts)
+            self._voice_edit_hook_key = _ve_parts[-1]
+            self._voice_edit_gate_modifiers = normalize_all(
+                _SIDED_MODIFIERS.get(p, p) for p in _ve_parts)
+            self._voice_edit_hook_candidates = ()
+        else:
+            self._voice_edit_required_keys = ()
+            self._voice_edit_hook_key = self._voice_edit_trigger
+            self._voice_edit_hook_candidates = (
+                (self._voice_edit_trigger,) if self._voice_edit_trigger else ())
+            self._voice_edit_gate_modifiers = self._voice_edit_modifiers
+        self._voice_edit_engaged = False
         self._voice_editing = False
         self.snippets_enabled = snippets_enabled
         self.silence_trim_enabled = silence_trim_enabled
@@ -403,19 +462,50 @@ class DictationMode:
                 log.debug("Kunde inte registrera avbryt-tangent: %s", e)
         # KP3: voice-edit hotkey — own press/release pair, separate from the
         # dictation hot path. Only registered when configured and distinct.
-        if (self._voice_edit_trigger
-                and self._voice_edit_trigger != self._trigger_key):
+        #
+        # Two mechanisms, because `keyboard.on_press_key` is unreliable for
+        # modifier scan codes:
+        #   * modifier-only hotkey (recommended, e.g. "right ctrl"/"ctrl+alt")
+        #     → a single global hook edge-detects "all required modifiers held".
+        #   * character trigger (legacy) → on_press_key with suppress=True so
+        #     the character never types into (and replaces) the selection.
+        if self._voice_edit_modifier_only and self._voice_edit_required_keys:
+            # Map each required key to its scan codes so the global hook can
+            # read held-state straight from the event (timing-safe).
+            self._voice_edit_scancodes = {}
+            for _k in self._voice_edit_required_keys:
+                try:
+                    self._voice_edit_scancodes[_k] = set(
+                        keyboard.key_to_scan_codes(_k))
+                except Exception:
+                    self._voice_edit_scancodes[_k] = set()
             try:
-                self._hook_handles.append(
-                    keyboard.on_press_key(self._voice_edit_trigger,
-                                          self._on_voice_edit_press,
-                                          suppress=False))
-                self._hook_handles.append(
-                    keyboard.on_release_key(self._voice_edit_trigger,
-                                            self._on_voice_edit_release,
-                                            suppress=False))
+                handle = keyboard.hook(self._on_voice_edit_global_event)
+                self._hook_handles.append(handle)
+                log.info("Röstredigering aktiv (global hook): %s",
+                         "+".join(self._voice_edit_required_keys))
             except Exception as e:
-                log.debug("Kunde inte registrera röstediterings-tangent: %s", e)
+                log.warning("Kunde inte registrera röstediterings-hook: %s", e)
+        elif (self._voice_edit_hook_key
+                and self._voice_edit_hook_key != self._trigger_key):
+            for _key in self._voice_edit_hook_candidates:
+                try:
+                    h_press = keyboard.on_press_key(
+                        _key, self._on_voice_edit_press, suppress=True)
+                    h_release = keyboard.on_release_key(
+                        _key, self._on_voice_edit_release, suppress=True)
+                except Exception as e:
+                    log.debug("Röstediterings-tangent '%s' ej hookbar: %s",
+                              _key, e)
+                    continue
+                self._hook_handles.append(h_press)
+                self._hook_handles.append(h_release)
+                self._voice_edit_hook_key = _key  # the one that actually bound
+                break
+            else:
+                if self._voice_edit_hook_candidates:
+                    log.warning("Kunde inte registrera röstediterings-tangent "
+                                "(%s)", self.voice_edit_hotkey)
         self.on_status(f"Klar — håll {self.hotkey.upper()} för att prata")
 
     def undo_last(self) -> bool:
@@ -951,13 +1041,61 @@ class DictationMode:
             return False
 
     def _voice_edit_modifiers_held(self) -> bool:
-        if not self._voice_edit_modifiers:
+        gate = getattr(self, "_voice_edit_gate_modifiers",
+                       self._voice_edit_modifiers)
+        if not gate:
             return True
         try:
-            return all(keyboard.is_pressed(m)
-                       for m in self._voice_edit_modifiers)
+            return all(keyboard.is_pressed(m) for m in gate)
         except Exception:
             return False
+
+    def _voice_edit_required_held(self, event=None) -> bool:
+        """True when *every* key of a modifier-only hotkey is physically down.
+
+        When called from the global hook we trust the *current* event for the
+        key it concerns (a down/up we're handling right now) to avoid
+        ``is_pressed`` update-order races on the listener thread; other required
+        keys fall back to ``is_pressed``.
+        """
+        keys = getattr(self, "_voice_edit_required_keys", ())
+        if not keys:
+            return False
+        sc = getattr(event, "scan_code", None) if event is not None else None
+        etype = getattr(event, "event_type", None) if event is not None else None
+        codes_map = getattr(self, "_voice_edit_scancodes", {})
+        try:
+            for k in keys:
+                codes = codes_map.get(k)
+                if codes and sc is not None and sc in codes:
+                    ok = (etype == "down")
+                else:
+                    ok = keyboard.is_pressed(k)
+                if not ok:
+                    return False
+            return True
+        except Exception:
+            return False
+
+    def _on_voice_edit_global_event(self, event):
+        """Global keyboard hook driving a modifier-only voice-edit hotkey.
+
+        ``keyboard.on_press_key`` does not fire for modifier scan codes (e.g.
+        right ctrl = 57373), so we watch every event and edge-detect when the
+        full required-modifier combo becomes held (start) or is broken (stop).
+        Runs on the keyboard-listener thread — kept cheap and exception-safe so
+        it can never break the global listener.
+        """
+        try:
+            engaged = self._voice_edit_required_held(event)
+            if engaged and not self._voice_edit_engaged:
+                self._voice_edit_engaged = True
+                self._on_voice_edit_press(event)
+            elif not engaged and self._voice_edit_engaged:
+                self._voice_edit_engaged = False
+                self._on_voice_edit_release(event)
+        except Exception as e:
+            log.debug("voice-edit global hook error: %s", e)
 
     def _on_voice_edit_press(self, _):
         """KP3: start recording a voice-edit instruction. Mirrors _on_press but

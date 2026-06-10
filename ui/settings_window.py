@@ -120,9 +120,6 @@ class SettingsWindow:
         self._indicator_follow_var = tk.BooleanVar(
             value=c.get("indicator_follow_mouse", True)
         )
-        self._indicator_style_var = tk.StringVar(
-            value=c.get("indicator_style", "modern")
-        )
         self._model_var = tk.StringVar(value=c.get("model_size", "small"))
         self._cuda_var = tk.BooleanVar(value=c.get("use_cuda", True))
         self._mic_var = tk.StringVar()  # filled in _build_general
@@ -154,14 +151,6 @@ class SettingsWindow:
         self._tr_consent_var = tk.BooleanVar(
             value=c.get("transcription_privacy_accepted", False)
         )
-        style_map = {
-            "classic": "Klassisk (Tkinter-staplar)",
-            "modern": "Modern (Slate Gray)",
-            "transparent": "Transparent (Endast våg)",
-        }
-        current_style = self._indicator_style_var.get()
-        current_label = style_map.get(current_style, "Modern (Slate Gray)")
-        self._indicator_style_label_var = tk.StringVar(value=current_label)
 
         # Smart features (AP1/AP2/AP3/AP5/AP6)
         self._raw_mode_var = tk.BooleanVar(value=c.get("llm_raw_mode", False))
@@ -398,17 +387,25 @@ class SettingsWindow:
         # KP3: optional separate hotkey for voice-editing the current
         # selection. Empty = feature off, so we pair the capture with a clear
         # button (the capture widget itself can only set, never unset).
-        self._label(parent, "Röstredigering (valfri tangent)",
+        self._label(parent, "Röstredigering (rekommenderat: en modifierare)",
                     font=ctk.CTkFont(weight="bold") if _CTK_AVAILABLE else None
                     ).pack(anchor="w", **pad)
         ve = _HotkeyCapture(parent, self._voice_edit_hotkey_var)
         ve.pack(fill="x", padx=6, pady=(4, 0))
-        self._button(parent, "Rensa",
+        _ve_btns = self._frame(parent)
+        _ve_btns.pack(anchor="w", fill="x")
+        self._button(_ve_btns, "Ctrl+Alt",
+                     lambda: self._voice_edit_hotkey_var.set("ctrl+alt")).pack(
+            side="left", padx=6, pady=(4, 0))
+        self._button(_ve_btns, "Rensa",
                      lambda: self._voice_edit_hotkey_var.set("")).pack(
-            anchor="w", padx=6, pady=(4, 0))
+            side="left", padx=6, pady=(4, 0))
         self._hint(parent, "Markera text, håll den här tangenten och säg en "
                    "instruktion (t.ex. \"gör formellt\") — LLM:en redigerar "
-                   "markeringen. Lämna tom för att stänga av.").pack(
+                   "markeringen. Välj en ren modifierar-kombination (Ctrl+Alt "
+                   "rekommenderas) — en bokstavstangent skriver över markeringen, "
+                   "och vissa tangentbord skiljer inte höger/vänster Ctrl. "
+                   "Lämna tom för att stänga av.").pack(
             anchor="w", padx=6, pady=(4, 8)
         )
 
@@ -422,19 +419,6 @@ class SettingsWindow:
         self._hint(parent, "Av = fast position överst på huvudskärmen.").pack(
             anchor="w", padx=6, pady=(2, 6)
         )
-
-        self._label(parent, "Stil").pack(anchor="w", padx=6, pady=(4, 0))
-        indicator_styles = [
-            "Klassisk (Tkinter-staplar)",
-            "Modern (Slate Gray)",
-            "Transparent (Endast våg)",
-        ]
-        self._combobox(
-            parent,
-            self._indicator_style_label_var,
-            indicator_styles,
-            width=240,
-        ).pack(anchor="w", padx=6, pady=(2, 8))
 
         # Mikrofon
         self._label(parent, "Mikrofon",
@@ -1377,14 +1361,6 @@ class SettingsWindow:
         new_cfg["model_size"] = self._model_var.get()
         new_cfg["use_cuda"] = self._cuda_var.get()
         new_cfg["indicator_follow_mouse"] = self._indicator_follow_var.get()
-
-        style_map = {
-            "Klassisk (Tkinter-staplar)": "classic",
-            "Modern (Slate Gray)": "modern",
-            "Transparent (Endast våg)": "transparent",
-        }
-        picked_style_label = self._indicator_style_label_var.get()
-        new_cfg["indicator_style"] = style_map.get(picked_style_label, "modern")
 
         mic = self._mic_var.get()
         if mic == "Auto":
