@@ -174,6 +174,10 @@ DEFAULTS = {
     # KP3: rösteditera markerad text. Egen hotkey: spela in instruktion, läs
     # markeringen, kör LLM-omskrivning, ersätt. Tom = av. Kräver att LLM är på.
     "voice_edit_hotkey": "",
+    # KP4: svara på markerad text. Egen hotkey: läs markeringen som underlag,
+    # generera ett svar via LLM och lägg i urklipp (klistras INTE in, så
+    # markeringen skrivs aldrig över). Tom = av. Kräver att LLM är på.
+    "voice_answer_hotkey": "",
     # L5.5: trimma ledande/avslutande tystnad (RMS) före decode.
     "silence_trim_enabled": True,
     # L5.6: hoppa LLM-polish för triviala (korta, disfluensfria) yttranden.

@@ -677,6 +677,72 @@ def instruct(
         return text
 
 
+_ANSWER_SYSTEM_PROMPT = (
+    "Du är en hjälpsam svensk skrivassistent. Användaren ger en text som "
+    "underlag (t.ex. ett mejl) och en instruktion om vad som ska skrivas som "
+    "svar. Skriv det efterfrågade svaret på svenska, redo att klistras in. "
+    "Returnera ENBART den färdiga texten — ingen förklaring, inga kodstaket, "
+    "inga citationstecken runt."
+)
+
+
+def answer(
+    text: str,
+    instruction: str,
+    api_key: str = "",
+    model: str = "",
+    provider: str = DEFAULT_PROVIDER,
+    base_url_override: str = "",
+    timeout_sec: float = 20.0,
+) -> str:
+    """Svara-läge (KP4): generera ett svar på ``text`` enligt ``instruction``.
+
+    Till skillnad från :func:`instruct` *redigerar* den inte underlaget utan
+    skriver en ny text (t.ex. ett mejlsvar) som läggs i urklipp av anroparen.
+    Returnerar den genererade texten, eller ``""`` vid fel/tomt svar (anroparen
+    visar då ett fel — inget hamnar i urklipp). Fail-safe: kastar aldrig.
+    """
+    p = _get_provider(provider)
+    text = (text or "").strip()
+    instruction = (instruction or "").strip()
+    if not text or not instruction:
+        return ""
+    resolved_key = resolve_api_key(api_key, provider)
+    if not resolved_key and provider != "custom":
+        return ""
+    try:
+        base = _resolve_base_url(provider, base_url_override)
+    except ValueError:
+        return ""
+    used_model = normalize_model(model, provider) or p.default_model
+    if not base or not used_model:
+        return ""
+
+    body = {
+        "model": used_model,
+        "messages": [
+            {"role": "system", "content": _ANSWER_SYSTEM_PROMPT},
+            {"role": "user",
+             "content": f"Instruktion: {instruction}\n\nUnderlag:\n{text}"},
+        ],
+        "temperature": 0.3,
+        # A generated reply can be substantially longer than the source.
+        "max_tokens": _token_budget(len(text), growth=2.5, headroom=256),
+    }
+    payload = json.dumps(body).encode("utf-8")
+    try:
+        data = _http_request(
+            f"{base}/chat/completions",
+            _build_headers(p, resolved_key),
+            payload, method="POST", timeout_sec=timeout_sec, stream=False,
+        )
+        from text_sanitize import sanitize_output
+        return sanitize_output(data["choices"][0]["message"]["content"].strip())
+    except Exception as e:
+        log.warning("Svara-LLM misslyckades (%s): %s", provider, e)
+        return ""
+
+
 def test_connection(
     api_key: str,
     model: str = "",

@@ -251,6 +251,28 @@ def erase_last(n: int) -> None:
     threading.Thread(target=_run, daemon=True, name="undo-erase").start()
 
 
+def _synthetic_copy() -> None:
+    """Send a *paced* Ctrl+C so the copy registers in complex apps.
+
+    ``keyboard.send("ctrl+c")`` fires the whole chord in microseconds; Office
+    (Word/Outlook) and Chromium/WebView apps (Teams, Electron, new Outlook)
+    drop a combo that arrives that fast and never write the clipboard. Native
+    controls (Notepad++) tolerate it. Human-like gaps between press/release
+    make the shortcut land everywhere.
+    """
+    try:
+        keyboard.press("ctrl")
+        time.sleep(0.04)
+        keyboard.press("c")
+        time.sleep(0.04)
+        keyboard.release("c")
+        time.sleep(0.02)
+        keyboard.release("ctrl")
+    except Exception:
+        # Fall back to the one-shot chord if low-level press/release fails.
+        keyboard.send("ctrl+c")
+
+
 def read_selection(active_modifiers: tuple[str, ...] = ()) -> str:
     """Best-effort read of the currently selected text (voice-edit / KP3).
 
@@ -274,14 +296,14 @@ def read_selection(active_modifiers: tuple[str, ...] = ()) -> str:
         sentinel = "\x00freewispr-sel\x00"
         try:
             pyperclip.copy(sentinel)
-            keyboard.send("ctrl+c")
+            _synthetic_copy()
         except Exception as e:
             log.warning("Kunde inte läsa markeringen: %s", e)
             return ""
-        # Ctrl+C is asynchronous in the target app; poll briefly for the
-        # clipboard to change away from the sentinel.
+        # Ctrl+C is asynchronous in the target app; poll for the clipboard to
+        # change away from the sentinel (complex apps can take >0.4 s).
         selected = ""
-        deadline = time.time() + 0.4
+        deadline = time.time() + 1.0
         while time.time() < deadline:
             try:
                 cur = pyperclip.paste()
@@ -297,6 +319,23 @@ def read_selection(active_modifiers: tuple[str, ...] = ()) -> str:
         except Exception:
             pass
         return selected.strip()
+
+
+def copy_to_clipboard(text: str) -> bool:
+    """Put *text* on the clipboard without pasting (voice-answer / KP4).
+
+    The reply is left for the user to paste with Ctrl+V wherever they want, so
+    it never overwrites a selection. Returns False on failure (best-effort).
+    """
+    text = (text or "").strip()
+    if not text:
+        return False
+    try:
+        pyperclip.copy(text)
+        return True
+    except Exception as e:
+        log.warning("Kunde inte kopiera till urklipp: %s", e)
+        return False
 
 
 def paste_text(text: str, active_modifiers: tuple[str, ...] = (),
