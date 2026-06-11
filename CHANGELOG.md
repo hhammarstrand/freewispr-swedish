@@ -5,10 +5,11 @@ Alla väsentliga ändringar i `freewispr-swedish` dokumenteras i denna fil.
 Formatet följer [Keep a Changelog](https://keepachangelog.com/sv/1.1.0/) och
 projektet använder [semantisk versionshantering](https://semver.org/lang/sv/).
 
-## [1.1.0] — 2026-06-09
+## [1.1.0] — 2026-06-11
 
-Säkerhets-, robusthets- och prestandarunda ovanpå 1.0.0. Helt
-bakåtkompatibel — befintlig config fungerar oförändrad.
+Säkerhets-, robusthets- och prestandarunda ovanpå 1.0.0, plus två nya
+röstlägen för markerad text. Helt bakåtkompatibel — befintlig config
+fungerar oförändrad.
 
 ### Tillagt
 
@@ -34,6 +35,13 @@ bakåtkompatibel — befintlig config fungerar oförändrad.
   noggrannhet utan märkbar fördröjning.
 - Experimentell `whisper_chunk_length` och `whisper_cpu_threads` i config
   för finjustering av lokal transkribering.
+- **Röstredigering av markerad text (KP3):** markera text, håll en egen
+  hotkey och säg en instruktion ("gör formellt", "översätt till engelska")
+  — LLM:en skriver om markeringen på plats. Av som standard.
+- **Svara på markerad text (KP4):** markera t.ex. ett mejl, håll en egen
+  hotkey och säg vad du vill svara — LLM:en skriver svaret och lägger det i
+  **urklipp** (klistras aldrig in, så markeringen är kvar). Klistra in det
+  själv med Ctrl+V. Av som standard.
 
 ### Ändrat
 
@@ -43,6 +51,12 @@ bakåtkompatibel — befintlig config fungerar oförändrad.
   kärnor på CPU-maskiner; ingen effekt på CUDA).
 - Live-lägets resampling är nu O(n) i stället för O(n²) via strömmande
   resampling.
+- **Endast Tkinter-indikatorn kvar.** Den process-isolerade Qt-indikatorn
+  (PySide6) och stilarna "modern"/"transparent" är borttagna — indikatorn
+  är nu alltid den lätta Tkinter-varianten. Mindre bygge, färre beroenden.
+- **LLM-uppvärmningen pollar inte längre.** Anslutningen värms en gång vid
+  start (och vid provider-/nyckelbyte) i stället för ett 1-token-anrop var
+  25:e sekund — inga billbara anrop till leverantören i viloläge.
 
 ### Säkerhet / integritet
 
@@ -63,6 +77,14 @@ bakåtkompatibel — befintlig config fungerar oförändrad.
   atomisk config-/hotwords-skrivning, per-jobb-bunden kontext, remote-fel
   visas i stället för att maskeras som "Inget hördes", och misslyckad
   inklistring loggas i stället för att tystas.
+- **Röstredigering/svara läser nu markeringen i fler appar.** Den
+  syntetiska Ctrl+C:n skickas taktat (mänsklig timing) så Office-, Chromium-
+  och WebView-appar (Word, Outlook, Teams, Electron) hinner skriva urklipp —
+  tidigare fungerade det bara i enkla kontroller som Notepad++.
+- **Markerings-hotkeys är nu modifierar-kombinationer** (t.ex. Ctrl+Alt /
+  Ctrl+Shift) som drivs av en global hook, eftersom en bokstavstangent
+  skrev över markeringen och vissa tangentbord inte skiljer höger/vänster
+  Ctrl.
 
 ## [1.0.0] — 2026-05-28
 

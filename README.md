@@ -64,6 +64,7 @@ Normal diktering är lokal när en modell finns nedladdad och LLM/remote är avs
 - Om du slår på **LLM-granskning** skickas den transkriberade texten – inte ljudet – till vald leverantör. Leverantörer: GitHub Models, staik.se, Berget AI, OpenAI eller valfri OpenAI-kompatibel server.
 - Om du slår på **remote-transkribering** skickas ljudet – inte bara text – till vald leverantör (staik.se, Berget AI eller custom). Det är valfritt; lokala KBLab-modeller fungerar utan provider.
 - **Röstredigering** (egen hotkey, av som standard) läser den text du markerat via urklipp och skickar markeringen tillsammans med din röstinstruktion till vald LLM-leverantör. Markeringen kan innehålla känslig information och omfattas av samma LLM-samtycke.
+- **Svara på markerad text** (egen hotkey, av som standard) läser den text du markerat via urklipp som underlag, ber LLM:en skriva ett svar utifrån din röstinstruktion och lägger svaret i **urklipp** — det klistras aldrig in automatiskt, så din markering skrivs aldrig över. Underlaget skickas till vald LLM-leverantör och omfattas av samma LLM-samtycke.
 
 ### Samtycke
 
@@ -88,6 +89,7 @@ Den dikterade texten kopieras till urklipp och klistras in via syntetisk Ctrl+V 
 - Personlig kontext (fritext) som skickas till LLM-granskaren för bättre resultat med namn och fackord.
 - Kontextmedvetenhet: anpassar ton/format per app och stavar egennamn nära markören rätt. All skärmtext används lokalt om du inte uttryckligen delar den med en remote-tjänst.
 - Röstredigering av markerad text (KP3, egen hotkey): markera text, håll röstredigerings-tangenten och säg en instruktion ("gör formellt", "översätt till engelska") — LLM:en redigerar markeringen.
+- Svara på markerad text (KP4, egen hotkey): markera t.ex. ett mejl, håll svara-tangenten och säg vad du vill svara — LLM:en skriver svaret och lägger det i urklipp (klistras inte in, så markeringen är kvar). Klistra in det själv med Ctrl+V där du vill.
 - Kommandoläge: rösta för att redigera det senast inklistrade blocket i stället för att diktera nytt.
 - Hotwords från `~/.freewispr-swedish/hotwords.txt` för lokala Whisper-modeller.
 - Live-transkribering under inspelning (lokal modell): färdiga fraser avkodas medan du fortfarande pratar, så vid släpp återstår bara svansen — texten klistras nästan direkt även efter långa dikteringar.
@@ -95,6 +97,8 @@ Den dikterade texten kopieras till urklipp och klistras in via syntetisk Ctrl+V 
 - Valfri remote-transkribering via staik.se, Berget AI eller egen OpenAI-kompatibel endpoint, som alternativ till lokal modell.
 - Vänta-läge för LLM: indikator visar "LLM-granskar…" och granskad/polerad text klistras i ett enda steg när LLM-svaret hinner klart.
 - Statuslägen i indikatorn: rå, LLM-granskad eller LLM-polerad.
+- Auto-rekommenderad modellstorlek vid första körning utifrån din hårdvara (större modell på NVIDIA-GPU, lättare på CPU).
+- Uppdateringsnotis: appen kollar vid start om en nyare version finns på GitHub Releases och visar en notis + tray-menyrad (ingen automatisk nedladdning).
 
 ## Modeller
 
@@ -134,7 +138,8 @@ Högerklicka på systemfacksikonen och välj **Inställningar**.
 | Remote-transkribering | Lokal Whisper eller remote-provider (`staik`, `berget`, `custom`); remote kräver samtycke |
 | Personlig kontext | Fritext som används som referens vid LLM-granskning |
 | Kontextmedvetenhet | Anpassa ton/format per app och stava egennamn nära markören rätt (lokalt) |
-| Röstredigering | Egen hotkey för att redigera markerad text med en röstinstruktion |
+| Röstredigering | Egen hotkey (modifierar-kombo, t.ex. Ctrl+Alt) för att redigera markerad text med en röstinstruktion |
+| Svara på markerad text | Egen hotkey (t.ex. Ctrl+Shift): skriv ett svar på markeringen via LLM — svaret hamnar i urklipp |
 | Live-transkribering | Avkoda färdiga fraser under inspelning (på som standard, endast lokal modell) |
 | Rå direkt / Rå → ersätt | Klistra rå text direkt, eller klistra rått och byt mot polerat när det landar |
 | Lär av mina rättelser | Lär `fel → rätt`-par när du rättar inklistrad text |
@@ -142,7 +147,6 @@ Högerklicka på systemfacksikonen och välj **Inställningar**.
 | Snippets | Textexpansion: en ledande trigger-fras expanderas till längre text |
 | Flow-läge | Kontinuerlig diktering över pauser (experimentellt, endast lokal) |
 | Förvänta engelska facktermer | Bättre igenkänning av engelska facktermer i svensk diktering |
-| Indikatorstil | Klassisk (Tk), modern (Qt-pill) eller transparent |
 | Återställ urklipp | Lägg tillbaka ditt tidigare urklipp efter dikteringen |
 | Autostart | Starta appen automatiskt med Windows |
 
@@ -313,6 +317,9 @@ Ja, se [Lokal LLM](#lokal-llm-valfritt) — funkar med Ollama, LM Studio och lla
 
 **Vilken hotkey ska jag välja?**
 `Ctrl+Space` fungerar för de flesta men krockar med en del editorer (autocompletion). `Alt+Space` är vanligt på Mac-vana användare. `F9`/`F10` om du vill ha en dedikerad tangent.
+
+**Hur sätter jag upp röstredigering / svara på markerad text?**
+Båda är av som standard och kräver att LLM-granskning är på. Sätt en hotkey under *Inställningar → Allmänt*. Välj en ren **modifierar-kombination** (Ctrl+Alt för redigering, Ctrl+Shift för svar) — en bokstavstangent skulle skriva över markeringen, och vissa tangentbord skiljer inte höger/vänster Ctrl. Markera text, håll tangenten, säg din instruktion, släpp. Redigering ersätter markeringen; svar läggs i urklipp så att du klistrar in det själv med Ctrl+V.
 
 **Texten blir bättre om jag pratar tydligt?**
 Whisper är trimmat på naturligt svenskt tal — det fungerar bra med vanligt tempo och uttal. Långsamt och övertydligt tal kan faktiskt bli sämre eftersom modellen tränades på naturligt språk.
