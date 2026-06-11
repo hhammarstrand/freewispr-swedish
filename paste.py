@@ -321,6 +321,23 @@ def read_selection(active_modifiers: tuple[str, ...] = ()) -> str:
         return selected.strip()
 
 
+def copy_to_clipboard(text: str) -> bool:
+    """Put *text* on the clipboard without pasting (voice-answer / KP4).
+
+    The reply is left for the user to paste with Ctrl+V wherever they want, so
+    it never overwrites a selection. Returns False on failure (best-effort).
+    """
+    text = (text or "").strip()
+    if not text:
+        return False
+    try:
+        pyperclip.copy(text)
+        return True
+    except Exception as e:
+        log.warning("Kunde inte kopiera till urklipp: %s", e)
+        return False
+
+
 def paste_text(text: str, active_modifiers: tuple[str, ...] = (),
                replace_len: int = 0):
     """Paste text at the current cursor position.

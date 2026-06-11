@@ -234,6 +234,7 @@ def _make_dictation(transcriber):
         polish_skip_max_words=int(_config.get("polish_skip_max_words", 6)),
         live_transcribe_enabled=bool(_config.get("live_transcribe_enabled", False)),
         voice_edit_hotkey=_config.get("voice_edit_hotkey", ""),
+        voice_answer_hotkey=_config.get("voice_answer_hotkey", ""),
     )
 
 

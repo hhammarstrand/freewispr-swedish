@@ -327,7 +327,8 @@ class DictationMode:
                  polish_skip_trivial: bool = True,
                  polish_skip_max_words: int = 6,
                  live_transcribe_enabled: bool = False,
-                 voice_edit_hotkey: str = ""):
+                 voice_edit_hotkey: str = "",
+                 voice_answer_hotkey: str = ""):
         self.transcriber = transcriber
         self.hotkey = hotkey
         # MicRecorder accepts str (legacy), dict (structured), or None.
@@ -392,6 +393,21 @@ class DictationMode:
             self._voice_edit_gate_modifiers = self._voice_edit_modifiers
         self._voice_edit_engaged = False
         self._voice_editing = False
+        # KP4 voice-answer: a second modifier-only hotkey. Reads the selection
+        # as *context*, asks the LLM to write a reply, and puts the reply on the
+        # clipboard (never pasted — so it can't wipe a selection). Modifier-only
+        # to match voice-edit's reliable global-hook path.
+        self.voice_answer_hotkey = voice_answer_hotkey
+        self._voice_answer_modifier_only = bool(
+            voice_answer_hotkey and _is_modifier_only_hotkey(voice_answer_hotkey))
+        if self._voice_answer_modifier_only:
+            _va_parts = [p.strip().lower()
+                         for p in voice_answer_hotkey.split("+") if p.strip()]
+            self._voice_answer_required_keys = tuple(_va_parts)
+        else:
+            self._voice_answer_required_keys = ()
+        self._voice_answer_engaged = False
+        self._voice_answering = False
         self.snippets_enabled = snippets_enabled
         self.silence_trim_enabled = silence_trim_enabled
         self.polish_skip_trivial = polish_skip_trivial
@@ -506,6 +522,22 @@ class DictationMode:
                 if self._voice_edit_hook_candidates:
                     log.warning("Kunde inte registrera röstediterings-tangent "
                                 "(%s)", self.voice_edit_hotkey)
+        # KP4: voice-answer hotkey (modifier-only) — same global-hook mechanism.
+        if self._voice_answer_modifier_only and self._voice_answer_required_keys:
+            self._voice_answer_scancodes = {}
+            for _k in self._voice_answer_required_keys:
+                try:
+                    self._voice_answer_scancodes[_k] = set(
+                        keyboard.key_to_scan_codes(_k))
+                except Exception:
+                    self._voice_answer_scancodes[_k] = set()
+            try:
+                handle = keyboard.hook(self._on_voice_answer_global_event)
+                self._hook_handles.append(handle)
+                log.info("Svara-läge aktivt (global hook): %s",
+                         "+".join(self._voice_answer_required_keys))
+            except Exception as e:
+                log.warning("Kunde inte registrera svara-hook: %s", e)
         self.on_status(f"Klar — håll {self.hotkey.upper()} för att prata")
 
     def undo_last(self) -> bool:
@@ -588,6 +620,61 @@ class DictationMode:
                 self.indicator.hide(delay_ms=2000)
         log.info("Rösteditering: %s", result)
         return result
+
+    def run_voice_answer(self, instruction: str) -> str:
+        """KP4: write a reply to the current selection; put it on the clipboard.
+
+        Reads the selection as *context*, asks the LLM to generate a reply per
+        ``instruction``, and copies the reply to the clipboard — it is **not**
+        pasted, so a selection (here or elsewhere) is never overwritten. The
+        user pastes it where they want with Ctrl+V. Returns a result code for
+        the worker to map to the indicator. Fail-safe and a no-op without LLM.
+        """
+        from paste import read_selection, copy_to_clipboard
+
+        tr = self.transcriber
+        if not getattr(tr, "llm_enabled", False):
+            log.info("Svara-läget kräver att LLM är på — ignorerar")
+            if self.indicator:
+                self.indicator.show("Slå på AI-städning först", state="error")
+                self.indicator.hide(delay_ms=2000)
+            return "failed"
+
+        selection = (read_selection(self._modifier_keys) or "").strip()
+        if not selection:
+            if self.indicator:
+                self.indicator.show("Markera text först", state="error")
+                self.indicator.hide(delay_ms=2000)
+            log.info("Svara-läget: no_selection")
+            return "no_selection"
+
+        from llm_polish import answer
+        reply = (answer(
+            selection, instruction,
+            api_key=getattr(tr, "llm_api_key", ""),
+            model=getattr(tr, "llm_model", ""),
+            provider=getattr(tr, "llm_provider", "github"),
+            base_url_override=getattr(tr, "llm_base_url", ""),
+        ) or "").strip()
+
+        if not reply:
+            if self.indicator:
+                self.indicator.show("Kunde inte skapa svar", state="error")
+                self.indicator.hide(delay_ms=2000)
+            log.info("Svara-läget: failed")
+            return "failed"
+
+        if not copy_to_clipboard(reply):
+            if self.indicator:
+                self.indicator.show("Kunde inte kopiera svar", state="error")
+                self.indicator.hide(delay_ms=2000)
+            return "failed"
+
+        if self.indicator:
+            self.indicator.show("Svar kopierat — Ctrl+V", state="done")
+            self.indicator.hide(delay_ms=2500)
+        log.info("Svara-läget: ok (%d tecken i urklipp)", len(reply))
+        return "ok"
 
     def set_paused(self, paused: bool) -> None:
         """AP7.3: pause/resume dictation without quitting (session state)."""
@@ -1050,23 +1137,21 @@ class DictationMode:
         except Exception:
             return False
 
-    def _voice_edit_required_held(self, event=None) -> bool:
-        """True when *every* key of a modifier-only hotkey is physically down.
+    def _combo_held(self, keys, codes_map, event=None) -> bool:
+        """True when *every* key in ``keys`` is physically down.
 
         When called from the global hook we trust the *current* event for the
         key it concerns (a down/up we're handling right now) to avoid
         ``is_pressed`` update-order races on the listener thread; other required
-        keys fall back to ``is_pressed``.
+        keys fall back to ``is_pressed``. Shared by voice-edit and voice-answer.
         """
-        keys = getattr(self, "_voice_edit_required_keys", ())
         if not keys:
             return False
         sc = getattr(event, "scan_code", None) if event is not None else None
         etype = getattr(event, "event_type", None) if event is not None else None
-        codes_map = getattr(self, "_voice_edit_scancodes", {})
         try:
             for k in keys:
-                codes = codes_map.get(k)
+                codes = (codes_map or {}).get(k)
                 if codes and sc is not None and sc in codes:
                     ok = (etype == "down")
                 else:
@@ -1076,6 +1161,12 @@ class DictationMode:
             return True
         except Exception:
             return False
+
+    def _voice_edit_required_held(self, event=None) -> bool:
+        """True when every key of the voice-edit modifier-only hotkey is down."""
+        return self._combo_held(
+            getattr(self, "_voice_edit_required_keys", ()),
+            getattr(self, "_voice_edit_scancodes", {}), event)
 
     def _on_voice_edit_global_event(self, event):
         """Global keyboard hook driving a modifier-only voice-edit hotkey.
@@ -1158,6 +1249,76 @@ class DictationMode:
         self.on_status("Tolkar redigering…")
         if self.indicator:
             self.indicator.show("Tolkar redigering…", state="transcribe")
+
+    # ---- KP4 voice-answer (reply to selection; result to clipboard) -------- #
+
+    def _on_voice_answer_global_event(self, event):
+        """Global hook driving the modifier-only voice-answer hotkey."""
+        try:
+            engaged = self._combo_held(
+                self._voice_answer_required_keys,
+                getattr(self, "_voice_answer_scancodes", {}), event)
+            if engaged and not self._voice_answer_engaged:
+                self._voice_answer_engaged = True
+                self._on_voice_answer_press(event)
+            elif not engaged and self._voice_answer_engaged:
+                self._voice_answer_engaged = False
+                self._on_voice_answer_release(event)
+        except Exception as e:
+            log.debug("voice-answer global hook error: %s", e)
+
+    def _on_voice_answer_press(self, _):
+        """Start recording a voice-answer instruction (mirrors voice-edit)."""
+        if not (self._active and not getattr(self, "_paused", False)
+                and not self._recording):
+            return
+        try:
+            self._recording = True
+            self._voice_answering = True
+            self._t_press = time.monotonic()
+            if self.indicator is not None:
+                self.recorder.on_level = self.indicator.push_level
+            else:
+                self.recorder.on_level = None
+            self.recorder.start()
+            sounds.play_start()
+            self.on_status("Lyssnar på svar…")
+            if self.indicator:
+                self.indicator.show("Säg vad du vill svara…", state="listen",
+                                    level_source=lambda: self.recorder.level)
+        except Exception as e:
+            self._recording = False
+            self._voice_answering = False
+            log.error("Mic start error (voice-answer): %s", e, exc_info=True)
+            sounds.play_error()
+
+    def _on_voice_answer_release(self, _):
+        """Stop recording and enqueue the instruction tagged as voice-answer."""
+        if not (self._active and self._recording
+                and getattr(self, "_voice_answering", False)):
+            return
+        self._recording = False
+        self.recorder.on_level = None
+        try:
+            audio, channels, rate = self.recorder.stop_fast()
+        except Exception as e:
+            self._voice_answering = False
+            log.error("Audio stop error (voice-answer): %s", e, exc_info=True)
+            sounds.play_error()
+            return
+        sounds.play_stop()
+        rms = self.recorder.rms()
+        record_ms = (time.monotonic() - self._t_press) * 1000 if self._t_press else 0.0
+        try:
+            self._jobs.put_nowait((audio, channels, rate, rms, record_ms,
+                                   "voice_answer", None))
+        except queue.Full:
+            log.warning("Kö full — hoppar över svaret")
+            self._voice_answering = False
+            return
+        self.on_status("Skapar svar…")
+        if self.indicator:
+            self.indicator.show("Skapar svar…", state="transcribe")
 
     def _on_cancel(self, _):
         """AP7.2: discard the in-progress recording. No-op when not recording
@@ -1333,6 +1494,33 @@ class DictationMode:
                     self.indicator.hide(delay_ms=1500)
             except Exception as e:
                 log.error("Voice-edit job error: %s", e, exc_info=True)
+            return
+
+        # KP4: a voice-answer instruction — transcribe it, then generate a reply
+        # to the current selection and put it on the clipboard (never pasted).
+        if kind == "voice_answer":
+            self._voice_answering = False
+            try:
+                if rms < self.min_rms:
+                    log.info("Svara-instruktion för tyst, ignorerar")
+                    if self.indicator:
+                        self.indicator.show("Inget hördes", state="error")
+                        self.indicator.hide(delay_ms=1500)
+                    return
+                audio = finalize_audio(audio_raw, channels, rate)
+                if len(audio) < MIN_AUDIO_SAMPLES:
+                    if self.indicator:
+                        self.indicator.show("Inget hördes", state="error")
+                        self.indicator.hide(delay_ms=1500)
+                    return
+                instruction = self.transcriber.transcribe(audio, capitalize=False)
+                if instruction.strip():
+                    self.run_voice_answer(instruction)
+                elif self.indicator:
+                    self.indicator.show("Hörde ingen instruktion", state="error")
+                    self.indicator.hide(delay_ms=1500)
+            except Exception as e:
+                log.error("Voice-answer job error: %s", e, exc_info=True)
             return
 
         # L1: collect the press-time context snapshot once (bounded wait) and

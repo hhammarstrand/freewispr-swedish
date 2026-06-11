@@ -117,6 +117,9 @@ class SettingsWindow:
         self._voice_edit_hotkey_var = tk.StringVar(
             value=c.get("voice_edit_hotkey", "")
         )
+        self._voice_answer_hotkey_var = tk.StringVar(
+            value=c.get("voice_answer_hotkey", "")
+        )
         self._indicator_follow_var = tk.BooleanVar(
             value=c.get("indicator_follow_mouse", True)
         )
@@ -406,6 +409,29 @@ class SettingsWindow:
                    "rekommenderas) — en bokstavstangent skriver över markeringen, "
                    "och vissa tangentbord skiljer inte höger/vänster Ctrl. "
                    "Lämna tom för att stänga av.").pack(
+            anchor="w", padx=6, pady=(4, 8)
+        )
+
+        # KP4: voice-answer — read selection as context, reply to clipboard.
+        self._label(parent, "Svara på markerad text (svaret hamnar i urklipp)",
+                    font=ctk.CTkFont(weight="bold") if _CTK_AVAILABLE else None
+                    ).pack(anchor="w", **pad)
+        va = _HotkeyCapture(parent, self._voice_answer_hotkey_var)
+        va.pack(fill="x", padx=6, pady=(4, 0))
+        _va_btns = self._frame(parent)
+        _va_btns.pack(anchor="w", fill="x")
+        self._button(_va_btns, "Ctrl+Shift",
+                     lambda: self._voice_answer_hotkey_var.set("ctrl+shift")).pack(
+            side="left", padx=6, pady=(4, 0))
+        self._button(_va_btns, "Rensa",
+                     lambda: self._voice_answer_hotkey_var.set("")).pack(
+            side="left", padx=6, pady=(4, 0))
+        self._hint(parent, "Markera t.ex. ett mejl, håll den här tangenten och "
+                   "säg vad du vill svara (t.ex. \"skriv ett vänligt svar att "
+                   "jag återkommer på måndag\"). Svaret läggs i urklipp — "
+                   "klistra in det själv med Ctrl+V där du vill. Välj en annan "
+                   "modifierar-kombination än röstredigering (Ctrl+Shift "
+                   "rekommenderas). Lämna tom för att stänga av.").pack(
             anchor="w", padx=6, pady=(4, 8)
         )
 
@@ -1358,6 +1384,7 @@ class SettingsWindow:
         new_cfg = self.cfg.copy()
         new_cfg["hotkey"] = self._hotkey_var.get().strip()
         new_cfg["voice_edit_hotkey"] = self._voice_edit_hotkey_var.get().strip()
+        new_cfg["voice_answer_hotkey"] = self._voice_answer_hotkey_var.get().strip()
         new_cfg["model_size"] = self._model_var.get()
         new_cfg["use_cuda"] = self._cuda_var.get()
         new_cfg["indicator_follow_mouse"] = self._indicator_follow_var.get()
